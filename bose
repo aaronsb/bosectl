@@ -2,11 +2,30 @@
 """Control Bose QC Ultra 2 headphones over Bluetooth."""
 
 import socket
+import struct
 import sys
 import time
 
 BOSE_MAC = "68:F2:1F:XX:XX:XX"
 CHANNEL = 2
+
+# Operators
+OP_SET = 0
+OP_GET = 1
+OP_SETGET = 2
+OP_STATUS = 3
+OP_ERROR = 4
+OP_START = 5
+OP_RESULT = 6
+OP_PROCESSING = 7
+
+OP_NAMES = {0: "SET", 1: "GET", 2: "SETGET", 3: "STATUS", 4: "ERROR",
+             5: "START", 6: "RESULT", 7: "PROCESSING"}
+
+ERROR_NAMES = {0: "Unknown", 1: "Length", 2: "Chksum", 3: "FblockNotSupp",
+               4: "FuncNotSupp", 5: "OpNotSupp(auth)", 6: "InvalidData",
+               7: "DataUnavail", 8: "Runtime", 9: "Timeout", 10: "InvalidState",
+               20: "InsecureTransport"}
 
 MODES = {
     "quiet": (0, "Quiet — full ANC"),
@@ -16,6 +35,27 @@ MODES = {
     "home": (4, "Home — custom profile"),
 }
 
+MODE_BY_IDX = {i: n for n, (i, _) in MODES.items()}
+
+# Voice prompts: (byte1, byte2) -> name
+PROMPTS = {
+    (0, 0): "NONE", (0, 1): "QUIET", (0, 2): "AWARE", (0, 3): "TRANSPARENT",
+    (0, 4): "TRANSPARENCY", (0, 5): "MASKING", (0, 6): "COMFORT",
+    (0, 7): "COMMUTE", (0, 8): "OUTDOOR", (0, 9): "WORKOUT", (0, 10): "HOME",
+    (0, 11): "WORK", (0, 12): "MUSIC", (0, 13): "FOCUS", (0, 14): "RELAX",
+    (0, 15): "FLIGHT", (0, 16): "AIRPORT", (0, 17): "DRIVING",
+    (0, 18): "TRAINING", (0, 19): "GYM", (0, 20): "RUN", (0, 21): "WALK",
+    (0, 22): "HIKE", (0, 23): "TALK", (0, 24): "CALL", (0, 25): "WHISPER",
+    (0, 26): "HEARING", (0, 27): "LEARN", (0, 28): "PODCAST",
+    (0, 29): "AUDIOBOOK", (0, 30): "CALM", (0, 31): "SLEEP",
+    (0, 32): "MEDITATE", (0, 33): "YOGA", (0, 34): "IMMERSION",
+    (0, 35): "STEREO", (0, 36): "CINEMA",
+}
+
+PROMPT_BY_NAME = {v.lower(): k for k, v in PROMPTS.items()}
+
+SPATIAL_NAMES = {0: "off", 1: "room", 2: "head"}
+
 
 def connect():
     sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
@@ -24,52 +64,830 @@ def connect():
     return sock
 
 
-def send_recv(sock, packet):
+def bmap_packet(fblock, func, operator, payload=b""):
+    """Build a BMAP packet: [fblock, func, flags, length, ...payload]"""
+    flags = operator & 0x0F  # device_id=0, port_num=0
+    return bytes([fblock, func, flags, len(payload)]) + payload
+
+
+def send_recv(sock, packet, drain=False):
+    """Send packet and receive response. If drain, read all available data."""
     sock.send(packet)
     time.sleep(0.2)
-    return sock.recv(4096)
+    data = sock.recv(4096)
+    if drain:
+        # Collect any additional async responses
+        sock.settimeout(0.5)
+        try:
+            while True:
+                more = sock.recv(4096)
+                if not more:
+                    break
+                data += more
+        except (socket.timeout, BlockingIOError):
+            pass
+        sock.settimeout(3)
+    return data
 
+
+def parse_response(data):
+    """Parse a BMAP response into (fblock, func, operator, payload)."""
+    if len(data) < 4:
+        return None
+    fblock = data[0]
+    func = data[1]
+    flags = data[2]
+    op = flags & 0x0F
+    length = data[3]
+    payload = data[4:4+length]
+    return fblock, func, op, payload
+
+
+def parse_all_responses(data):
+    """Parse concatenated BMAP responses."""
+    responses = []
+    pos = 0
+    while pos < len(data) - 3:
+        fblock = data[pos]
+        func = data[pos + 1]
+        flags = data[pos + 2]
+        op = flags & 0x0F
+        length = data[pos + 3]
+        payload = data[pos + 4:pos + 4 + length]
+        responses.append((fblock, func, op, payload))
+        pos += 4 + length
+    return responses
+
+
+def fmt_response(fblock, func, op, payload):
+    """Format a response for display."""
+    op_name = OP_NAMES.get(op, f"op{op}")
+    if op == OP_ERROR and payload:
+        err_name = ERROR_NAMES.get(payload[0], f"err{payload[0]}")
+        return f"[{fblock}.{func}] {op_name}: {err_name} ({payload.hex()})"
+    return f"[{fblock}.{func}] {op_name}: {payload.hex()}"
+
+
+def encode_mode_name(name):
+    """Encode mode name as 32-byte null-padded array (matching APK logic)."""
+    name_bytes = name.encode("utf-8")
+    buf = bytearray(32)
+    end = min(len(name_bytes), 31)
+    buf[:end] = name_bytes[:end]
+    buf[end] = 0
+    return bytes(buf)
+
+
+def build_modeconfig_payload(mode_idx, prompt_b1, prompt_b2, name, cnc_level,
+                              auto_cnc, spatial=0, wind_block=0, anc_toggle=0):
+    """Build ModeConfig SETGET payload matching APK createAudioModesConfigSetGetPayload."""
+    payload = bytearray()
+    payload.append(mode_idx)
+    payload.append(prompt_b1)
+    payload.append(prompt_b2)
+    payload.extend(encode_mode_name(name))
+    payload.append(cnc_level)
+    payload.append(1 if auto_cnc else 0)
+    payload.append(spatial)
+    payload.append(1 if wind_block else 0)
+    payload.append(1 if anc_toggle else 0)
+    return bytes(payload)
+
+
+def parse_modeconfig(payload):
+    """Parse a ModeConfig STATUS/RESULT payload.
+
+    STATUS response format (48 bytes):
+      [0]    modeIndex
+      [1:3]  prompt (byte1, byte2)
+      [3:6]  flags (3 bytes — editability/user mode flags?)
+      [6:38] name (32 bytes, null-padded UTF-8)
+      [38]   cncLevel (0-10)
+      [39]   autoCNC (bool)
+      [40:44] unknown (4 bytes — mode-specific config?)
+      [44]   spatialAudioType (0=off, 1=room, 2=head)
+      [45]   windBlock (bool)
+      [46]   ancToggle (bool)
+      [47]   unknown (always 0x01?)
+
+    SETGET input payload (40 bytes, from APK):
+      [0]    modeIndex
+      [1:3]  prompt (byte1, byte2)
+      [3:35] name (32 bytes)
+      [35]   cncLevel
+      [36]   autoCNC
+      [37]   spatialAudioType
+      [38]   windBlock
+      [39]   ancToggle
+    """
+    if len(payload) < 6:
+        return {"raw": payload.hex(), "error": f"too short ({len(payload)} bytes)"}
+    mode_idx = payload[0]
+    prompt_b1 = payload[1]
+    prompt_b2 = payload[2]
+    prompt_name = PROMPTS.get((prompt_b1, prompt_b2), f"({prompt_b1},{prompt_b2})")
+
+    # STATUS has 3 flag bytes between prompt and name
+    if len(payload) >= 48:
+        flags = payload[3:6]
+        name_bytes = payload[6:38]
+        name = name_bytes.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        config = {
+            "mode_idx": mode_idx,
+            "mode_name": MODE_BY_IDX.get(mode_idx, f"custom({mode_idx})"),
+            "prompt": prompt_name,
+            "flags": f"{flags[0]:02x} {flags[1]:02x} {flags[2]:02x}",
+            "name": name,
+            "cnc_level": payload[38],
+            "auto_cnc": bool(payload[39]),
+            "unknown_40_43": payload[40:44].hex(),
+            "spatial": SPATIAL_NAMES.get(payload[44], payload[44]),
+            "wind_block": bool(payload[45]),
+            "anc_toggle": bool(payload[46]),
+        }
+        if len(payload) > 47:
+            config["tail"] = payload[47:].hex()
+        return config
+
+    # Short/SETGET format (no flag bytes, name at offset 3)
+    name_bytes = payload[3:35] if len(payload) >= 35 else payload[3:]
+    name = name_bytes.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+    config = {
+        "mode_idx": mode_idx,
+        "mode_name": MODE_BY_IDX.get(mode_idx, f"custom({mode_idx})"),
+        "prompt": prompt_name,
+        "name": name,
+        "raw": payload.hex(),
+    }
+    return config
+
+
+# ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_mode(sock, mode_name):
     idx, desc = MODES[mode_name]
-    resp = send_recv(sock, bytes([31, 3, 0x05, 2, idx, 0]))
-    ok = (resp[2] & 0xF) == 6
-    print(f"{'OK' if ok else 'FAIL'}: {desc}")
+    resp = send_recv(sock, bmap_packet(31, 3, OP_START, bytes([idx, 0])))
+    parsed = parse_response(resp)
+    if parsed and parsed[2] == OP_RESULT:
+        print(f"OK: {desc}")
+    else:
+        print(f"FAIL: {desc}")
+        if parsed:
+            print(f"  {fmt_response(*parsed)}")
 
 
 def cmd_status(sock):
     # Battery
-    resp = send_recv(sock, bytes([2, 2, 0x01, 0x00]))
-    battery = resp[4]
-    print(f"Battery: {battery}%")
+    resp = send_recv(sock, bmap_packet(2, 2, OP_GET))
+    print(f"Battery:    {resp[4]}%")
 
     # Current mode
-    resp = send_recv(sock, bytes([31, 3, 0x01, 0x00]))
+    resp = send_recv(sock, bmap_packet(31, 3, OP_GET))
     mode_idx = resp[4]
-    mode_name = next((n for n, (i, _) in MODES.items() if i == mode_idx), f"unknown({mode_idx})")
-    print(f"Mode:    {mode_name}")
+    mode_name = MODE_BY_IDX.get(mode_idx)
+    if not mode_name:
+        modes = get_all_modes(sock)
+        if mode_idx in modes:
+            mode_name = modes[mode_idx][1].get("name", f"unknown({mode_idx})")
+        else:
+            mode_name = f"unknown({mode_idx})"
+    print(f"Mode:       {mode_name}")
 
-    # Firmware
-    resp = send_recv(sock, bytes([0, 5, 0x01, 0x00]))
-    fw = resp[4:4+resp[3]].decode("ascii", errors="replace")
-    print(f"FW:      {fw}")
+    # CNC level
+    resp = send_recv(sock, bmap_packet(1, 5, OP_GET))
+    payload = resp[4:4+resp[3]]
+    if len(payload) >= 3:
+        print(f"CNC:        {payload[1]}/{payload[0]-1}")
+
+    # EQ
+    resp = send_recv(sock, bmap_packet(1, 7, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        bands = []
+        for i in range(0, len(parsed[3]), 4):
+            cur = parsed[3][i + 2]
+            bands.append(f"{cur if cur < 128 else cur - 256:+d}")
+        print(f"EQ:         {'/'.join(bands)}")
 
     # Device name
-    resp = send_recv(sock, bytes([1, 2, 0x01, 0x00]))
-    name = resp[5:4+resp[3]].decode("ascii", errors="replace")
-    print(f"Name:    {name}")
+    resp = send_recv(sock, bmap_packet(1, 2, OP_GET))
+    name = resp[5:4+resp[3]].decode("utf-8", errors="replace")
+    print(f"Name:       {name}")
+
+    # Firmware
+    resp = send_recv(sock, bmap_packet(0, 5, OP_GET))
+    fw = resp[4:4+resp[3]].decode("ascii", errors="replace")
+    print(f"FW:         {fw}")
+
+    # Sidetone
+    resp = send_recv(sock, bmap_packet(1, 11, OP_GET))
+    parsed = parse_response(resp)
+    if parsed and len(parsed[3]) >= 2:
+        print(f"Sidetone:   {SIDETONE_NAMES.get(parsed[3][1], parsed[3][1])}")
+
+    # Multipoint
+    resp = send_recv(sock, bmap_packet(1, 10, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        print(f"Multipoint: {'on' if parsed[3][0] & 0x02 else 'off'}")
+
+    # Auto play/pause
+    resp = send_recv(sock, bmap_packet(1, 24, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        print(f"AutoPause:  {'on' if parsed[3][0] else 'off'}")
+
+    # Voice prompts
+    resp = send_recv(sock, bmap_packet(1, 3, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        enabled = bool((parsed[3][0] >> 5) & 1)
+        lang = parsed[3][0] & 0x1F
+        print(f"Prompts:    {'on' if enabled else 'off'} ({VOICE_LANGUAGES.get(lang, lang)})")
 
 
 def cmd_battery(sock):
-    resp = send_recv(sock, bytes([2, 2, 0x01, 0x00]))
+    resp = send_recv(sock, bmap_packet(2, 2, OP_GET))
     print(resp[4])
 
 
 def cmd_current(sock):
-    resp = send_recv(sock, bytes([31, 3, 0x01, 0x00]))
+    resp = send_recv(sock, bmap_packet(31, 3, OP_GET))
     mode_idx = resp[4]
-    mode_name = next((n for n, (i, _) in MODES.items() if i == mode_idx), f"unknown({mode_idx})")
-    print(mode_name)
+    if mode_idx in MODE_BY_IDX:
+        print(MODE_BY_IDX[mode_idx])
+    else:
+        # Look up custom profile name
+        modes = get_all_modes(sock)
+        if mode_idx in modes:
+            print(modes[mode_idx][1].get("name", f"unknown({mode_idx})"))
+        else:
+            print(f"unknown({mode_idx})")
+
+
+def get_all_modes(sock):
+    """Read all mode configs via GetAll. Returns dict of idx -> (raw_payload, parsed_config)."""
+    data = send_recv(sock, bmap_packet(31, 1, OP_START), drain=True)
+    responses = parse_all_responses(data)
+    modes = {}
+    for fblock, func, op, payload in responses:
+        if fblock == 31 and func == 6 and op == OP_STATUS and payload and len(payload) >= 6:
+            config = parse_modeconfig(payload)
+            modes[payload[0]] = (payload, config)
+    return modes
+
+
+def find_mode_by_name(modes, name):
+    """Find a mode index by name (case-insensitive). Returns (idx, raw, config) or None."""
+    name_lower = name.lower()
+    for idx, (raw, config) in sorted(modes.items()):
+        if config.get("name", "").lower() == name_lower:
+            return idx, raw, config
+    return None
+
+
+def find_free_slot(modes):
+    """Find the first unconfigured editable slot. Returns index or None."""
+    for idx in range(5, 11):
+        if idx in modes:
+            raw, config = modes[idx]
+            if raw[4] == 0 and config.get("name", "").lower() in ("none", ""):
+                return idx
+    return None
+
+
+def write_mode(sock, mode_idx, name, cnc=0, spatial=0, wind_block=1, anc_toggle=1, prompt_b1=0, prompt_b2=0):
+    """Write a mode config to an editable slot via SETGET. Returns True on success."""
+    payload = build_modeconfig_payload(
+        mode_idx=mode_idx, prompt_b1=prompt_b1, prompt_b2=prompt_b2,
+        name=name, cnc_level=cnc, auto_cnc=False,
+        spatial=spatial, wind_block=wind_block, anc_toggle=anc_toggle
+    )
+    resp = send_recv(sock, bmap_packet(31, 6, OP_SETGET, payload), drain=True)
+    parsed = parse_all_responses(resp)
+    return any(r[2] == OP_STATUS for r in parsed)
+
+
+def cmd_dump(sock):
+    """Trigger AudioModes GetAll and show all status responses."""
+    print("Triggering AudioModes GetAll (async)...")
+    data = send_recv(sock, bmap_packet(31, 1, OP_START), drain=True)
+    responses = parse_all_responses(data)
+    for fblock, func, op, payload in responses:
+        print(fmt_response(fblock, func, op, payload))
+        if fblock == 31 and func == 6 and op == OP_STATUS:
+            config = parse_modeconfig(payload)
+            for k, v in config.items():
+                print(f"    {k}: {v}")
+
+
+def cmd_modeconfig(sock, mode_idx):
+    """Read mode config via GetAll and filter to the requested mode."""
+    data = send_recv(sock, bmap_packet(31, 1, OP_START), drain=True)
+    responses = parse_all_responses(data)
+    found = False
+    for fblock, func, op, payload in responses:
+        if fblock == 31 and func == 6 and op == OP_STATUS and payload and payload[0] == mode_idx:
+            found = True
+            print(f"[31.6] ModeConfig STATUS for mode {mode_idx}:")
+            print(f"  raw: {payload.hex()}")
+            config = parse_modeconfig(payload)
+            for k, v in config.items():
+                if k != "raw":
+                    print(f"  {k}: {v}")
+    if not found:
+        print(f"No ModeConfig STATUS received for mode {mode_idx}")
+        print("All responses:")
+        for r in responses:
+            print(f"  {fmt_response(*r)}")
+
+
+def get_current_profile(sock, modes):
+    """Get the current mode's index, raw payload, and config. Returns (idx, raw, config) or None."""
+    resp = send_recv(sock, bmap_packet(31, 3, OP_GET))
+    current = resp[4]
+    if current in modes:
+        raw, config = modes[current]
+        return current, raw, config
+    return current, None, None
+
+
+def ensure_editable_profile(sock, modes):
+    """Ensure we're on an editable profile. Returns (idx, raw, config).
+
+    If the current mode is editable, returns it. Otherwise finds or creates
+    a custom profile based on the current settings and switches to it.
+    """
+    idx, raw, config = get_current_profile(sock, modes)
+
+    # If current mode is editable, use it directly
+    if raw is not None and raw[3] == 1:  # flags[0] = editable
+        return idx, raw, config
+
+    # Current mode is a preset — need a custom slot
+    # Look for an existing "Custom" profile first
+    result = find_mode_by_name(modes, "Custom")
+    if result:
+        slot = result[0]
+    else:
+        slot = find_free_slot(modes)
+    if slot is None:
+        print("No free profile slot available (modes 5-10 all in use)", file=sys.stderr)
+        sys.exit(1)
+
+    # Read current CNC to carry over
+    resp = send_recv(sock, bmap_packet(1, 5, OP_GET))
+    cnc = resp[5] if len(resp) > 5 else 0
+
+    return slot, None, {"name": "Custom", "cnc_level": cnc, "spatial": "off",
+                        "wind_block": False, "anc_toggle": False}
+
+
+def cmd_cnc(sock, level):
+    """Set CNC level on current profile (or create a custom one)."""
+    level = int(level)
+    if not 0 <= level <= 10:
+        print("CNC level must be 0-10", file=sys.stderr)
+        sys.exit(1)
+
+    modes = get_all_modes(sock)
+    slot, raw, config = ensure_editable_profile(sock, modes)
+
+    # Read current settings from the STATUS response to preserve them
+    if raw is not None and len(raw) >= 48:
+        name = config.get("name", "Custom")
+        spatial = raw[44]
+        wind = raw[45]
+        anc = raw[47]
+        pb1, pb2 = raw[1], raw[2]
+    else:
+        name = config.get("name", "Custom")
+        spatial, wind, anc = 0, 1, 1
+        pb1, pb2 = 0, 0
+
+    if not write_mode(sock, slot, name, cnc=level, spatial=spatial,
+                      wind_block=wind, anc_toggle=anc, prompt_b1=pb1, prompt_b2=pb2):
+        print("Failed to configure mode", file=sys.stderr)
+        sys.exit(1)
+
+    # Switch to the profile
+    resp = send_recv(sock, bmap_packet(31, 3, OP_START, bytes([slot, 0])))
+    parsed = parse_response(resp)
+    if parsed and parsed[2] == OP_RESULT:
+        print(f"CNC: {level}/10")
+    else:
+        print("Mode switch failed", file=sys.stderr)
+
+
+def cmd_eq(sock, args):
+    """Set equalizer levels. Usage: eq [bass] [mid] [treble] or eq flat"""
+    if not args or args[0] == "flat":
+        values = [0, 0, 0]
+    elif len(args) == 1 and args[0] == "get":
+        values = None
+    elif len(args) == 3:
+        values = [int(x) for x in args]
+        for v in values:
+            if not -10 <= v <= 10:
+                print("EQ values must be -10 to +10", file=sys.stderr)
+                sys.exit(1)
+    else:
+        print("Usage: bose eq <bass> <mid> <treble>  (each -10 to +10)", file=sys.stderr)
+        print("       bose eq flat                    (reset to 0/0/0)", file=sys.stderr)
+        print("       bose eq                         (show current)", file=sys.stderr)
+        sys.exit(1)
+
+    band_names = {0: "Bass", 1: "Mid", 2: "Treble"}
+
+    if values is not None:
+        for band_id, val in enumerate(values):
+            val_byte = val & 0xFF  # signed to unsigned byte
+            send_recv(sock, bmap_packet(1, 7, OP_SETGET, bytes([val_byte, band_id])))
+
+    # Read and display current EQ
+    resp = send_recv(sock, bmap_packet(1, 7, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        payload = parsed[3]
+        for i in range(0, len(payload), 4):
+            cur = payload[i + 2]
+            cur_signed = cur if cur < 128 else cur - 256
+            bid = payload[i + 3]
+            print(f"{band_names.get(bid, bid):6s}: {cur_signed:+d}")
+
+
+def cmd_spatial(sock, setting):
+    """Set spatial audio mode on current profile (or create a custom one)."""
+    spatial_map = {"off": 0, "room": 1, "head": 2}
+    if setting not in spatial_map:
+        print(f"Unknown spatial mode: {setting}. Use: off, room, head", file=sys.stderr)
+        sys.exit(1)
+    spatial = spatial_map[setting]
+
+    modes = get_all_modes(sock)
+    slot, raw, config = ensure_editable_profile(sock, modes)
+
+    if raw is not None and len(raw) >= 48:
+        name = config.get("name", "Custom")
+        cnc = raw[42]
+        wind = raw[45]
+        anc = raw[47]
+        pb1, pb2 = raw[1], raw[2]
+    else:
+        name = config.get("name", "Custom")
+        cnc = config.get("cnc_level", 0)
+        wind, anc = 1, 1
+        pb1, pb2 = 0, 0
+
+    if not write_mode(sock, slot, name, cnc=cnc, spatial=spatial,
+                      wind_block=wind, anc_toggle=anc, prompt_b1=pb1, prompt_b2=pb2):
+        print("Failed to configure mode", file=sys.stderr)
+        sys.exit(1)
+
+    resp = send_recv(sock, bmap_packet(31, 3, OP_START, bytes([slot, 0])))
+    parsed = parse_response(resp)
+    if parsed and parsed[2] == OP_RESULT:
+        print(f"Spatial: {setting} (CNC: {cnc}/10)")
+    else:
+        print("Mode switch failed", file=sys.stderr)
+
+
+def cmd_profiles(sock):
+    """List all audio mode profiles."""
+    modes = get_all_modes(sock)
+    resp = send_recv(sock, bmap_packet(31, 3, OP_GET))
+    current = resp[4]
+
+    for idx in sorted(modes):
+        raw, config = modes[idx]
+        name = config.get("name", "")
+        editable = raw[3] == 1 if len(raw) > 3 else False
+        configured = raw[4] == 1 if len(raw) > 4 else False
+
+        if not editable and not configured and idx > 4:
+            continue  # Skip empty non-editable slots (shouldn't happen, but just in case)
+
+        marker = " *" if idx == current else ""
+        tag = ""
+        if not editable:
+            tag = " [preset]"
+        elif not configured:
+            tag = " [empty]"
+
+        line = f"  {idx:2d}  {name:16s}"
+
+        # Show config for configured modes
+        if configured or not editable:
+            parts = []
+            cnc = raw[42] if len(raw) > 42 else None
+            spatial_val = raw[44] if len(raw) > 44 else None
+            wind_val = raw[45] if len(raw) > 45 else None
+
+            if cnc is not None:
+                parts.append(f"cnc={cnc}")
+            if spatial_val is not None and spatial_val > 0:
+                parts.append(f"spatial={SPATIAL_NAMES.get(spatial_val, spatial_val)}")
+            if wind_val:
+                parts.append("wind=on")
+
+            if parts:
+                line += f"  {' '.join(parts)}"
+
+        line += tag + marker
+        print(line)
+
+
+def cmd_profile_set(sock, args):
+    """Create or update a named profile.
+
+    Usage: bose profile set <name> [cnc=N] [spatial=off|room|head] [wind=on|off] [anc=on|off] [name=NEW]
+    """
+    if not args:
+        print("Usage: bose profile set <name> [cnc=N] [spatial=off|room|head] "
+              "[wind=on|off] [anc=on|off] [name=NEW]", file=sys.stderr)
+        sys.exit(1)
+
+    lookup_name = args[0]
+    opts = {}
+    for arg in args[1:]:
+        if "=" not in arg:
+            print(f"Invalid option: {arg} (expected key=value)", file=sys.stderr)
+            sys.exit(1)
+        k, v = arg.split("=", 1)
+        opts[k.lower()] = v
+
+    modes = get_all_modes(sock)
+
+    # Check if profile already exists
+    existing = find_mode_by_name(modes, lookup_name)
+    if existing:
+        slot, raw, config = existing
+        if raw[3] != 1:
+            print(f"Cannot modify preset mode '{lookup_name}'", file=sys.stderr)
+            sys.exit(1)
+        # Preserve existing values as defaults
+        cnc = raw[42] if len(raw) > 42 else 0
+        spatial = raw[44] if len(raw) > 44 else 0
+        wind = raw[45] if len(raw) > 45 else 1
+        anc = raw[47] if len(raw) > 47 else 1
+        pb1, pb2 = raw[1], raw[2]
+    else:
+        # Find a free slot
+        slot = find_free_slot(modes)
+        if slot is None:
+            print("No free profile slot available (modes 5-10 all in use)", file=sys.stderr)
+            sys.exit(1)
+        cnc, spatial, wind, anc = 0, 0, 1, 1
+        pb1, pb2 = 0, 0
+
+    # Allow renaming via name= option
+    new_name = opts.pop("name", lookup_name)
+
+    spatial_map = {"off": 0, "room": 1, "head": 2}
+    bool_map = {"on": 1, "off": 0, "1": 1, "0": 0, "true": 1, "false": 0}
+
+    if "cnc" in opts:
+        cnc = int(opts["cnc"])
+        if not 0 <= cnc <= 10:
+            print("cnc must be 0-10", file=sys.stderr)
+            sys.exit(1)
+    if "spatial" in opts:
+        if opts["spatial"] not in spatial_map:
+            print("spatial must be off, room, or head", file=sys.stderr)
+            sys.exit(1)
+        spatial = spatial_map[opts["spatial"]]
+    if "wind" in opts:
+        if opts["wind"].lower() not in bool_map:
+            print("wind must be on or off", file=sys.stderr)
+            sys.exit(1)
+        wind = bool_map[opts["wind"].lower()]
+    if "anc" in opts:
+        if opts["anc"].lower() not in bool_map:
+            print("anc must be on or off", file=sys.stderr)
+            sys.exit(1)
+        anc = bool_map[opts["anc"].lower()]
+
+    if not write_mode(sock, slot, new_name, cnc=cnc, spatial=spatial,
+                      wind_block=wind, anc_toggle=anc, prompt_b1=pb1, prompt_b2=pb2):
+        print("Failed to write profile", file=sys.stderr)
+        sys.exit(1)
+
+    action = "Updated" if existing else f"Created (slot {slot})"
+    if new_name != lookup_name and existing:
+        action = f"Renamed {lookup_name} ->"
+    print(f"{action}: {new_name}  cnc={cnc} spatial={SPATIAL_NAMES.get(spatial, spatial)} "
+          f"wind={'on' if wind else 'off'} anc={'on' if anc else 'off'}")
+
+
+def cmd_profile_rm(sock, name):
+    """Delete a custom profile by resetting its slot to empty."""
+    modes = get_all_modes(sock)
+    existing = find_mode_by_name(modes, name)
+    if not existing:
+        print(f"Profile '{name}' not found", file=sys.stderr)
+        sys.exit(1)
+
+    slot, raw, config = existing
+    if raw[3] != 1:
+        print(f"Cannot delete preset mode '{name}'", file=sys.stderr)
+        sys.exit(1)
+
+    if not write_mode(sock, slot, "None", cnc=0, spatial=0, wind_block=0, anc_toggle=0):
+        print("Failed to reset profile", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Deleted: {name} (slot {slot})")
+
+
+def cmd_switch(sock, name):
+    """Switch to a mode by name (works for both presets and custom profiles)."""
+    # Check preset modes first
+    name_lower = name.lower()
+    if name_lower in MODES:
+        cmd_mode(sock, name_lower)
+        return
+
+    # Look up custom profiles
+    modes = get_all_modes(sock)
+    existing = find_mode_by_name(modes, name)
+    if not existing:
+        print(f"Unknown mode or profile: {name}", file=sys.stderr)
+        print("Presets: " + ", ".join(MODES.keys()), file=sys.stderr)
+        custom = [c.get("name") for _, (r, c) in modes.items()
+                  if r[3] == 1 and r[4] == 1 and c.get("name", "").lower() not in ("none", "")]
+        if custom:
+            print("Profiles: " + ", ".join(custom), file=sys.stderr)
+        sys.exit(1)
+
+    idx = existing[0]
+    resp = send_recv(sock, bmap_packet(31, 3, OP_START, bytes([idx, 0])))
+    parsed = parse_response(resp)
+    if parsed and parsed[2] == OP_RESULT:
+        print(f"OK: {name}")
+    else:
+        print(f"Failed to switch to {name}", file=sys.stderr)
+
+
+def cmd_name(sock, args):
+    """Get or set device name."""
+    if args:
+        name = " ".join(args).encode("utf-8")
+        send_recv(sock, bmap_packet(1, 2, OP_SETGET, name))
+
+    resp = send_recv(sock, bmap_packet(1, 2, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        name = parsed[3][1:].decode("utf-8", errors="replace")
+        print(name)
+
+
+SIDETONE_MODES = {"off": 0, "high": 1, "medium": 2, "med": 2, "low": 3}
+SIDETONE_NAMES = {0: "off", 1: "high", 2: "medium", 3: "low"}
+
+
+def cmd_sidetone(sock, args):
+    """Get or set sidetone level (off/low/medium/high)."""
+    if args:
+        mode = args[0].lower()
+        if mode not in SIDETONE_MODES:
+            print(f"Unknown sidetone mode. Use: off, low, medium, high", file=sys.stderr)
+            sys.exit(1)
+        send_recv(sock, bmap_packet(1, 11, OP_SETGET, bytes([1, SIDETONE_MODES[mode]])))
+
+    resp = send_recv(sock, bmap_packet(1, 11, OP_GET))
+    parsed = parse_response(resp)
+    if parsed and len(parsed[3]) >= 2:
+        print(SIDETONE_NAMES.get(parsed[3][1], f"unknown({parsed[3][1]})"))
+
+
+def cmd_toggle(sock, func, label, args):
+    """Generic on/off toggle for single-byte boolean settings."""
+    if args:
+        val = args[0].lower()
+        if val in ("on", "1", "true", "yes"):
+            send_recv(sock, bmap_packet(1, func, OP_SETGET, bytes([1])))
+        elif val in ("off", "0", "false", "no"):
+            send_recv(sock, bmap_packet(1, func, OP_SETGET, bytes([0])))
+        else:
+            print(f"Usage: bose {label} [on|off]", file=sys.stderr)
+            sys.exit(1)
+
+    resp = send_recv(sock, bmap_packet(1, func, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        # Multipoint [1.10] has a bitfield: bit1=enabled
+        if func == 10:
+            val = bool(parsed[3][0] & 0x02)
+        else:
+            val = bool(parsed[3][0])
+        print(f"{'on' if val else 'off'}")
+
+
+BUTTON_IDS = {0: "DistalCnc", 1: "Reserved", 2: "Vpa", 3: "RightShortcut",
+              4: "LeftShortcut", 128: "Shortcut"}
+BUTTON_EVENTS = {0: "reserved", 1: "rising_edge", 2: "falling_edge", 3: "short_press",
+    4: "single_press", 5: "press_and_hold", 6: "double_press", 7: "double_press_hold",
+    8: "triple_press", 9: "long_press", 10: "very_long_press",
+    11: "very_very_long_press", 12: "very_very_very_long_press"}
+ACTION_MODES = {0: "NotConfigured", 1: "VPA", 2: "ANC", 3: "BatteryLevel",
+    4: "PlayPause", 5: "IncreaseCNC", 6: "DecreaseCNC", 7: "ToggleWakeWord",
+    8: "SwitchDevice", 9: "ConversationMode", 10: "TrackForward", 11: "TrackBack",
+    12: "FetchNotifications", 13: "WindMode", 14: "Disabled", 15: "ClientInteraction",
+    16: "SpotifyGo", 17: "ModesCarousel", 19: "SpatialAudioMode",
+    20: "LineInSwitch", 21: "Linking"}
+
+
+def cmd_buttons(sock):
+    """Show button configuration."""
+    resp = send_recv(sock, bmap_packet(1, 9, OP_GET))
+    parsed = parse_response(resp)
+    if not parsed or len(parsed[3]) < 3:
+        print("Could not read button config")
+        return
+    p = parsed[3]
+    bid = p[0]
+    evt = p[1]
+    mode = p[2]
+    print(f"Button:     {BUTTON_IDS.get(bid, f'0x{bid:02x}')} (0x{bid:02x})")
+    print(f"Event:      {BUTTON_EVENTS.get(evt, evt)}")
+    print(f"Action:     {ACTION_MODES.get(mode, mode)}")
+    if len(p) > 3:
+        supported = []
+        for byte_idx, b in enumerate(p[3:7] if len(p) >= 7 else p[3:]):
+            for bit in range(8):
+                mode_id = byte_idx * 8 + bit
+                if b & (1 << bit) and mode_id > 0:
+                    supported.append(ACTION_MODES.get(mode_id, f"unknown({mode_id})"))
+        print(f"Supported:  {', '.join(supported)}")
+    print(f"Raw:        {p.hex()}")
+
+
+VOICE_LANGUAGES = {
+    0: "UK English", 1: "US English", 2: "French", 3: "Italian", 4: "German",
+    5: "EU Spanish", 6: "MX Spanish", 7: "BR Portuguese", 8: "Mandarin",
+    9: "Korean", 10: "Russian", 11: "Polish", 12: "Hebrew", 13: "Turkish",
+    14: "Dutch", 15: "Japanese", 16: "Cantonese", 17: "Arabic", 18: "Swedish",
+    19: "Danish", 20: "Norwegian", 21: "Finnish", 22: "Hindi",
+}
+
+
+def cmd_prompts(sock, args):
+    """Get or set voice prompt config."""
+    if args:
+        val = args[0].lower()
+        # Read current to preserve language
+        resp = send_recv(sock, bmap_packet(1, 3, OP_GET))
+        parsed = parse_response(resp)
+        cur = parsed[3] if parsed else bytes(7)
+        lang = cur[0] & 0x1F
+
+        if val in ("on", "1"):
+            byte0 = (1 << 5) | lang
+        elif val in ("off", "0"):
+            byte0 = lang
+        else:
+            print(f"Usage: bose prompts [on|off]", file=sys.stderr)
+            sys.exit(1)
+        send_recv(sock, bmap_packet(1, 3, OP_SETGET, bytes([byte0])))
+
+    resp = send_recv(sock, bmap_packet(1, 3, OP_GET))
+    parsed = parse_response(resp)
+    if parsed:
+        p = parsed[3]
+        enabled = bool((p[0] >> 5) & 1)
+        lang = p[0] & 0x1F
+        lang_name = VOICE_LANGUAGES.get(lang, f"lang{lang}")
+        print(f"{'on' if enabled else 'off'} ({lang_name})")
+
+
+def cmd_pair(sock):
+    """Enter pairing mode."""
+    resp = send_recv(sock, bmap_packet(4, 8, OP_START, bytes([0x01])))
+    parsed = parse_response(resp)
+    if parsed:
+        print(fmt_response(*parsed))
+        if parsed[2] == OP_RESULT:
+            print("Pairing mode enabled")
+        elif parsed[2] == OP_ERROR:
+            print("Failed to enter pairing mode")
+
+
+def cmd_off(sock):
+    """Power off headphones."""
+    resp = send_recv(sock, bmap_packet(7, 4, OP_START, bytes([0x00])))
+    parsed = parse_response(resp)
+    if parsed:
+        print(fmt_response(*parsed))
+
+
+def cmd_raw(sock, hex_str):
+    """Send raw hex bytes and show response."""
+    data = bytes.fromhex(hex_str.replace(" ", ""))
+    print(f"TX: {data.hex()}")
+    resp = send_recv(sock, data, drain=True)
+    responses = parse_all_responses(resp)
+    for r in responses:
+        print(f"RX: {fmt_response(*r)}")
 
 
 def usage():
@@ -79,10 +897,37 @@ def usage():
     for name, (_, desc) in MODES.items():
         print(f"  {name:12s} {desc}")
     print()
+    print("Profiles:")
+    print(f"  {'profiles':26s} List all audio profiles")
+    print(f"  {'profile set NAME [opts]':26s} Create/update a custom profile")
+    print(f"  {'profile rm NAME':26s} Delete a custom profile")
+    print(f"  {'switch NAME':26s} Switch to any profile by name")
+    print(f"  {'':26s}   Options: cnc=N spatial=off|room|head")
+    print(f"  {'':26s}            wind=on|off anc=on|off")
+    print()
+    print("Settings:")
+    print(f"  {'cnc <0-10>':26s} Set noise cancellation level")
+    print(f"  {'eq B M T':26s} Set EQ (-10 to +10), or 'eq flat'")
+    print(f"  {'spatial MODE':26s} Spatial audio: off, room, head")
+    print(f"  {'name [TEXT]':26s} Get/set device name")
+    print(f"  {'sidetone MODE':26s} Sidetone: off, low, medium, high")
+    print(f"  {'multipoint on|off':26s} Toggle multipoint connection")
+    print(f"  {'autopause on|off':26s} Toggle auto play/pause on remove")
+    print(f"  {'autoanswer on|off':26s} Toggle auto-answer calls")
+    print(f"  {'prompts on|off':26s} Toggle voice prompts")
+    print()
+    print("Control:")
+    print(f"  {'pair':18s} Enter Bluetooth pairing mode")
+    print(f"  {'off':18s} Power off headphones")
+    print()
     print("Info:")
-    print(f"  {'status':12s} Show battery, mode, firmware, name")
-    print(f"  {'battery':12s} Battery percentage (just the number)")
-    print(f"  {'current':12s} Current mode name (just the word)")
+    print(f"  {'status':18s} Show all settings")
+    print(f"  {'battery':18s} Battery percentage (just the number)")
+    print(f"  {'current':18s} Current mode name (just the word)")
+    print(f"  {'buttons':18s} Show button mapping")
+    print()
+    print("Debug:")
+    print(f"  {'raw <hex>':18s} Send raw BMAP packet (hex bytes)")
     sys.exit(1)
 
 
@@ -110,9 +955,69 @@ def main():
             cmd_battery(sock)
         elif cmd == "current":
             cmd_current(sock)
+        elif cmd == "profiles":
+            cmd_profiles(sock)
+        elif cmd == "profile":
+            if len(sys.argv) < 3:
+                cmd_profiles(sock)
+            elif sys.argv[2].lower() in ("set", "create", "add"):
+                cmd_profile_set(sock, sys.argv[3:])
+            elif sys.argv[2].lower() in ("rm", "delete", "del"):
+                if len(sys.argv) < 4:
+                    print("Usage: bose profile rm <name>", file=sys.stderr)
+                    sys.exit(1)
+                cmd_profile_rm(sock, sys.argv[3])
+            else:
+                # "bose profile <name> [opts]" as shorthand for "bose profile set <name> [opts]"
+                cmd_profile_set(sock, sys.argv[2:])
+        elif cmd == "switch":
+            if len(sys.argv) < 3:
+                print("Usage: bose switch <name>", file=sys.stderr)
+                sys.exit(1)
+            cmd_switch(sock, sys.argv[2])
+        elif cmd == "dump":
+            cmd_dump(sock)
+        elif cmd == "modeconfig":
+            idx = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+            cmd_modeconfig(sock, idx)
+        elif cmd == "cnc":
+            if len(sys.argv) < 3:
+                print("Usage: bose cnc <0-10>", file=sys.stderr)
+                sys.exit(1)
+            cmd_cnc(sock, sys.argv[2])
+        elif cmd == "eq":
+            cmd_eq(sock, sys.argv[2:])
+        elif cmd == "name":
+            cmd_name(sock, sys.argv[2:])
+        elif cmd == "sidetone":
+            cmd_sidetone(sock, sys.argv[2:])
+        elif cmd == "multipoint":
+            cmd_toggle(sock, 10, "multipoint", sys.argv[2:])
+        elif cmd == "autopause":
+            cmd_toggle(sock, 24, "autopause", sys.argv[2:])
+        elif cmd == "autoanswer":
+            cmd_toggle(sock, 27, "autoanswer", sys.argv[2:])
+        elif cmd == "prompts":
+            cmd_prompts(sock, sys.argv[2:])
+        elif cmd == "spatial":
+            if len(sys.argv) < 3:
+                print("Usage: bose spatial <off|room|head>", file=sys.stderr)
+                sys.exit(1)
+            cmd_spatial(sock, sys.argv[2].lower())
+        elif cmd == "buttons":
+            cmd_buttons(sock)
+        elif cmd == "pair":
+            cmd_pair(sock)
+        elif cmd == "off":
+            cmd_off(sock)
+        elif cmd == "raw":
+            if len(sys.argv) < 3:
+                print("Usage: bose raw <hex>", file=sys.stderr)
+                sys.exit(1)
+            cmd_raw(sock, " ".join(sys.argv[2:]))
         else:
-            print(f"Unknown command: {cmd}", file=sys.stderr)
-            usage()
+            # Try as a custom profile name
+            cmd_switch(sock, sys.argv[1])
     finally:
         sock.close()
 
