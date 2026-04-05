@@ -1,32 +1,82 @@
 #!/usr/bin/env python3
-"""Control Bose QC Ultra 2 headphones over Bluetooth."""
+"""Control Bose QC Ultra 2 headphones over Bluetooth.
+
+Communicates via the BMAP (Bose Messaging and Protocol) protocol over
+Bluetooth SPP/RFCOMM channel 2. No Bose app, account, or cloud required.
+
+BMAP packet format:
+    [fblock_id, function_id, flags, payload_length, ...payload]
+    flags = (device_id << 6) | (port_num << 4) | (operator & 0x0F)
+
+The protocol is organized into function blocks (groups of features) and
+operators (what to do). Key blocks:
+    Block 0:  ProductInfo  — firmware, serial, MAC, product name
+    Block 1:  Settings     — EQ, CNC, buttons, sidetone, multipoint, name
+    Block 2:  Status       — battery level
+    Block 4:  DeviceMgmt   — pairing, connected devices
+    Block 5:  AudioMgmt    — audio routing, codec info
+    Block 7:  Control      — power on/off
+    Block 18: Auth         — ECDH cloud authentication (not needed for SETGET)
+    Block 31: AudioModes   — mode switching, per-mode config (CNC, spatial, etc.)
+
+Auth bypass: Bose gates SET (op 0) and START (op 5) behind cloud-mediated
+ECDH authentication on most blocks, but SETGET (op 2) is unauthenticated.
+START on block 31 (AudioModes) is also unauthenticated. This gives us full
+read/write access to nearly every setting.
+
+Tested against Bose QC Ultra 2 HP (codename "wolverine", Qualcomm QCC-384)
+running firmware 8.2.20. The BMAP protocol is shared across Bose's Bluetooth
+product line, so other models likely use similar function blocks — but specific
+function IDs and payload formats may differ.
+
+Written in Python for quick prototyping with the standard library's built-in
+Bluetooth socket support (AF_BLUETOOTH). No external dependencies. A more
+polished implementation could use C, Rust, or Go with direct RFCOMM access.
+
+See NOTES.md for complete protocol documentation.
+"""
 
 import socket
 import struct
 import sys
 import time
 
+# ── Configuration ─────────────────────────────────────────────────────────────
+# Set this to your headphones' Bluetooth MAC address.
 BOSE_MAC = "68:F2:1F:XX:XX:XX"
-CHANNEL = 2
+CHANNEL = 2  # BMAP protocol is always on RFCOMM channel 2
 
-# Operators
-OP_SET = 0
-OP_GET = 1
-OP_SETGET = 2
-OP_STATUS = 3
-OP_ERROR = 4
-OP_START = 5
-OP_RESULT = 6
-OP_PROCESSING = 7
+# ── BMAP Operators ────────────────────────────────────────────────────────────
+# Each BMAP packet carries an operator that says what to do.
+# SET (0) and START (5) require cloud auth; SETGET (2) and GET (1) do not.
+OP_SET = 0         # Write a value (auth required)
+OP_GET = 1         # Read a value (no auth)
+OP_SETGET = 2      # Write + read back (no auth — this is the bypass)
+OP_STATUS = 3      # Unsolicited state notification from headphones
+OP_ERROR = 4       # Error response
+OP_START = 5       # Trigger an action (no auth on block 31)
+OP_RESULT = 6      # Action completed successfully
+OP_PROCESSING = 7  # Async operation in progress
 
 OP_NAMES = {0: "SET", 1: "GET", 2: "SETGET", 3: "STATUS", 4: "ERROR",
              5: "START", 6: "RESULT", 7: "PROCESSING"}
 
+# BMAP error codes returned in ERROR (op 4) responses.
+# Error 5 (OpNotSupp) means authentication is required.
+# Error 8 (Runtime) means the payload format is wrong or the operation
+# can't be performed on this target (e.g., writing to a preset mode).
 ERROR_NAMES = {0: "Unknown", 1: "Length", 2: "Chksum", 3: "FblockNotSupp",
                4: "FuncNotSupp", 5: "OpNotSupp(auth)", 6: "InvalidData",
                7: "DataUnavail", 8: "Runtime", 9: "Timeout", 10: "InvalidState",
                20: "InsecureTransport"}
 
+# ── Audio Modes ───────────────────────────────────────────────────────────────
+# The headphones have 11 mode slots (indices 0-10).
+# Modes 0-3 are firmware presets (locked, cannot be modified).
+# Mode 4+ are user-editable — the Bose app creates "Home" at slot 4.
+# Slots 5-10 are empty by default and can be freely configured.
+# To change settings like CNC or spatial audio, we write to an editable slot
+# via ModeConfig SETGET [31.6], then switch to it via CurrentMode START [31.3].
 MODES = {
     "quiet": (0, "Quiet — full ANC"),
     "aware": (1, "Aware — transparency"),
@@ -37,7 +87,9 @@ MODES = {
 
 MODE_BY_IDX = {i: n for n, (i, _) in MODES.items()}
 
-# Voice prompts: (byte1, byte2) -> name
+# ── Voice Prompts ─────────────────────────────────────────────────────────────
+# Each mode has a 2-byte voice prompt identifier that determines what the
+# headphones say when switching to that mode. (byte1, byte2) -> name.
 PROMPTS = {
     (0, 0): "NONE", (0, 1): "QUIET", (0, 2): "AWARE", (0, 3): "TRANSPARENT",
     (0, 4): "TRANSPARENCY", (0, 5): "MASKING", (0, 6): "COMFORT",
@@ -57,26 +109,57 @@ PROMPT_BY_NAME = {v.lower(): k for k, v in PROMPTS.items()}
 SPATIAL_NAMES = {0: "off", 1: "room", 2: "head"}
 
 
+# ── Transport ─────────────────────────────────────────────────────────────────
+
 def connect():
+    """Open a Bluetooth RFCOMM connection to the headphones.
+
+    Uses Python's built-in socket module with AF_BLUETOOTH — no external
+    Bluetooth libraries needed. The headphones must already be paired via
+    bluetoothctl or similar. Only one RFCOMM connection can be active at a
+    time; the Bose app must be disconnected/uninstalled to avoid conflicts.
+    """
     sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
     sock.settimeout(3)
     sock.connect((BOSE_MAC, CHANNEL))
     return sock
 
 
+# ── BMAP Protocol ─────────────────────────────────────────────────────────────
+
 def bmap_packet(fblock, func, operator, payload=b""):
-    """Build a BMAP packet: [fblock, func, flags, length, ...payload]"""
-    flags = operator & 0x0F  # device_id=0, port_num=0
+    """Build a 4-byte BMAP header + payload.
+
+    Packet layout: [fblock_id, function_id, flags, payload_length, ...payload]
+    The flags byte encodes device_id (bits 7-6), port_num (bits 5-4), and
+    operator (bits 3-0). We always use device_id=0, port_num=0.
+
+    Example: bmap_packet(31, 3, OP_START, bytes([0, 0]))
+      → [0x1f, 0x03, 0x05, 0x02, 0x00, 0x00]
+      → AudioModes.CurrentMode START with payload [mode=0, prompt=0]
+    """
+    flags = operator & 0x0F
     return bytes([fblock, func, flags, len(payload)]) + payload
 
 
 def send_recv(sock, packet, drain=False):
-    """Send packet and receive response. If drain, read all available data."""
+    """Send a BMAP packet and receive the response.
+
+    Args:
+        sock: Connected Bluetooth socket.
+        packet: Raw bytes to send (from bmap_packet()).
+        drain: If True, keep reading until the socket times out. Needed for
+               commands like GetAll [31.1] that return multiple STATUS messages
+               asynchronously after an initial PROCESSING response.
+
+    Returns:
+        Raw response bytes. May contain multiple concatenated BMAP packets
+        if drain=True — use parse_all_responses() to split them.
+    """
     sock.send(packet)
     time.sleep(0.2)
     data = sock.recv(4096)
     if drain:
-        # Collect any additional async responses
         sock.settimeout(0.5)
         try:
             while True:
@@ -91,27 +174,37 @@ def send_recv(sock, packet, drain=False):
 
 
 def parse_response(data):
-    """Parse a BMAP response into (fblock, func, operator, payload)."""
+    """Parse a single BMAP response into (fblock, func, operator, payload).
+
+    Returns None if the data is too short to contain a valid packet.
+    The operator field tells you what kind of response this is:
+        STATUS (3) = successful read/notification
+        ERROR (4)  = something went wrong (check payload[0] for error code)
+        RESULT (6) = action completed (e.g., mode switch)
+    """
     if len(data) < 4:
         return None
     fblock = data[0]
     func = data[1]
-    flags = data[2]
-    op = flags & 0x0F
+    op = data[2] & 0x0F
     length = data[3]
     payload = data[4:4+length]
     return fblock, func, op, payload
 
 
 def parse_all_responses(data):
-    """Parse concatenated BMAP responses."""
+    """Parse concatenated BMAP responses into a list of (fblock, func, op, payload).
+
+    When drain=True is used with send_recv(), the headphones may send back
+    multiple packets (e.g., GetAll returns one STATUS per mode). This splits
+    them using each packet's length field.
+    """
     responses = []
     pos = 0
     while pos < len(data) - 3:
         fblock = data[pos]
         func = data[pos + 1]
-        flags = data[pos + 2]
-        op = flags & 0x0F
+        op = data[pos + 2] & 0x0F
         length = data[pos + 3]
         payload = data[pos + 4:pos + 4 + length]
         responses.append((fblock, func, op, payload))
@@ -120,7 +213,10 @@ def parse_all_responses(data):
 
 
 def fmt_response(fblock, func, op, payload):
-    """Format a response for display."""
+    """Format a parsed BMAP response as a human-readable string.
+
+    Example: "[31.3] RESULT: 00" or "[1.5] ERROR: OpNotSupp(auth) (05)"
+    """
     op_name = OP_NAMES.get(op, f"op{op}")
     if op == OP_ERROR and payload:
         err_name = ERROR_NAMES.get(payload[0], f"err{payload[0]}")
@@ -128,8 +224,14 @@ def fmt_response(fblock, func, op, payload):
     return f"[{fblock}.{func}] {op_name}: {payload.hex()}"
 
 
+# ── Mode Config Encoding ─────────────────────────────────────────────────────
+
 def encode_mode_name(name):
-    """Encode mode name as 32-byte null-padded array (matching APK logic)."""
+    """Encode a mode name as a 32-byte null-terminated, null-padded array.
+
+    The firmware stores mode names as fixed 32-byte fields. Names longer
+    than 31 bytes are truncated. The result is always exactly 32 bytes.
+    """
     name_bytes = name.encode("utf-8")
     buf = bytearray(32)
     end = min(len(name_bytes), 31)
@@ -140,7 +242,24 @@ def encode_mode_name(name):
 
 def build_modeconfig_payload(mode_idx, prompt_b1, prompt_b2, name, cnc_level,
                               auto_cnc, spatial=0, wind_block=0, anc_toggle=0):
-    """Build ModeConfig SETGET payload matching APK createAudioModesConfigSetGetPayload."""
+    """Build a 40-byte ModeConfig SETGET payload for writing to [31.6].
+
+    This is the packet the headphones expect when configuring a mode slot.
+    Only works on editable slots (index 4-10, where flags[3]=0x01).
+    Preset modes (0-3) will return Runtime error 8.
+
+    Layout:
+        [0]     mode_idx       — slot index (4-10 for editable)
+        [1:3]   prompt         — voice prompt ID (byte1, byte2)
+        [3:35]  name           — 32-byte null-padded UTF-8 mode name
+        [35]    cnc_level      — noise cancellation 0-10
+        [36]    auto_cnc       — auto CNC adjustment (0 or 1)
+        [37]    spatial        — spatial audio: 0=off, 1=room, 2=head
+        [38]    wind_block     — wind noise reduction (0 or 1)
+        [39]    anc_toggle     — ANC toggle enable (0 or 1)
+
+    Send via: bmap_packet(31, 6, OP_SETGET, payload)
+    """
     payload = bytearray()
     payload.append(mode_idx)
     payload.append(prompt_b1)
@@ -225,6 +344,14 @@ def parse_modeconfig(payload):
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_mode(sock, mode_name):
+    """Switch to a preset audio mode by name.
+
+    Sends CurrentMode START [31.3] with [mode_index, voice_prompt].
+    The second byte controls whether the headphones play a voice prompt
+    (0=silent, 1=speak the mode name).
+
+    This uses the unauthenticated START operator on block 31.
+    """
     idx, desc = MODES[mode_name]
     resp = send_recv(sock, bmap_packet(31, 3, OP_START, bytes([idx, 0])))
     parsed = parse_response(resp)
@@ -237,6 +364,20 @@ def cmd_mode(sock, mode_name):
 
 
 def cmd_status(sock):
+    """Show all current headphone settings.
+
+    Reads from multiple function blocks:
+        [2.2]  Battery level (percentage)
+        [31.3] Current audio mode
+        [1.5]  CNC level (noise cancellation, 0-10)
+        [1.7]  EQ (3-band: bass/mid/treble, -10 to +10)
+        [1.2]  Device name (first byte is a flag, name starts at byte 1)
+        [0.5]  Firmware version
+        [1.11] Sidetone level
+        [1.10] Multipoint toggle (bit 1 of response byte)
+        [1.24] Auto play/pause toggle
+        [1.3]  Voice prompts (bit 5 = enabled, bits 4-0 = language ID)
+    """
     # Battery
     resp = send_recv(sock, bmap_packet(2, 2, OP_GET))
     print(f"Battery:    {resp[4]}%")
@@ -307,11 +448,13 @@ def cmd_status(sock):
 
 
 def cmd_battery(sock):
+    """Print battery percentage as a bare number. Reads [2.2] BatteryLevel."""
     resp = send_recv(sock, bmap_packet(2, 2, OP_GET))
     print(resp[4])
 
 
 def cmd_current(sock):
+    """Print current mode name as a bare word. Reads [31.3] CurrentMode."""
     resp = send_recv(sock, bmap_packet(31, 3, OP_GET))
     mode_idx = resp[4]
     if mode_idx in MODE_BY_IDX:
@@ -326,7 +469,14 @@ def cmd_current(sock):
 
 
 def get_all_modes(sock):
-    """Read all mode configs via GetAll. Returns dict of idx -> (raw_payload, parsed_config)."""
+    """Read all mode configs by triggering AudioModes GetAll [31.1] START.
+
+    Sends START on [31.1], which causes the headphones to reply with a
+    PROCESSING acknowledgment followed by STATUS messages for every function
+    in block 31 — including one ModeConfig [31.6] STATUS per mode slot.
+
+    Returns: dict of mode_index -> (raw_payload_bytes, parsed_config_dict)
+    """
     data = send_recv(sock, bmap_packet(31, 1, OP_START), drain=True)
     responses = parse_all_responses(data)
     modes = {}
@@ -347,7 +497,10 @@ def find_mode_by_name(modes, name):
 
 
 def find_free_slot(modes):
-    """Find the first unconfigured editable slot. Returns index or None."""
+    """Find the first unconfigured editable slot (5-10). Returns index or None.
+
+    An empty slot has flags[4] (configured) = 0 and name "None" or empty.
+    """
     for idx in range(5, 11):
         if idx in modes:
             raw, config = modes[idx]
@@ -357,7 +510,14 @@ def find_free_slot(modes):
 
 
 def write_mode(sock, mode_idx, name, cnc=0, spatial=0, wind_block=1, anc_toggle=1, prompt_b1=0, prompt_b2=0):
-    """Write a mode config to an editable slot via SETGET. Returns True on success."""
+    """Write a mode config to an editable slot via ModeConfig SETGET [31.6].
+
+    Builds a 40-byte payload and sends it as SETGET. The headphones reply
+    with a STATUS containing the full 48-byte config if successful, or an
+    ERROR if the slot is not editable (Runtime error 8 for preset modes).
+
+    Returns True if the headphones acknowledged with a STATUS response.
+    """
     payload = build_modeconfig_payload(
         mode_idx=mode_idx, prompt_b1=prompt_b1, prompt_b2=prompt_b2,
         name=name, cnc_level=cnc, auto_cnc=False,
@@ -444,7 +604,15 @@ def ensure_editable_profile(sock, modes):
 
 
 def cmd_cnc(sock, level):
-    """Set CNC level on current profile (or create a custom one)."""
+    """Set noise cancellation level (0-10) on the current profile.
+
+    If already on an editable profile, modifies it in place. If on a preset
+    mode (Quiet/Aware/etc.), finds or creates a "Custom" profile slot,
+    writes the CNC level, and switches to it.
+
+    CNC 0 = minimum cancellation, 10 = maximum cancellation.
+    Uses ModeConfig SETGET [31.6] (no auth) + CurrentMode START [31.3].
+    """
     level = int(level)
     if not 0 <= level <= 10:
         print("CNC level must be 0-10", file=sys.stderr)
@@ -480,7 +648,15 @@ def cmd_cnc(sock, level):
 
 
 def cmd_eq(sock, args):
-    """Set equalizer levels. Usage: eq [bass] [mid] [treble] or eq flat"""
+    """Set 3-band equalizer via Settings RangeControl SETGET [1.7].
+
+    Each band is -10 to +10. Payload is 2 bytes: [signed_value, band_id]
+    where band 0=bass, 1=mid, 2=treble. The response includes all 3 bands
+    as 4-byte groups: [min, max, current_level, band_id].
+
+    'eq flat' resets all bands to 0.
+    'eq' with no args shows current levels.
+    """
     if not args or args[0] == "flat":
         values = [0, 0, 0]
     elif len(args) == 1 and args[0] == "get":
@@ -517,7 +693,11 @@ def cmd_eq(sock, args):
 
 
 def cmd_spatial(sock, setting):
-    """Set spatial audio mode on current profile (or create a custom one)."""
+    """Set spatial audio mode on current profile (or create a custom one).
+
+    Spatial modes: off (stereo), room (fixed soundstage), head (head tracking).
+    Uses ModeConfig SETGET [31.6] on the current editable profile.
+    """
     spatial_map = {"off": 0, "room": 1, "head": 2}
     if setting not in spatial_map:
         print(f"Unknown spatial mode: {setting}. Use: off, room, head", file=sys.stderr)
@@ -729,7 +909,12 @@ def cmd_switch(sock, name):
 
 
 def cmd_name(sock, args):
-    """Get or set device name."""
+    """Get or set device Bluetooth name via Settings ProductName SETGET [1.2].
+
+    The GET response has a leading flag byte (0x00) before the UTF-8 name.
+    The SETGET payload is just the raw UTF-8 string (no flag byte).
+    Accepts any UTF-8 string — not limited to the Bose app's preset list.
+    """
     if args:
         name = " ".join(args).encode("utf-8")
         send_recv(sock, bmap_packet(1, 2, OP_SETGET, name))
@@ -746,7 +931,13 @@ SIDETONE_NAMES = {0: "off", 1: "high", 2: "medium", 3: "low"}
 
 
 def cmd_sidetone(sock, args):
-    """Get or set sidetone level (off/low/medium/high)."""
+    """Get or set sidetone level via Settings Sidetone SETGET [1.11].
+
+    Sidetone controls how much of your own voice you hear through the
+    headphones during calls. Payload: [persist_flag, mode] where mode
+    is 0=off, 1=high, 2=medium, 3=low. The persist flag (byte 0) is
+    set to 1 to save across power cycles.
+    """
     if args:
         mode = args[0].lower()
         if mode not in SIDETONE_MODES:
@@ -761,7 +952,13 @@ def cmd_sidetone(sock, args):
 
 
 def cmd_toggle(sock, func, label, args):
-    """Generic on/off toggle for single-byte boolean settings."""
+    """Generic on/off toggle for single-byte boolean Settings SETGET.
+
+    Used for multipoint [1.10], auto-play/pause [1.24], and auto-answer [1.27].
+    Payload: single byte, 0=off, 1=on.
+    Note: multipoint [1.10] encodes enabled as bit 1 (0x02) in the response,
+    not bit 0, because the byte is a capability bitmask.
+    """
     if args:
         val = args[0].lower()
         if val in ("on", "1", "true", "yes"):
@@ -832,7 +1029,13 @@ VOICE_LANGUAGES = {
 
 
 def cmd_prompts(sock, args):
-    """Get or set voice prompt config."""
+    """Toggle voice prompts via Settings VoicePrompts SETGET [1.3].
+
+    The first byte of the payload/response is a bitfield:
+        bit 5:   enabled (1=on, 0=off)
+        bits 4-0: language ID (see VOICE_LANGUAGES)
+    When toggling, we preserve the current language setting.
+    """
     if args:
         val = args[0].lower()
         # Read current to preserve language
@@ -861,7 +1064,10 @@ def cmd_prompts(sock, args):
 
 
 def cmd_pair(sock):
-    """Enter pairing mode."""
+    """Enter Bluetooth pairing mode via DeviceManagement PairingMode START [4.8].
+
+    Payload: 0x01 to enable, 0x00 to disable.
+    """
     resp = send_recv(sock, bmap_packet(4, 8, OP_START, bytes([0x01])))
     parsed = parse_response(resp)
     if parsed:
@@ -873,7 +1079,10 @@ def cmd_pair(sock):
 
 
 def cmd_off(sock):
-    """Power off headphones."""
+    """Power off headphones via Control Power START [7.4].
+
+    Payload: 0x00 = power off, 0x01 = power on.
+    """
     resp = send_recv(sock, bmap_packet(7, 4, OP_START, bytes([0x00])))
     parsed = parse_response(resp)
     if parsed:
@@ -881,7 +1090,12 @@ def cmd_off(sock):
 
 
 def cmd_raw(sock, hex_str):
-    """Send raw hex bytes and show response."""
+    """Send raw hex bytes as a BMAP packet and display all responses.
+
+    Useful for protocol exploration. The hex string is the complete packet
+    including the 4-byte header. Example: "1f 03 05 02 00 00" sends
+    AudioModes.CurrentMode START with payload [0, 0].
+    """
     data = bytes.fromhex(hex_str.replace(" ", ""))
     print(f"TX: {data.hex()}")
     resp = send_recv(sock, data, drain=True)
