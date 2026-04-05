@@ -80,7 +80,9 @@ CHANNEL = 2  # BMAP protocol is always on RFCOMM channel 2
 def find_bose_device():
     """Auto-detect a paired Bose headphone via bluetoothctl.
 
-    Searches paired Bluetooth devices for names containing "Bose".
+    Searches paired Bluetooth devices by checking the device class for
+    audio-headset (0x2c0404), and falls back to name matching for "Bose".
+    This works even if the user has renamed their headphones.
     Returns the MAC address string, or None if not found.
     """
     try:
@@ -89,10 +91,23 @@ def find_bose_device():
             capture_output=True, text=True, timeout=5
         )
         for line in result.stdout.strip().splitlines():
-            # Format: "Device XX:XX:XX:XX:XX:XX Name Here"
             parts = line.split(None, 2)
-            if len(parts) >= 3 and "bose" in parts[2].lower():
-                return parts[1]
+            if len(parts) < 2:
+                continue
+            mac = parts[1]
+            # Check device class — Bose headphones are class 0x2c0404 (audio-headset)
+            info = subprocess.run(
+                ["bluetoothctl", "info", mac],
+                capture_output=True, text=True, timeout=3
+            )
+            for info_line in info.stdout.splitlines():
+                info_line = info_line.strip()
+                if info_line.startswith("Icon: audio-headset"):
+                    # Verify it's actually a Bose by checking the MAC OUI or UUID
+                    if "00000000-deca-fade-deca-deafdecacaff" in info.stdout:
+                        return mac
+                if "bose" in info_line.lower():
+                    return mac
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return None
