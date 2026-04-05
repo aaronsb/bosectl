@@ -1,5 +1,7 @@
 # bosectl — Control Bose QC Ultra 2 from Linux
 
+![bosectl CLI](docs/media/screenshot.png)
+
 Control your Bose QC Ultra 2 headphones directly over Bluetooth — no Bose app,
 no Bose account, no cloud, no phone required.
 
