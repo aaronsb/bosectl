@@ -317,6 +317,48 @@ Confirmed SETGET works without auth:
 | 22 | Diagnostic/log stream (not BMAP, dumps data regardless of input) |
 | 24 | Silent (purpose unknown) |
 
+## USB Interface
+
+The headphones expose two USB HID interfaces when connected via USB-C:
+
+| Interface | Class | Device | Purpose |
+|-----------|-------|--------|---------|
+| 0 | Vendor HID | hidraw9 | BMAP control channel (bidirectional) |
+| 1 | Consumer HID | hidraw10 | Media keys (play/pause/volume) |
+| 2 | Audio Control | — | USB audio control |
+| 3 | Audio Streaming | — | USB audio data (mic, isochronous) |
+
+### USB HID Report IDs (Interface 0, Vendor Specific 0xFF00)
+
+| Report ID | Direction | Size | Likely Purpose |
+|-----------|-----------|------|----------------|
+| 0x09 | IN | 126 bytes | Small BMAP responses |
+| 0x0a | FEATURE | 62 bytes | Feature report (config?) |
+| 0x0c | OUT | 1022 bytes | BMAP commands (main) |
+| 0x0d | IN | 259 bytes | BMAP responses (main) |
+| 0x0e | OUT | 512 bytes | BMAP commands (alt) |
+| 0x0f | IN | 512 bytes | BMAP responses (alt) |
+| 0x10 | OUT | 675 bytes | BMAP commands (large) |
+| 0x11 | IN | 675 bytes | BMAP responses (large) |
+
+### USB Status
+
+Sending BMAP packets in report 0x0c gets a response on 0x0d, but always the
+same 3 bytes: `04 01 05`. This appears to be a "not initialized" error — the
+USB BMAP channel likely requires a handshake sequence before accepting commands.
+
+Over Bluetooth RFCOMM, BMAP is immediately active. Over USB HID, some
+initialization is needed. The Bose app probably sends a setup sequence when
+connecting over USB. Capturing USB traffic from the app would reveal this.
+
+### USB Device Info
+```
+Vendor:  0x05a7 (Bose Corporation)
+Product: 0x4082 (Bose QC Ultra 2 HP)
+Speed:   Full Speed (12 Mbps)
+Serial:  T5333020XXXXXXXXXXXXX
+```
+
 ## Function Block Map
 | Block | Name              | Functions found |
 |-------|-------------------|-----------------|
@@ -483,10 +525,12 @@ current_mode = resp[4]  # 0=Quiet, 1=Aware, 2=Immersion, etc.
 
 ## Future Work
 - ~~Crack ModeConfig SETGET payload format~~ **DONE** — full CNC/spatial/wind/ANC control
-- Crack the cloud auth to unlock SET/SETGET on Settings block (EQ, device name)
-- Try USB-C connection for different attack surface
+- ~~Crack Settings SETGET~~ **DONE** — EQ, name, sidetone, multipoint, all work
+- ~~Try USB-C connection~~ **PARTIALLY DONE** — USB HID interface found, needs init handshake
+- Crack USB BMAP initialization — capture USB traffic from app to find handshake sequence
 - Explore [31.9] AudioModes Reset — factory reset individual modes?
 - Explore [5.3] AudioManagement Control — play/pause/skip payload format
+- Implement button remapping [1.9] — payload format documented, untested
 - Build a system tray widget / PipeWire integration
 - Investigate firmware downgrade via bose-dfu over USB
 - Map the unknown bytes [40-41] in ModeConfig STATUS (mode-type specific config?)
