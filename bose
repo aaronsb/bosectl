@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Control Bose QC Ultra 2 headphones over Bluetooth."""
+
+import socket
+import sys
+import time
+
+BOSE_MAC = "68:F2:1F:XX:XX:XX"
+CHANNEL = 2
+
+MODES = {
+    "quiet": (0, "Quiet — full ANC"),
+    "aware": (1, "Aware — transparency"),
+    "immersion": (2, "Immersion — spatial audio, head tracking"),
+    "cinema": (3, "Cinema — spatial audio, fixed stage"),
+    "home": (4, "Home — custom profile"),
+}
+
+
+def connect():
+    sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+    sock.settimeout(3)
+    sock.connect((BOSE_MAC, CHANNEL))
+    return sock
+
+
+def send_recv(sock, packet):
+    sock.send(packet)
+    time.sleep(0.2)
+    return sock.recv(4096)
+
+
+def cmd_mode(sock, mode_name):
+    idx, desc = MODES[mode_name]
+    resp = send_recv(sock, bytes([31, 3, 0x05, 2, idx, 0]))
+    ok = (resp[2] & 0xF) == 6
+    print(f"{'OK' if ok else 'FAIL'}: {desc}")
+
+
+def cmd_status(sock):
+    # Battery
+    resp = send_recv(sock, bytes([2, 2, 0x01, 0x00]))
+    battery = resp[4]
+    print(f"Battery: {battery}%")
+
+    # Current mode
+    resp = send_recv(sock, bytes([31, 3, 0x01, 0x00]))
+    mode_idx = resp[4]
+    mode_name = next((n for n, (i, _) in MODES.items() if i == mode_idx), f"unknown({mode_idx})")
+    print(f"Mode:    {mode_name}")
+
+    # Firmware
+    resp = send_recv(sock, bytes([0, 5, 0x01, 0x00]))
+    fw = resp[4:4+resp[3]].decode("ascii", errors="replace")
+    print(f"FW:      {fw}")
+
+    # Device name
+    resp = send_recv(sock, bytes([1, 2, 0x01, 0x00]))
+    name = resp[5:4+resp[3]].decode("ascii", errors="replace")
+    print(f"Name:    {name}")
+
+
+def cmd_battery(sock):
+    resp = send_recv(sock, bytes([2, 2, 0x01, 0x00]))
+    print(resp[4])
+
+
+def cmd_current(sock):
+    resp = send_recv(sock, bytes([31, 3, 0x01, 0x00]))
+    mode_idx = resp[4]
+    mode_name = next((n for n, (i, _) in MODES.items() if i == mode_idx), f"unknown({mode_idx})")
+    print(mode_name)
+
+
+def usage():
+    print("Usage: bose <command>")
+    print()
+    print("Modes:")
+    for name, (_, desc) in MODES.items():
+        print(f"  {name:12s} {desc}")
+    print()
+    print("Info:")
+    print(f"  {'status':12s} Show battery, mode, firmware, name")
+    print(f"  {'battery':12s} Battery percentage (just the number)")
+    print(f"  {'current':12s} Current mode name (just the word)")
+    sys.exit(1)
+
+
+def main():
+    if len(sys.argv) < 2:
+        usage()
+
+    cmd = sys.argv[1].lower()
+
+    if cmd in ("help", "-h", "--help"):
+        usage()
+
+    try:
+        sock = connect()
+    except Exception as e:
+        print(f"Connection failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        if cmd in MODES:
+            cmd_mode(sock, cmd)
+        elif cmd == "status":
+            cmd_status(sock)
+        elif cmd == "battery":
+            cmd_battery(sock)
+        elif cmd == "current":
+            cmd_current(sock)
+        else:
+            print(f"Unknown command: {cmd}", file=sys.stderr)
+            usage()
+    finally:
+        sock.close()
+
+
+if __name__ == "__main__":
+    main()
