@@ -1,4 +1,4 @@
-# bose-qc-ultra — Control Bose QC Ultra 2 from Linux
+# bosectl — Control Bose QC Ultra 2 from Linux
 
 Control your Bose QC Ultra 2 headphones directly over Bluetooth — no Bose app,
 no Bose account, no cloud, no phone required.
@@ -10,7 +10,7 @@ more. Everything runs over a local Bluetooth RFCOMM connection to the headphones
 ## What you can do
 
 ```
-$ ./bose status
+$ ./bosectl status
 Battery:    70%
 Mode:       quiet
 CNC:        7/10
@@ -22,11 +22,11 @@ Multipoint: on
 AutoPause:  on
 Prompts:    off (US English)
 
-$ ./bose cnc 8          # Set noise cancellation level (0-10)
-$ ./bose eq 5 0 -3      # Set EQ: bass=+5, mid=0, treble=-3
-$ ./bose spatial head    # Spatial audio with head tracking
-$ ./bose quiet           # Switch to Quiet (full ANC) mode
-$ ./bose name "My Cans"  # Rename your headphones (any UTF-8 string)
+$ ./bosectl cnc 8          # Set noise cancellation level (0-10)
+$ ./bosectl eq 5 0 -3      # Set EQ: bass=+5, mid=0, treble=-3
+$ ./bosectl spatial head    # Spatial audio with head tracking
+$ ./bosectl quiet           # Switch to Quiet (full ANC) mode
+$ ./bosectl name "My Cans"  # Rename your headphones (any UTF-8 string)
 ```
 
 ### Full command list
@@ -75,7 +75,7 @@ $ ./bose name "My Cans"  # Rename your headphones (any UTF-8 string)
 3. Run:
    ```
    chmod +x bose
-   ./bose status
+   ./bosectl status
    ```
 
 No Bose app installation, Bose account, or internet connection needed.
@@ -194,7 +194,7 @@ may differ.
 
 | File | Description |
 |------|-------------|
-| `bose` | CLI tool for controlling headphones |
+| `bosectl` | CLI tool for controlling headphones |
 | `bmap-capture.py` | Interactive capture tool — snapshots all BMAP state before/after a setting change |
 | `captures/` | Raw capture data from setting toggle experiments |
 | `NOTES.md` | Full protocol documentation and reverse engineering notes |
