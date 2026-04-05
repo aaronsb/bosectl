@@ -8,7 +8,7 @@ import os
 import re
 import sys
 
-BOSE_MAC = "68:F2:1F:XX:XX:XX"
+BOSE_MAC = "XX:XX:XX:XX:XX:XX"  # Set to your headphones' BT MAC address
 CHANNEL = 2
 CAPTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captures")
 
