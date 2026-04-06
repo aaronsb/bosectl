@@ -365,6 +365,25 @@ class BmapConnection:
         """Power off the device."""
         self._start("power", bytes([0x00]))
 
+    def set_buttons(self, button_id, event, action):
+        """Remap a button action via SETGET [1.9].
+
+        Args:
+            button_id: Button ID (int or name like "Action", "Shortcut").
+            event: Event type (int or name like "single_press", "long_press").
+            action: Action mode (int or name like "VPA", "ANC", "Disabled").
+        """
+        feat = self._feature("buttons")
+        builder = feat.get("builder")
+        if not builder:
+            raise BmapError("Button remapping not supported on this device")
+        payload = builder(button_id, event, action)
+        resp = self._setget("buttons", payload)
+        parser = feat.get("parser")
+        if resp and parser and resp.payload:
+            return parser(resp.payload)
+        return resp
+
     def pair(self):
         """Enter Bluetooth pairing mode."""
         self._start("pairing", bytes([0x01]))

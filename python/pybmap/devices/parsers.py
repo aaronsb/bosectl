@@ -93,6 +93,48 @@ def parse_buttons(payload):
     )
 
 
+# Reverse lookup: action name -> action ID
+ACTION_BY_NAME = {v.lower(): k for k, v in ACTION_MODES.items()}
+
+
+def build_buttons(button_id, event, action):
+    """Build button remap SETGET payload: [buttonId, eventType, actionMode].
+
+    Args:
+        button_id: Button ID (int or name string).
+        event: Event type (int or name string).
+        action: Action mode (int or name string).
+    """
+    # Resolve button ID
+    if isinstance(button_id, str):
+        bid_by_name = {v.lower(): k for k, v in BUTTON_IDS.items()}
+        bid = bid_by_name.get(button_id.lower())
+        if bid is None:
+            raise ValueError("Unknown button: %s" % button_id)
+    else:
+        bid = button_id
+
+    # Resolve event type
+    if isinstance(event, str):
+        evt_by_name = {v.lower(): k for k, v in BUTTON_EVENTS.items()}
+        evt = evt_by_name.get(event.lower())
+        if evt is None:
+            raise ValueError("Unknown event: %s" % event)
+    else:
+        evt = event
+
+    # Resolve action mode
+    if isinstance(action, str):
+        act = ACTION_BY_NAME.get(action.lower())
+        if act is None:
+            raise ValueError("Unknown action: %s (valid: %s)"
+                             % (action, ", ".join(sorted(ACTION_BY_NAME))))
+    else:
+        act = action
+
+    return bytes([bid, evt, act])
+
+
 def parse_multipoint(payload):
     """Parse multipoint GET. Bit 1 (0x02) = enabled."""
     if payload:

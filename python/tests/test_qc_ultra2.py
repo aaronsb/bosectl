@@ -93,3 +93,7 @@ class TestQC35Config:
     def test_no_editable_slots(self):
         from pybmap.devices import qc35
         assert len(qc35.EDITABLE_SLOTS) == 0
+
+    def test_buttons_has_builder(self):
+        from pybmap.devices import qc35
+        assert qc35.FEATURES["buttons"].get("builder") is not None

@@ -6,6 +6,7 @@ from pybmap.devices.parsers import (
     parse_sidetone, parse_voice_prompts,
     parse_mode_config_48, build_mode_config_40,
     build_eq_band, build_toggle, build_sidetone, build_voice_prompts,
+    build_buttons,
 )
 from pybmap.types import ModeConfig, EqBand, ButtonMapping
 
@@ -88,8 +89,66 @@ class TestParseButtons:
         assert btn.action == 14
         assert btn.action_name == "Disabled"
 
+    def test_qc35_action_button(self):
+        # Real QC35 capture: button 0x10 (Action), single_press, VPA
+        payload = bytes.fromhex("10040107")
+        btn = parse_buttons(payload)
+        assert btn.button_id == 0x10
+        assert btn.button_name == "Action"
+        assert btn.event == 4
+        assert btn.event_name == "single_press"
+        assert btn.action == 1
+        assert btn.action_name == "VPA"
+        assert "VPA" in btn.supported_actions
+        assert "ANC" in btn.supported_actions
+
     def test_too_short(self):
         assert parse_buttons(bytes([0x80])) is None
+
+
+class TestBuildButtons:
+    def test_by_int(self):
+        payload = build_buttons(0x10, 4, 2)
+        assert payload == bytes([0x10, 0x04, 0x02])
+
+    def test_by_name(self):
+        payload = build_buttons("Action", "single_press", "ANC")
+        assert payload == bytes([0x10, 0x04, 0x02])
+
+    def test_mixed(self):
+        payload = build_buttons(0x80, "long_press", "Disabled")
+        assert payload == bytes([0x80, 0x09, 0x0E])
+
+    def test_unknown_button_raises(self):
+        try:
+            build_buttons("Nonexistent", 4, 2)
+            assert False, "Should have raised ValueError"
+        except ValueError:
+            pass
+
+    def test_unknown_event_raises(self):
+        try:
+            build_buttons(0x10, "fake_event", 2)
+            assert False, "Should have raised ValueError"
+        except ValueError:
+            pass
+
+    def test_unknown_action_raises(self):
+        try:
+            build_buttons(0x10, 4, "FakeAction")
+            assert False, "Should have raised ValueError"
+        except ValueError:
+            pass
+
+    def test_roundtrip(self):
+        """Build a payload, parse it back."""
+        payload = build_buttons("Action", "single_press", "ANC")
+        # Simulate a device response (3 bytes + supported actions bitmask)
+        response = payload + bytes([0x07])  # supported: NotConfigured, VPA, ANC
+        btn = parse_buttons(response)
+        assert btn.button_name == "Action"
+        assert btn.event_name == "single_press"
+        assert btn.action_name == "ANC"
 
 
 class TestParseMultipoint:

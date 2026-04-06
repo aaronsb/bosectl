@@ -69,6 +69,7 @@ FEATURES = {
     "buttons": {
         "addr": (1, 9),
         "parser": parsers.parse_buttons,
+        "builder": parsers.build_buttons,
     },
     "multipoint": {
         "addr": (1, 10),

@@ -23,6 +23,7 @@ static void usage() {
               << "  autopause [on|off]  Toggle auto play/pause\n"
               << "  prompts             Show voice prompt status\n"
               << "  buttons             Show button mapping\n"
+              << "  buttons set <action> Remap button (e.g. ANC, VPA, Disabled)\n"
               << "  pair                Enter pairing mode\n"
               << "  off                 Power off\n\n"
               << "Environment:\n"
@@ -150,12 +151,22 @@ int main(int argc, char** argv) {
             auto [on, lang] = dev.prompts();
             std::cout << (on ? "on" : "off") << " (" << lang << ")\n";
         } else if (cmd == "buttons") {
-            auto btn = dev.buttons();
-            if (btn) {
-                std::cout << "Button:  " << btn->button_name << " (0x"
-                          << std::hex << (int)btn->button_id << std::dec << ")\n"
-                          << "Event:   " << btn->event_name << "\n"
-                          << "Action:  " << btn->action_name << "\n";
+            if (argc >= 4 && std::string(argv[2]) == "set") {
+                auto btn = dev.buttons();
+                if (!btn) { std::cerr << "Could not read button config\n"; return 1; }
+                auto action = action_id_from_name(argv[3]);
+                if (!action) { std::cerr << "Unknown action: " << argv[3] << "\n"; return 1; }
+                auto result = dev.set_buttons(btn->button_id, btn->event, *action);
+                std::cout << "Remapped: " << result.button_name << " "
+                          << result.event_name << " -> " << result.action_name << "\n";
+            } else {
+                auto btn = dev.buttons();
+                if (btn) {
+                    std::cout << "Button:  " << btn->button_name << " (0x"
+                              << std::hex << (int)btn->button_id << std::dec << ")\n"
+                              << "Event:   " << btn->event_name << "\n"
+                              << "Action:  " << btn->action_name << "\n";
+                }
             }
         } else if (cmd == "profiles") {
             auto all = dev.modes();

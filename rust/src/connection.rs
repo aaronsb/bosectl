@@ -416,6 +416,16 @@ impl<T: Transport> BmapConnection<T> {
         Ok(())
     }
 
+    /// Remap a button action via SETGET [1.9].
+    pub fn set_buttons(&self, button_id: u8, event: u8, action: u8) -> BmapResult<ButtonMapping> {
+        let addr = self.addr(self.config.buttons)?;
+        let payload = build_buttons(button_id, event, action);
+        let resp = self.setget(addr, &payload)?;
+        parse_buttons(&resp.payload).ok_or_else(|| BmapError::Device {
+            message: "Could not parse button remap response".into(), code: 0,
+        })
+    }
+
     /// Enter pairing mode.
     pub fn pair(&self) -> BmapResult<()> {
         let addr = self.addr(self.config.pairing)?;

@@ -55,6 +55,7 @@ FEATURES = {
     "buttons": {
         "addr": (1, 9),
         "parser": parsers.parse_buttons,
+        "builder": parsers.build_buttons,
     },
     "pairing": {
         "addr": (4, 8),

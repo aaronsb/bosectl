@@ -60,7 +60,7 @@ VOICE_LANGUAGES = {
 # Button identifiers.
 BUTTON_IDS = {
     0: "DistalCnc", 1: "Reserved", 2: "Vpa", 3: "RightShortcut",
-    4: "LeftShortcut", 128: "Shortcut",
+    4: "LeftShortcut", 16: "Action", 128: "Shortcut",
 }
 
 # Button event types.

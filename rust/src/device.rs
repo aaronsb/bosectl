@@ -239,6 +239,7 @@ pub fn parse_buttons(payload: &[u8]) -> Option<ButtonMapping> {
         2 => "Vpa",
         3 => "RightShortcut",
         4 => "LeftShortcut",
+        16 => "Action",
         128 => "Shortcut",
         _ => "Unknown",
     };
@@ -258,11 +259,24 @@ pub fn parse_buttons(payload: &[u8]) -> Option<ButtonMapping> {
         0 => "NotConfigured",
         1 => "VPA",
         2 => "ANC",
+        3 => "BatteryLevel",
         4 => "PlayPause",
+        5 => "IncreaseCNC",
+        6 => "DecreaseCNC",
+        7 => "ToggleWakeWord",
         8 => "SwitchDevice",
+        9 => "ConversationMode",
+        10 => "TrackForward",
         11 => "TrackBack",
+        12 => "FetchNotifications",
+        13 => "WindMode",
         14 => "Disabled",
+        15 => "ClientInteraction",
+        16 => "SpotifyGo",
         17 => "ModesCarousel",
+        19 => "SpatialAudioMode",
+        20 => "LineInSwitch",
+        21 => "Linking",
         _ => "Unknown",
     };
 
@@ -274,6 +288,69 @@ pub fn parse_buttons(payload: &[u8]) -> Option<ButtonMapping> {
         action,
         action_name,
     })
+}
+
+/// Resolve a button name to its ID.
+pub fn button_id_from_name(name: &str) -> Option<u8> {
+    match name.to_ascii_lowercase().as_str() {
+        "distalcnc" => Some(0),
+        "vpa" => Some(2),
+        "rightshortcut" => Some(3),
+        "leftshortcut" => Some(4),
+        "action" => Some(16),
+        "shortcut" => Some(128),
+        _ => None,
+    }
+}
+
+/// Resolve an event name to its ID.
+pub fn event_id_from_name(name: &str) -> Option<u8> {
+    match name.to_ascii_lowercase().as_str() {
+        "rising_edge" => Some(1),
+        "falling_edge" => Some(2),
+        "short_press" => Some(3),
+        "single_press" => Some(4),
+        "press_and_hold" => Some(5),
+        "double_press" => Some(6),
+        "double_press_hold" => Some(7),
+        "triple_press" => Some(8),
+        "long_press" => Some(9),
+        "very_long_press" => Some(10),
+        _ => None,
+    }
+}
+
+/// Resolve an action name to its ID.
+pub fn action_id_from_name(name: &str) -> Option<u8> {
+    match name.to_ascii_lowercase().as_str() {
+        "notconfigured" => Some(0),
+        "vpa" => Some(1),
+        "anc" => Some(2),
+        "batterylevel" => Some(3),
+        "playpause" => Some(4),
+        "increasecnc" => Some(5),
+        "decreasecnc" => Some(6),
+        "togglewakeword" => Some(7),
+        "switchdevice" => Some(8),
+        "conversationmode" => Some(9),
+        "trackforward" => Some(10),
+        "trackback" => Some(11),
+        "fetchnotifications" => Some(12),
+        "windmode" => Some(13),
+        "disabled" => Some(14),
+        "clientinteraction" => Some(15),
+        "spotifygo" => Some(16),
+        "modescarousel" => Some(17),
+        "spatialaudiomode" => Some(19),
+        "lineinswitch" => Some(20),
+        "linking" => Some(21),
+        _ => None,
+    }
+}
+
+/// Build a button remap SETGET payload: [buttonId, eventType, actionMode].
+pub fn build_buttons(button_id: u8, event: u8, action: u8) -> Vec<u8> {
+    vec![button_id, event, action]
 }
 
 /// Parse a 48-byte ModeConfig STATUS response (QC Ultra 2 / newer firmware).
@@ -401,6 +478,40 @@ mod tests {
         assert_eq!(btn.button_name, "Shortcut");
         assert_eq!(btn.event_name, "long_press");
         assert_eq!(btn.action_name, "Disabled");
+    }
+
+    #[test]
+    fn test_parse_buttons_qc35_action() {
+        let payload = vec![0x10, 0x04, 0x01, 0x07];
+        let btn = parse_buttons(&payload).unwrap();
+        assert_eq!(btn.button_name, "Action");
+        assert_eq!(btn.event_name, "single_press");
+        assert_eq!(btn.action_name, "VPA");
+    }
+
+    #[test]
+    fn test_build_buttons() {
+        assert_eq!(build_buttons(0x10, 0x04, 0x02), vec![0x10, 0x04, 0x02]);
+    }
+
+    #[test]
+    fn test_button_name_resolution() {
+        assert_eq!(button_id_from_name("Action"), Some(16));
+        assert_eq!(button_id_from_name("Shortcut"), Some(128));
+        assert_eq!(button_id_from_name("nope"), None);
+        assert_eq!(event_id_from_name("single_press"), Some(4));
+        assert_eq!(action_id_from_name("ANC"), Some(2));
+        assert_eq!(action_id_from_name("VPA"), Some(1));
+        assert_eq!(action_id_from_name("Disabled"), Some(14));
+    }
+
+    #[test]
+    fn test_build_buttons_roundtrip() {
+        let payload = build_buttons(0x10, 0x04, 0x02);
+        let btn = parse_buttons(&payload).unwrap();
+        assert_eq!(btn.button_name, "Action");
+        assert_eq!(btn.event_name, "single_press");
+        assert_eq!(btn.action_name, "ANC");
     }
 
     #[test]

@@ -146,7 +146,27 @@ def cmd_profile_set(dev, args):
         print("Created (slot %d): %s" % (slot, lookup_name))
 
 
-def cmd_buttons(dev):
+def cmd_buttons(dev, args):
+    if args:
+        # bosectl buttons set <action>  — remap using current button/event
+        if args[0] == "set" and len(args) >= 2:
+            action = args[1]
+            # Read current mapping to get button_id and event
+            btn = dev.buttons()
+            if btn is None:
+                print("Could not read button config", file=sys.stderr)
+                sys.exit(1)
+            result = dev.set_buttons(btn.button_id, btn.event, action)
+            if hasattr(result, "button_name"):
+                print("Remapped: %s %s -> %s" % (result.button_name, result.event_name, result.action_name))
+            else:
+                print("OK")
+            return
+        else:
+            print("Usage: bosectl buttons              (show current mapping)", file=sys.stderr)
+            print("       bosectl buttons set <action>  (remap button)", file=sys.stderr)
+            sys.exit(1)
+
     btn = dev.buttons()
     if btn is None:
         print("Could not read button config")
@@ -239,6 +259,7 @@ def usage():
     cmd("battery", "Battery percentage (just the number)")
     cmd("current", "Current mode name (just the word)")
     cmd("buttons", "Show button mapping")
+    cmd("buttons set <action>", "Remap button (e.g. ANC, VPA, Disabled)")
     print()
 
     section("Debug")
@@ -365,7 +386,7 @@ def main():
             dev.set_spatial(sys.argv[2].lower())
             print("Spatial: %s" % sys.argv[2].lower())
         elif cmd == "buttons":
-            cmd_buttons(dev)
+            cmd_buttons(dev, sys.argv[2:])
         elif cmd == "pair":
             dev.pair()
             print("Pairing mode enabled")

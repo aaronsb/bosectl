@@ -187,6 +187,18 @@ public:
         setget(require(config_.sidetone, "sidetone"), {1, val});
     }
 
+    ButtonMapping set_buttons(uint8_t button_id, uint8_t event, uint8_t action) {
+        auto addr = require(config_.buttons, "buttons");
+        auto payload = build_buttons(button_id, event, action);
+        auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
+        auto data = transport_->send_recv(pkt);
+        auto resp = parse_response(data);
+        if (resp) check_error(*resp);
+        auto result = parse_buttons(resp ? resp->payload : std::vector<uint8_t>{});
+        if (!result) throw std::runtime_error("Could not parse button remap response");
+        return *result;
+    }
+
     void power_off() { start(require(config_.power, "power"), {0x00}); }
     void pair()      { start(require(config_.pairing, "pairing"), {0x01}); }
 

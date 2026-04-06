@@ -141,11 +141,29 @@ fn main() {
                 println!("{} ({})", if on { "on" } else { "off" }, lang);
             })
         }
-        "buttons" => dev.buttons().map(|btn| {
-            println!("Button:  {} (0x{:02x})", btn.button_name, btn.button_id);
-            println!("Event:   {}", btn.event_name);
-            println!("Action:  {}", btn.action_name);
-        }),
+        "buttons" => {
+            if args.len() >= 4 && args[2] == "set" {
+                let btn = match dev.buttons() {
+                    Ok(b) => b,
+                    Err(e) => return err_exit(&e),
+                };
+                let action = bmap::device::action_id_from_name(&args[3])
+                    .unwrap_or_else(|| {
+                        eprintln!("Unknown action: {}", args[3]);
+                        process::exit(1);
+                    });
+                dev.set_buttons(btn.button_id, btn.event, action)
+                    .map(|result| {
+                        println!("Remapped: {} {} -> {}", result.button_name, result.event_name, result.action_name);
+                    })
+            } else {
+                dev.buttons().map(|btn| {
+                    println!("Button:  {} (0x{:02x})", btn.button_name, btn.button_id);
+                    println!("Event:   {}", btn.event_name);
+                    println!("Action:  {}", btn.action_name);
+                })
+            }
+        }
         "profiles" => dev.modes().map(|modes| {
             for m in &modes {
                 print!("  {:2}  {}", m.mode_idx, m.name);
@@ -255,6 +273,7 @@ fn usage() {
     println!("  autopause [on|off]  Toggle auto play/pause");
     println!("  prompts             Show voice prompt status");
     println!("  buttons             Show button mapping");
+    println!("  buttons set <action> Remap button (e.g. ANC, VPA, Disabled)");
     println!("  pair                Enter pairing mode");
     println!("  off                 Power off");
     println!("  raw <hex>           Send raw BMAP packet");
