@@ -122,14 +122,46 @@ fn main() {
             }
             dev.auto_pause().map(|a| println!("{}", if a { "on" } else { "off" }))
         }
-        "prompts" => dev.prompts().map(|(on, lang)| {
-            println!("{} ({})", if on { "on" } else { "off" }, lang);
-        }),
+        "anr" => {
+            if args.len() > 2 {
+                if let Err(e) = dev.set_anr(&args[2]) {
+                    return err_exit(&e);
+                }
+            }
+            dev.anr().map(|a| println!("{}", a))
+        }
+        "prompts" => {
+            if args.len() > 2 {
+                let on = matches!(args[2].as_str(), "on" | "1" | "true" | "yes");
+                if let Err(e) = dev.set_prompts(on) {
+                    return err_exit(&e);
+                }
+            }
+            dev.prompts().map(|(on, lang)| {
+                println!("{} ({})", if on { "on" } else { "off" }, lang);
+            })
+        }
         "buttons" => dev.buttons().map(|btn| {
             println!("Button:  {} (0x{:02x})", btn.button_name, btn.button_id);
             println!("Event:   {}", btn.event_name);
             println!("Action:  {}", btn.action_name);
         }),
+        "profiles" => dev.modes().map(|modes| {
+            for m in &modes {
+                print!("  {:2}  {}", m.mode_idx, m.name);
+                if !m.editable { print!(" [preset]"); }
+                else if !m.configured { print!(" [empty]"); }
+                println!();
+            }
+        }),
+        "dump" => {
+            let pkt = bmap::protocol::bmap_packet(31, 1, bmap::Operator::Start, &[]);
+            dev.send_raw(&pkt).map(|responses| {
+                for r in &responses {
+                    println!("{}", r.fmt());
+                }
+            })
+        }
         "pair" => dev.pair().map(|_| println!("Pairing mode enabled")),
         "off" => dev.power_off().map(|_| println!("Powering off")),
         "raw" => {
@@ -147,8 +179,14 @@ fn main() {
             })
         }
         _ => {
-            eprintln!("Unknown command: {}", cmd);
-            process::exit(1);
+            // Try as custom profile name
+            match dev.set_mode(&cmd, false) {
+                Ok(_) => Ok(println!("OK: {}", cmd)),
+                Err(_) => {
+                    eprintln!("Unknown command: {}", cmd);
+                    process::exit(1);
+                }
+            }
         }
     };
 
@@ -169,8 +207,16 @@ fn cmd_status(dev: &bmap::BmapConnection<impl bmap::Transport>) -> Result<(), Bm
         + &"░".repeat((s.cnc_max - s.cnc_level) as usize);
 
     println!("  Battery      {}%", s.battery);
-    println!("  Mode         {}", s.mode);
-    println!("  CNC          {} {}/{}", cnc_bar, s.cnc_level, s.cnc_max);
+    if !s.mode.is_empty() {
+        println!("  Mode         {}", s.mode);
+    }
+    if dev.anr().is_ok() {
+        if let Ok(anr) = dev.anr() {
+            println!("  ANR          {}", anr);
+        }
+    } else {
+        println!("  CNC          {} {}/{}", cnc_bar, s.cnc_level, s.cnc_max);
+    }
     if !s.eq.is_empty() {
         let eq_str: Vec<String> = s.eq.iter().map(|b| format!("{:+}", b.current)).collect();
         println!("  EQ           {} (bass/mid/treble)", eq_str.join("/"));

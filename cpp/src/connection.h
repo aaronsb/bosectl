@@ -99,7 +99,7 @@ public:
     // ── Write Operations ────────────────────────────────────────────────────
 
     void set_mode(const std::string& name, bool announce = false) {
-        auto addr = *config_.current_mode;
+        auto addr = require(config_.current_mode, "current_mode");
         uint8_t idx = 255;
         for (auto& [n, m] : config_.preset_modes) {
             if (n == name) { idx = m.idx; break; }
@@ -114,8 +114,28 @@ public:
         start(addr, {idx, static_cast<uint8_t>(announce ? 1 : 0)});
     }
 
+    void set_cnc(uint8_t level) {
+        if (level > 10) throw std::runtime_error("CNC level must be 0-10");
+        auto [slot, config] = ensure_editable_profile();
+        config.cnc_level = level;
+        write_mode(slot, config);
+        start(require(config_.current_mode, "current_mode"), {slot, 0});
+    }
+
+    void set_spatial(const std::string& mode) {
+        uint8_t val;
+        if (mode == "off") val = 0;
+        else if (mode == "room") val = 1;
+        else if (mode == "head") val = 2;
+        else throw std::runtime_error("Spatial: off, room, head");
+        auto [slot, config] = ensure_editable_profile();
+        config.spatial = val;
+        write_mode(slot, config);
+        start(require(config_.current_mode, "current_mode"), {slot, 0});
+    }
+
     void set_eq(int8_t bass, int8_t mid, int8_t treble) {
-        auto addr = *config_.eq;
+        auto addr = require(config_.eq, "eq");
         for (auto [band_id, val] : std::vector<std::pair<uint8_t,int8_t>>{{0,bass},{1,mid},{2,treble}}) {
             transport_->send_recv(bmap_packet(addr.fblock, addr.func, Operator::SetGet,
                                               {static_cast<uint8_t>(val), band_id}));
@@ -135,6 +155,10 @@ public:
         setget(require(config_.auto_pause, "auto_pause"), {static_cast<uint8_t>(on ? 1 : 0)});
     }
 
+    void set_auto_answer(bool on) {
+        setget(require(config_.auto_answer, "auto_answer"), {static_cast<uint8_t>(on ? 1 : 0)});
+    }
+
     void set_anr(const std::string& level) {
         uint8_t val;
         if (level == "off") val = 0;
@@ -143,6 +167,14 @@ public:
         else if (level == "low") val = 3;
         else throw std::runtime_error("ANR: off, high, wind, low");
         setget(require(config_.anr, "anr"), {val});
+    }
+
+    void set_prompts(bool enabled) {
+        auto addr = require(config_.voice_prompts, "voice_prompts");
+        auto payload = get(addr);
+        uint8_t lang = payload.empty() ? 0 : (payload[0] & 0x1F);
+        uint8_t byte0 = ((enabled ? 1 : 0) << 5) | lang;
+        setget(addr, {byte0});
     }
 
     void set_sidetone(const std::string& level) {
@@ -157,6 +189,38 @@ public:
 
     void power_off() { start(require(config_.power, "power"), {0x00}); }
     void pair()      { start(require(config_.pairing, "pairing"), {0x01}); }
+
+    // ── Profile Management ──────────────────────────────────────────────────
+
+    uint8_t create_profile(const std::string& name, uint8_t cnc = 0, uint8_t spatial = 0,
+                           bool wind = true, bool anc = true) {
+        auto all = modes();
+        auto slot = find_free_slot(all);
+        ModeConfig mc{};
+        mc.mode_idx = slot;
+        mc.name = name;
+        mc.cnc_level = cnc;
+        mc.spatial = spatial;
+        mc.wind_block = wind;
+        mc.anc_toggle = anc;
+        write_mode(slot, mc);
+        return slot;
+    }
+
+    void delete_profile(const std::string& name) {
+        auto all = modes();
+        for (auto& m : all) {
+            if (m.name == name) {
+                if (!m.editable) throw std::runtime_error("Cannot delete preset: " + name);
+                ModeConfig mc{};
+                mc.mode_idx = m.mode_idx;
+                mc.name = "None";
+                write_mode(m.mode_idx, mc);
+                return;
+            }
+        }
+        throw std::runtime_error("Profile not found: " + name);
+    }
 
     std::vector<BmapResponse> send_raw(const std::vector<uint8_t>& data) {
         auto resp = transport_->send_recv_drain(data);
@@ -225,6 +289,59 @@ private:
     template<typename T, typename F>
     T safe_call(F fn, T default_val) {
         try { return fn(); } catch (...) { return default_val; }
+    }
+
+    std::pair<uint8_t, ModeConfig> ensure_editable_profile() {
+        auto all = modes();
+        auto idx = safe_call<uint8_t>([&]{ return mode_idx(); }, 0);
+        for (auto& m : all) {
+            if (m.mode_idx == idx && m.editable) return {idx, m};
+        }
+        // Look for existing "Custom" profile
+        for (auto& m : all) {
+            if (m.name == "Custom" && m.editable) return {m.mode_idx, m};
+        }
+        // Create one
+        auto slot = find_free_slot(all);
+        auto [cnc_cur, _] = safe_call<std::pair<uint8_t,uint8_t>>(
+            [&]{ return cnc(); }, {0, 10});
+        ModeConfig mc{};
+        mc.mode_idx = slot;
+        mc.name = "Custom";
+        mc.cnc_level = cnc_cur;
+        mc.wind_block = true;
+        mc.anc_toggle = true;
+        write_mode(slot, mc);
+        return {slot, mc};
+    }
+
+    uint8_t find_free_slot(const std::vector<ModeConfig>& all) {
+        for (auto slot : config_.editable_slots) {
+            bool found = false;
+            for (auto& m : all) {
+                if (m.mode_idx == slot && m.configured && m.name != "None") {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return slot;
+        }
+        throw std::runtime_error("No free profile slot available");
+    }
+
+    void write_mode(uint8_t slot, const ModeConfig& mc) {
+        auto addr = require(config_.mode_config, "mode_config");
+        auto payload = build_mode_config_40(
+            slot, mc.name, mc.cnc_level, mc.spatial,
+            mc.wind_block, mc.anc_toggle, mc.prompt_b1, mc.prompt_b2);
+        auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
+        auto data = transport_->send_recv_drain(pkt);
+        auto responses = parse_all_responses(data);
+        bool ok = false;
+        for (auto& r : responses) {
+            if (r.op == Operator::Status) { ok = true; break; }
+        }
+        if (!ok) throw std::runtime_error("Mode config write failed");
     }
 };
 
