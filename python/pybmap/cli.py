@@ -269,9 +269,9 @@ def main():
     if cmd in ("help", "-h", "--help"):
         usage()
 
-    # Determine MAC and device type from env vars
-    mac = os.environ.get("BOSE_MAC") or os.environ.get("BMAP_MAC")
-    device_type = os.environ.get("BMAP_DEVICE", "qc_ultra2")
+    # Determine MAC and device type from env vars (None = auto-detect)
+    mac = os.environ.get("BOSE_MAC") or os.environ.get("BMAP_MAC") or None
+    device_type = os.environ.get("BMAP_DEVICE") or None
 
     try:
         dev = pybmap.connect(mac=mac, device_type=device_type)

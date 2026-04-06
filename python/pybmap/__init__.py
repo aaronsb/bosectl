@@ -44,12 +44,15 @@ def connect(mac=None, device_type=None):
         BmapConnectionError: If the connection fails.
     """
     if mac is None:
-        mac = find_bmap_device()
-        if mac is None:
+        detected_mac, detected_type = find_bmap_device()
+        if detected_mac is None:
             raise BmapNotFoundError(
-                "No BMAP device found. Pair via bluetoothctl, "
-                "or pass mac= explicitly."
+                "No connected BMAP device found. Pair and connect "
+                "via bluetoothctl, or pass mac= explicitly."
             )
+        mac = detected_mac
+        if device_type is None:
+            device_type = detected_type
 
     if device_type is None:
         device_type = "qc_ultra2"
@@ -58,4 +61,11 @@ def connect(mac=None, device_type=None):
     channel = getattr(device, "RFCOMM_CHANNEL", 2)
     transport = RfcommTransport(mac, channel=channel)
     transport.connect()
+
+    # Some devices require an init packet before responding.
+    init = getattr(device, "INIT_PACKET", None)
+    if init:
+        fblock, func = init
+        transport.send_recv(bmap_packet(fblock, func, 1))  # GET
+
     return BmapConnection(transport, device)

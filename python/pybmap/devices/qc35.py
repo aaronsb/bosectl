@@ -17,6 +17,9 @@ from . import parsers
 
 RFCOMM_CHANNEL = 8
 
+# QC35 requires a GET [0.1] init packet before it responds to anything.
+INIT_PACKET = (0, 1)  # (fblock, func) — sent as GET on connect
+
 DEVICE_INFO = {
     "name": "Bose QuietComfort 35",
     "codename": "baywolf",
