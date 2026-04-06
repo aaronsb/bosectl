@@ -190,7 +190,18 @@ pub fn parse_voice_prompts(payload: &[u8]) -> (bool, &'static str) {
             8 => "Mandarin",
             9 => "Korean",
             10 => "Russian",
+            11 => "Polish",
+            12 => "Hebrew",
+            13 => "Turkish",
+            14 => "Dutch",
             15 => "Japanese",
+            16 => "Cantonese",
+            17 => "Arabic",
+            18 => "Swedish",
+            19 => "Danish",
+            20 => "Norwegian",
+            21 => "Finnish",
+            22 => "Hindi",
             _ => "Unknown",
         };
         (enabled, lang_name)

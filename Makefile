@@ -62,7 +62,8 @@ CPP_DIR = cpp
 CPP_BUILD = $(CPP_DIR)/build
 
 cpp-test: cpp-build ## Run C++ tests
-	@echo "No C++ tests yet"
+	cd $(CPP_BUILD) && ctest --output-on-failure
+	$(CPP_BUILD)/bmap_tests
 
 cpp-build: ## Build C++ library
 	cmake -S $(CPP_DIR) -B $(CPP_BUILD)
@@ -75,7 +76,7 @@ integration: python-setup ## Run integration tests (requires paired BT device)
 
 # ── Cross-Language ───────────────────────────────────────────────────────────
 
-test: python-test ## Run all available tests (alias for python-test until Rust/C++ have tests)
+test: python-test rust-test cpp-test ## Run all tests across all languages
 
 lint: python-lint ## Lint all languages
 
