@@ -84,6 +84,8 @@ pub struct DeviceConfig {
     pub info: DeviceInfo,
     /// RFCOMM channel for BMAP (2 for newer devices, 8 for QC35).
     pub rfcomm_channel: u8,
+    /// Init packet required before device responds (Some((fblock, func)) for QC35).
+    pub init_packet: Option<Addr>,
     pub battery: Option<Addr>,
     pub firmware: Option<Addr>,
     pub product_name: Option<Addr>,

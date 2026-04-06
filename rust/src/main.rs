@@ -21,9 +21,9 @@ fn main() {
     }
 
     let mac = env::var("BMAP_MAC").ok();
-    let device_type = env::var("BMAP_DEVICE").unwrap_or_else(|_| "qc_ultra2".to_string());
+    let device_type = env::var("BMAP_DEVICE").ok();
 
-    let dev = match connect(mac.as_deref(), &device_type) {
+    let dev = match connect(mac.as_deref(), device_type.as_deref()) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("Connection failed: {}", e);
