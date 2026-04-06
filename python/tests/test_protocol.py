@@ -111,6 +111,12 @@ class TestFmtResponse:
         assert "ERROR" in s
         assert "auth" in s.lower()
 
+    def test_error_invalid_transition(self):
+        resp = BmapResponse(3, 2, 4, bytes([0x0F]))
+        s = fmt_response(resp)
+        assert "ERROR" in s
+        assert "InvalidTransition" in s
+
     def test_status(self):
         resp = BmapResponse(2, 2, 3, bytes([0x50]))
         s = fmt_response(resp)

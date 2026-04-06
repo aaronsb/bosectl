@@ -44,6 +44,7 @@ inline const char* error_name(uint8_t code) {
         case 8:  return "Runtime";
         case 9:  return "Timeout";
         case 10: return "InvalidState";
+        case 15: return "InvalidTransition";
         case 20: return "InsecureTransport";
         default: return "Unknown";
     }

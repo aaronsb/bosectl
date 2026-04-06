@@ -6,9 +6,10 @@ BMAP over RFCOMM channel 8 (not channel 2 like newer devices).
 Capabilities verified:
   - Battery, firmware, serial, product name: GET works
   - Device name, sidetone, voice prompts: GET + SETGET works
-  - Buttons: GET works (read-only)
+  - Buttons: GET + SETGET works (remap Action button to VPA or ANC)
+  - ANR noise cancellation [1.6]: SETGET works (off/high/wind/low)
   - Pairing mode: START works
-  - NC level [3.2]: auth-gated on firmware 4.8.1 (was open on 1.x)
+  - Block 3 NC [3.2]: investigated, binary state toggle only (not useful)
   - No EQ, no spatial audio, no AudioModes block 31, no power off,
     no multipoint, no auto-pause/answer
 """

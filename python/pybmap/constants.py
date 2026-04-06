@@ -20,6 +20,7 @@ ERROR_NAMES = {
     0: "Unknown", 1: "Length", 2: "Chksum", 3: "FblockNotSupp",
     4: "FuncNotSupp", 5: "OpNotSupp(auth)", 6: "InvalidData",
     7: "DataUnavail", 8: "Runtime", 9: "Timeout", 10: "InvalidState",
+    15: "InvalidTransition",
     20: "InsecureTransport",
 }
 

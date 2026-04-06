@@ -37,6 +37,8 @@ inline DeviceConfig qc_ultra2() {
 }
 
 /// Bose QC35 — verified against firmware 4.8.1. RFCOMM channel 8.
+/// ANR [1.6] (off/high/wind/low), buttons [1.9] (VPA/ANC remap).
+/// Block 3 NC investigated: binary state toggle only, not useful.
 inline DeviceConfig qc35() {
     DeviceConfig c;
     c.info = {"Bose QuietComfort 35", "baywolf", "CSR8670"};

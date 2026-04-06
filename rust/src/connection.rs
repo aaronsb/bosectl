@@ -261,6 +261,7 @@ impl<T: Transport> BmapConnection<T> {
             "sidetone" => self.config.sidetone.is_some(),
             "auto_pause" => self.config.auto_pause.is_some(),
             "auto_answer" => self.config.auto_answer.is_some(),
+            "anr" => self.config.anr.is_some(),
             "mode_config" => self.config.mode_config.is_some(),
             _ => false,
         }

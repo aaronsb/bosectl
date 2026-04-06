@@ -60,14 +60,18 @@ public:
 
     bool has_feature(const std::string& name) const {
         if (name == "battery") return config_.battery.has_value();
-        if (name == "eq") return config_.eq.has_value();
+        if (name == "firmware") return config_.firmware.has_value();
+        if (name == "product_name") return config_.product_name.has_value();
+        if (name == "voice_prompts") return config_.voice_prompts.has_value();
         if (name == "cnc") return config_.cnc.has_value();
-        if (name == "sidetone") return config_.sidetone.has_value();
-        if (name == "multipoint") return config_.multipoint.has_value();
+        if (name == "eq") return config_.eq.has_value();
         if (name == "buttons") return config_.buttons.has_value();
-        if (name == "mode_config") return config_.mode_config.has_value();
+        if (name == "multipoint") return config_.multipoint.has_value();
+        if (name == "sidetone") return config_.sidetone.has_value();
         if (name == "auto_pause") return config_.auto_pause.has_value();
         if (name == "auto_answer") return config_.auto_answer.has_value();
+        if (name == "anr") return config_.anr.has_value();
+        if (name == "mode_config") return config_.mode_config.has_value();
         return false;
     }
 

@@ -71,3 +71,9 @@ TEST(fmt_error_response) {
     ASSERT_TRUE(s.find("ERROR") != std::string::npos);
     ASSERT_TRUE(s.find("auth") != std::string::npos);
 }
+
+TEST(fmt_error_invalid_transition) {
+    BmapResponse resp{3, 2, Operator::Error, {15}};
+    auto s = resp.fmt();
+    ASSERT_TRUE(s.find("InvalidTransition") != std::string::npos);
+}

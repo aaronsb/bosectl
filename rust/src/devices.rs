@@ -43,6 +43,8 @@ pub fn qc_ultra2() -> DeviceConfig {
 
 /// Bose QC35 configuration — verified against firmware 4.8.1.
 /// BMAP over RFCOMM channel 8.
+/// ANR [1.6] (off/high/wind/low), buttons [1.9] (VPA/ANC remap).
+/// Block 3 NC investigated: binary state toggle only, not useful.
 pub fn qc35() -> DeviceConfig {
     DeviceConfig {
         info: DeviceInfo {

@@ -531,14 +531,62 @@ resp = sock.recv(4096)
 current_mode = resp[4]  # 0=Quiet, 1=Aware, 2=Immersion, etc.
 ```
 
+## QC35 NoiseCancellation Block (Block 3) — Firmware 4.8.1
+
+Block 3 is a separate NoiseCancellation fblock on the QC35, distinct from the
+Settings-level ANR control at [1.6]. Investigation results:
+
+### Functions
+| Func | GET | SET/SETGET | START | Notes |
+|------|-----|-----------|-------|-------|
+| 3.1  | `01` or `02` | Auth-gated (error 5) | Auth-gated | Binary NC system state |
+| 3.2  | Auth-gated | Auth-gated | **14-byte payload accepted** | NC state transition |
+| 3.3  | Auth-gated | — | — | Unknown |
+| 3.4  | `01000000020000000000` (10 bytes) | Auth-gated | — | NC config/capabilities |
+| 3.5  | Auth-gated | — | — | Unknown |
+| 3.6  | Empty STATUS | — | — | Unknown |
+| 3.7  | Auth-gated | — | — | Unknown |
+| 3.8+ | FuncNotSupp | — | — | Not implemented |
+
+### [3.2] START Payload Format (14 bytes)
+```
+Offset  Size  Field
+0       1     currentState  — must match [3.1] value
+1-3     3     reserved (zeros)
+4       1     targetState   — must be a valid transition target
+5-13    9     reserved (zeros)
+```
+
+Accepts exactly 14-17 bytes (Length error outside). Only valid transition found:
+`01 → 02` (RESULT returned, [3.1] changes). All others return error 15 or InvalidData.
+
+### [3.1] State Values
+- `01` = default state (after ANR changes, after power cycle)
+- `02` = alternate state (reached via [3.2] START transition)
+
+### Key Findings
+- [3.1] does **not** correlate with ANR mode — changing ANR via [1.6] does not affect [3.1]
+- [3.4] config is static (`01 00 00 00 02 00 00 00 00 00`) regardless of ANR mode
+- The [3.2] START is a **binary state toggle**, not continuous NC level control
+- This is likely the low-level NC hardware enable/disable — not useful for user-facing control
+- **ANR at [1.6] remains the correct interface** for NC mode control on QC35 firmware 4.8.1
+- The continuous CNC slider (0-10) seen on older firmware (1.x) is not recoverable via block 3
+
+### Conclusion
+Block 3 on QC35 firmware 4.8.1 is a low-level NC system control that was likely
+exposed on older firmware but is now mostly auth-gated. The only unauthenticated
+path ([3.2] START) is a binary state transition with no practical NC level control.
+The discrete ANR modes (off/high/wind/low) via [1.6] SETGET are the full extent
+of unauthenticated NC control on this firmware version.
+
 ## Future Work
 - ~~Crack ModeConfig SETGET payload format~~ **DONE** — full CNC/spatial/wind/ANC control
 - ~~Crack Settings SETGET~~ **DONE** — EQ, name, sidetone, multipoint, all work
+- ~~Implement button remapping [1.9]~~ **DONE** — SETGET works, verified on QC35 and QC Ultra 2
 - ~~Try USB-C connection~~ **PARTIALLY DONE** — USB HID interface found, needs init handshake
 - Crack USB BMAP initialization — capture USB traffic from app to find handshake sequence
 - Explore [31.9] AudioModes Reset — factory reset individual modes?
 - Explore [5.3] AudioManagement Control — play/pause/skip payload format
-- Implement button remapping [1.9] — payload format documented, untested
 - Build a system tray widget / PipeWire integration
 - Investigate firmware downgrade via bose-dfu over USB
 - Map the unknown bytes [40-41] in ModeConfig STATUS (mode-type specific config?)
