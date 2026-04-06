@@ -15,10 +15,11 @@ class TestDeviceRegistry:
         assert dev is qc_ultra2
 
     def test_unknown_device(self):
+        from pybmap.errors import BmapError
         try:
             get_device("nonexistent")
-            assert False, "Should have raised KeyError"
-        except KeyError:
+            assert False, "Should have raised BmapError"
+        except BmapError:
             pass
 
 

@@ -97,6 +97,13 @@ class BmapConnection:
         )
         return parse_all_responses(data)
 
+    def _safe_read(self, method, default):
+        """Call a read method, returning default on BmapError."""
+        try:
+            return method()
+        except BmapError:
+            return default
+
     def _raise_error(self, parsed):
         """Raise the appropriate exception for an ERROR response."""
         from .constants import ERROR_NAMES
@@ -208,69 +215,21 @@ class BmapConnection:
 
     def status(self):
         """Full device status snapshot. Returns DeviceStatus namedtuple."""
-        batt = self.battery()
-        current = self.mode()
-        current_idx = self.mode_idx()
-
-        cnc_cur, cnc_max = (0, 10)
-        try:
-            cnc_cur, cnc_max = self.cnc()
-        except BmapError:
-            pass
-
-        eq_bands = []
-        try:
-            eq_bands = self.eq()
-        except BmapError:
-            pass
-
-        dev_name = ""
-        try:
-            dev_name = self.name()
-        except BmapError:
-            pass
-
-        fw = ""
-        try:
-            fw = self.firmware()
-        except BmapError:
-            pass
-
-        sidetone_val = "off"
-        try:
-            sidetone_val = self.sidetone()
-        except BmapError:
-            pass
-
-        mp = False
-        try:
-            mp = self.multipoint()
-        except BmapError:
-            pass
-
-        ap = False
-        try:
-            ap = self.auto_pause()
-        except BmapError:
-            pass
-
-        aa = False
-        try:
-            aa = self.auto_answer()
-        except BmapError:
-            pass
-
-        prompts_on, prompts_lang = False, ""
-        try:
-            prompts_on, prompts_lang = self.prompts()
-        except BmapError:
-            pass
+        cnc_cur, cnc_max = self._safe_read(self.cnc, (0, 10))
+        prompts_on, prompts_lang = self._safe_read(self.prompts, (False, ""))
 
         return DeviceStatus(
-            battery=batt, mode=current, mode_idx=current_idx,
-            cnc_level=cnc_cur, cnc_max=cnc_max, eq=eq_bands,
-            name=dev_name, firmware=fw, sidetone=sidetone_val,
-            multipoint=mp, auto_pause=ap, auto_answer=aa,
+            battery=self.battery(),
+            mode=self.mode(),
+            mode_idx=self.mode_idx(),
+            cnc_level=cnc_cur, cnc_max=cnc_max,
+            eq=self._safe_read(self.eq, []),
+            name=self._safe_read(self.name, ""),
+            firmware=self._safe_read(self.firmware, ""),
+            sidetone=self._safe_read(self.sidetone, "off"),
+            multipoint=self._safe_read(self.multipoint, False),
+            auto_pause=self._safe_read(self.auto_pause, False),
+            auto_answer=self._safe_read(self.auto_answer, False),
             prompts_enabled=prompts_on, prompts_language=prompts_lang,
         )
 
@@ -452,6 +411,11 @@ class BmapConnection:
         """Device identification dict."""
         return self._device.DEVICE_INFO
 
+    @property
+    def preset_modes(self):
+        """Preset mode definitions dict (name -> {idx, description})."""
+        return self._device.PRESET_MODES
+
     def has_feature(self, name):
         """Check if the connected device supports a feature."""
         return name in self._device.FEATURES
@@ -530,10 +494,6 @@ class BmapConnection:
             self._write_mode(slot, "Custom", **overrides)
             return
 
-        offsets = getattr(self._device, "STATUS_OFFSETS", {})
-        raw = config.raw
-
-        # Read current values from the parsed config
         kw = {
             "name": overrides.get("name", config.name),
             "cnc_level": overrides.get("cnc_level", config.cnc_level),

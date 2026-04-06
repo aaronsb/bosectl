@@ -273,12 +273,12 @@ def main():
         print("%sIs Bluetooth on? Are the headphones paired and connected?%s" % (C_DIM, C_RESET), file=sys.stderr)
         sys.exit(1)
 
-    preset_names = set(dev._device.PRESET_MODES.keys())
+    preset_names = set(dev.preset_modes.keys())
 
     try:
         if cmd in preset_names:
             dev.set_mode(cmd)
-            desc = dev._device.PRESET_MODES[cmd].get("description", cmd)
+            desc = dev.preset_modes[cmd].get("description", cmd)
             print("OK: %s" % desc)
         elif cmd == "status":
             cmd_status(dev)

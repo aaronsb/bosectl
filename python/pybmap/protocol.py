@@ -56,11 +56,13 @@ def parse_all_responses(data):
     """
     responses = []
     pos = 0
-    while pos < len(data) - 3:
+    while pos + 4 <= len(data):
         fblock = data[pos]
         func = data[pos + 1]
         op = data[pos + 2] & 0x0F
         length = data[pos + 3]
+        if pos + 4 + length > len(data):
+            break  # Truncated packet
         payload = data[pos + 4:pos + 4 + length]
         responses.append(BmapResponse(fblock, func, op, payload))
         pos += 4 + length
