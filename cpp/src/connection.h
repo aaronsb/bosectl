@@ -31,6 +31,7 @@ public:
     bool auto_pause()                     { return parse_bool(get(require(config_.auto_pause, "auto_pause"))); }
     bool auto_answer()                    { return parse_bool(get(require(config_.auto_answer, "auto_answer"))); }
     std::pair<bool, std::string> prompts(){ return parse_voice_prompts(get(require(config_.voice_prompts, "voice_prompts"))); }
+    std::string anr()                    { return parse_anr(get(require(config_.anr, "anr"))); }
     std::optional<ButtonMapping> buttons(){ return parse_buttons(get(require(config_.buttons, "buttons"))); }
 
     uint8_t mode_idx() {
@@ -132,6 +133,16 @@ public:
 
     void set_auto_pause(bool on) {
         setget(require(config_.auto_pause, "auto_pause"), {static_cast<uint8_t>(on ? 1 : 0)});
+    }
+
+    void set_anr(const std::string& level) {
+        uint8_t val;
+        if (level == "off") val = 0;
+        else if (level == "high") val = 1;
+        else if (level == "wind") val = 2;
+        else if (level == "low") val = 3;
+        else throw std::runtime_error("ANR: off, high, wind, low");
+        setget(require(config_.anr, "anr"), {val});
     }
 
     void set_sidetone(const std::string& level) {

@@ -91,6 +91,8 @@ struct DeviceConfig {
     std::optional<Addr> sidetone;
     std::optional<Addr> auto_pause;
     std::optional<Addr> auto_answer;
+    /// ANR mode address (QC35: off/high/wind/low at [1.6]).
+    std::optional<Addr> anr;
     std::optional<Addr> pairing;
     std::optional<Addr> power;
     std::optional<Addr> get_all_modes;
@@ -169,6 +171,17 @@ inline std::pair<bool, std::string> parse_voice_prompts(const std::vector<uint8_
     };
     std::string lang_name = (lang < 23) ? lang_names[lang] : "Unknown";
     return {enabled, lang_name};
+}
+
+inline std::string parse_anr(const std::vector<uint8_t>& p) {
+    if (p.empty()) return "off";
+    switch (p[0]) {
+        case 0: return "off";
+        case 1: return "high";
+        case 2: return "wind";
+        case 3: return "low";
+        default: return "unknown";
+    }
 }
 
 inline std::optional<ButtonMapping> parse_buttons(const std::vector<uint8_t>& p) {

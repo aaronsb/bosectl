@@ -163,6 +163,13 @@ impl<T: Transport> BmapConnection<T> {
         Ok(parse_multipoint(&payload))
     }
 
+    /// Active Noise Reduction mode (QC35: off/high/wind/low).
+    pub fn anr(&self) -> BmapResult<&'static str> {
+        let addr = self.addr(self.config.anr)?;
+        let payload = self.get(addr)?;
+        Ok(parse_anr(&payload))
+    }
+
     /// Auto play/pause enabled.
     pub fn auto_pause(&self) -> BmapResult<bool> {
         let addr = self.addr(self.config.auto_pause)?;
@@ -288,6 +295,20 @@ impl<T: Transport> BmapConnection<T> {
         if resp.op != Operator::Result {
             return Err(BmapError::Device { message: "Mode switch failed".into(), code: 0 });
         }
+        Ok(())
+    }
+
+    /// Set Active Noise Reduction mode (QC35: off/high/wind/low).
+    pub fn set_anr(&self, level: &str) -> BmapResult<()> {
+        let addr = self.addr(self.config.anr)?;
+        let val = match level {
+            "off" => 0u8,
+            "high" => 1,
+            "wind" => 2,
+            "low" => 3,
+            _ => return Err(BmapError::InvalidArg("ANR: off, high, wind, low".into())),
+        };
+        self.setget(addr, &[val])?;
         Ok(())
     }
 

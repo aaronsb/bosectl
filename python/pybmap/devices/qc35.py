@@ -56,9 +56,11 @@ FEATURES = {
     "pairing": {
         "addr": (4, 8),
     },
-    # NC level at [3.2] is auth-gated on firmware 4.8.1.
-    # based-connect worked on firmware 1.x using SET on [3.2].
-    # START with 14-byte payload is accepted but does not change NC audibly.
+    "anr": {
+        "addr": (1, 6),
+        "parser": parsers.parse_anr,
+        "builder": parsers.build_anr,
+    },
 }
 
 PRESET_MODES = {

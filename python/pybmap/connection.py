@@ -191,6 +191,13 @@ class BmapConnection:
         """Auto-answer calls enabled (bool)."""
         return self._get("auto_answer")
 
+    def anr(self):
+        """Active Noise Reduction mode (str: off/high/wind/low).
+
+        Used by QC35 instead of CNC. Returns the current ANR level name.
+        """
+        return self._get("anr")
+
     def prompts(self):
         """Voice prompts (enabled, language_name) tuple."""
         enabled, lang_id = self._get("voice_prompts")
@@ -277,6 +284,15 @@ class BmapConnection:
         slot, config = self._ensure_editable_profile()
         self._write_mode_from_config(slot, config, cnc_level=level)
         self._start("current_mode", bytes([slot, 0]))
+
+    def set_anr(self, level):
+        """Set Active Noise Reduction mode (off/high/wind/low).
+
+        Used by QC35 instead of set_cnc().
+        """
+        feat = self._feature("anr")
+        builder = feat.get("builder")
+        self._setget("anr", builder(level))
 
     def set_eq(self, bass=0, mid=0, treble=0):
         """Set 3-band equalizer (-10 to +10 each)."""

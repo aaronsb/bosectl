@@ -48,6 +48,7 @@ inline DeviceConfig qc35() {
     // cnc [3.2] is auth-gated on fw 4.8.1
     c.sidetone = Addr{1, 11};
     c.buttons = Addr{1, 9};
+    c.anr = Addr{1, 6};  // OFF=0, HIGH=1, WIND=2, LOW=3
     c.pairing = Addr{4, 8};
     // No: eq, multipoint, auto_pause, auto_answer, power, AudioModes block 31
     c.preset_modes = {

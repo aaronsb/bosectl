@@ -49,10 +49,17 @@ def cmd_status(dev):
     s = dev.status()
     batt_color = C_GREEN if s.battery > 30 else C_YELLOW if s.battery > 10 else C_RED
     row("Battery", "%d%%" % s.battery, batt_color)
-    row("Mode", s.mode, C_CYAN)
+    if s.mode:
+        row("Mode", s.mode, C_CYAN)
 
-    cnc_bar = "\u2588" * s.cnc_level + "\u2591" * (s.cnc_max - s.cnc_level)
-    row("CNC", "%s %d/%d" % (cnc_bar, s.cnc_level, s.cnc_max))
+    if dev.has_feature("anr"):
+        try:
+            row("ANR", dev.anr(), C_CYAN)
+        except Exception:
+            pass
+    elif dev.has_feature("cnc"):
+        cnc_bar = "\u2588" * s.cnc_level + "\u2591" * (s.cnc_max - s.cnc_level)
+        row("CNC", "%s %d/%d" % (cnc_bar, s.cnc_level, s.cnc_max))
 
     if s.eq:
         eq_str = "/".join("%+d" % b.current for b in s.eq)
@@ -322,6 +329,10 @@ def main():
             if len(sys.argv) > 2:
                 dev.set_name(" ".join(sys.argv[2:]))
             print(dev.name())
+        elif cmd == "anr":
+            if len(sys.argv) > 2:
+                dev.set_anr(sys.argv[2].lower())
+            print(dev.anr())
         elif cmd == "sidetone":
             if len(sys.argv) > 2:
                 dev.set_sidetone(sys.argv[2])

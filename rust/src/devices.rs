@@ -22,6 +22,7 @@ pub fn qc_ultra2() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: Some(Addr(1, 24)),
         auto_answer: Some(Addr(1, 27)),
+        anr: None,  // Ultra 2 uses CNC, not ANR
         pairing: Some(Addr(4, 8)),
         power: Some(Addr(7, 4)),
         get_all_modes: Some(Addr(31, 1)),
@@ -60,6 +61,7 @@ pub fn qc35() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: None, // [1.24] not supported
         auto_answer: None,
+        anr: Some(Addr(1, 6)),  // OFF=0, HIGH=1, WIND=2, LOW=3
         pairing: Some(Addr(4, 8)),
         power: None, // block 7 not supported
         get_all_modes: None,

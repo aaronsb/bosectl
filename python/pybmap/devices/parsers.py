@@ -126,6 +126,30 @@ def parse_voice_prompts(payload):
     return (False, 0)
 
 
+ANR_NAMES = {0: "off", 1: "high", 2: "wind", 3: "low"}
+ANR_VALUES = {"off": 0, "high": 1, "wind": 2, "low": 3}
+
+
+def parse_anr(payload):
+    """Parse ANR GET response from [1.6]. Returns level name string.
+
+    QC35 uses ANR (Active Noise Reduction) modes instead of CNC levels.
+    Payload: [anr_level, capabilities_byte].
+    Values: 0=off, 1=high, 2=wind, 3=low.
+    """
+    if payload:
+        return ANR_NAMES.get(payload[0], "unknown(%d)" % payload[0])
+    return "off"
+
+
+def build_anr(level_name):
+    """Build ANR SETGET payload. Single byte: 0=off, 1=high, 2=wind, 3=low."""
+    val = ANR_VALUES.get(level_name.lower())
+    if val is None:
+        raise ValueError("ANR level must be off, high, wind, or low")
+    return bytes([val])
+
+
 # ── Standard Builders ────────────────────────────────────────────────────────
 
 def build_eq_band(value, band_id):

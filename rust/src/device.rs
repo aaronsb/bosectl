@@ -95,6 +95,8 @@ pub struct DeviceConfig {
     pub sidetone: Option<Addr>,
     pub auto_pause: Option<Addr>,
     pub auto_answer: Option<Addr>,
+    /// ANR mode address (QC35: off/high/wind/low at [1.6]).
+    pub anr: Option<Addr>,
     pub pairing: Option<Addr>,
     pub power: Option<Addr>,
     pub get_all_modes: Option<Addr>,
@@ -209,6 +211,16 @@ pub fn parse_voice_prompts(payload: &[u8]) -> (bool, &'static str) {
         (enabled, lang_name)
     } else {
         (false, "Unknown")
+    }
+}
+
+pub fn parse_anr(payload: &[u8]) -> &'static str {
+    match payload.first() {
+        Some(0) => "off",
+        Some(1) => "high",
+        Some(2) => "wind",
+        Some(3) => "low",
+        _ => "unknown",
     }
 }
 
