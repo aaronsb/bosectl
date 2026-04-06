@@ -64,8 +64,7 @@ fn main() {
                     return err_exit(&e);
                 }
             }
-            // Read back — auto_answer uses parse_bool
-            dev.auto_pause().map(|a| println!("{}", if a { "on" } else { "off" }))
+            dev.auto_answer().map(|a| println!("{}", if a { "on" } else { "off" }))
         }
         "switch" => {
             if args.len() < 3 {

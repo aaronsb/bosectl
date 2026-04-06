@@ -159,6 +159,13 @@ impl<T: Transport> BmapConnection<T> {
         Ok(parse_bool(&payload))
     }
 
+    /// Auto-answer calls enabled.
+    pub fn auto_answer(&self) -> BmapResult<bool> {
+        let addr = self.addr(self.config.auto_answer)?;
+        let payload = self.get(addr)?;
+        Ok(parse_bool(&payload))
+    }
+
     /// Voice prompts (enabled, language_name).
     pub fn prompts(&self) -> BmapResult<(bool, &'static str)> {
         let addr = self.addr(self.config.voice_prompts)?;
@@ -316,6 +323,11 @@ impl<T: Transport> BmapConnection<T> {
 
     /// Set EQ bands (-10 to +10 each).
     pub fn set_eq(&self, bass: i8, mid: i8, treble: i8) -> BmapResult<()> {
+        for &val in &[bass, mid, treble] {
+            if val < -10 || val > 10 {
+                return Err(BmapError::InvalidArg("EQ values must be -10 to +10".into()));
+            }
+        }
         let addr = self.addr(self.config.eq)?;
         for (band_id, val) in [(0u8, bass), (1, mid), (2, treble)] {
             let payload = [val as u8, band_id];
