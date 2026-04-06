@@ -41,6 +41,7 @@ inline DeviceConfig qc35() {
     DeviceConfig c;
     c.info = {"Bose QuietComfort 35", "baywolf", "CSR8670"};
     c.rfcomm_channel = 8;
+    c.init_packet = Addr{0, 1};  // GET [0.1] required before QC35 responds
     c.battery = Addr{2, 2};
     c.firmware = Addr{0, 5};
     c.product_name = Addr{1, 2};

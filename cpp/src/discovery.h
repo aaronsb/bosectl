@@ -3,9 +3,12 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace bmap {
 
-std::optional<std::string> find_bmap_device();
+/// Auto-detect a paired, connected BMAP device.
+/// Returns (mac, device_type) or nullopt.
+std::optional<std::pair<std::string, std::string>> find_bmap_device();
 
 } // namespace bmap

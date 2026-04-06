@@ -11,6 +11,7 @@ pub fn qc_ultra2() -> DeviceConfig {
             platform: "OTG-QCC-384",
         },
         rfcomm_channel: 2,
+        init_packet: None,
         battery: Some(Addr(2, 2)),
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
@@ -22,7 +23,7 @@ pub fn qc_ultra2() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: Some(Addr(1, 24)),
         auto_answer: Some(Addr(1, 27)),
-        anr: None,  // Ultra 2 uses CNC, not ANR
+        anr: None,
         pairing: Some(Addr(4, 8)),
         power: Some(Addr(7, 4)),
         get_all_modes: Some(Addr(31, 1)),
@@ -50,11 +51,12 @@ pub fn qc35() -> DeviceConfig {
             platform: "CSR8670",
         },
         rfcomm_channel: 8,
+        init_packet: Some(Addr(0, 1)),  // GET [0.1] required before QC35 responds
         battery: Some(Addr(2, 2)),
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
-        cnc: None, // [3.2] auth-gated on fw 4.8.1
+        cnc: None,
         eq: None,
         buttons: Some(Addr(1, 9)),
         multipoint: None, // [1.10] not supported

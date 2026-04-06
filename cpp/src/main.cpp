@@ -40,39 +40,20 @@ int main(int argc, char** argv) {
     std::string cmd = argv[1];
     if (cmd == "help" || cmd == "-h" || cmd == "--help") { usage(); return 0; }
 
-    // Resolve MAC and device type
     const char* mac_env = std::getenv("BMAP_MAC");
     const char* dev_env = std::getenv("BMAP_DEVICE");
-    std::string device_type = dev_env ? dev_env : "qc_ultra2";
+    std::string mac_str = mac_env ? mac_env : "";
+    std::string dev_str = dev_env ? dev_env : "";
 
-    std::string mac;
-    if (mac_env) {
-        mac = mac_env;
-    } else {
-        auto detected = find_bmap_device();
-        if (!detected) {
-            std::cerr << "No BMAP device found. Set BMAP_MAC or pair via bluetoothctl.\n";
-            return 1;
-        }
-        mac = *detected;
-    }
-
-    auto config = get_device(device_type);
-    if (!config) {
-        std::cerr << "Unknown device type: " << device_type << "\n";
-        return 1;
-    }
-
-    std::unique_ptr<Transport> transport;
+    std::unique_ptr<BmapConnection> devptr;
     try {
-        transport = std::make_unique<RfcommTransport>(mac, config->rfcomm_channel);
+        devptr = connect(mac_str, dev_str);
     } catch (const std::exception& e) {
         std::cerr << "Connection failed: " << e.what() << "\n"
                   << "Is Bluetooth on? Are the headphones paired and connected?\n";
         return 1;
     }
-
-    BmapConnection dev(std::move(transport), std::move(*config));
+    auto& dev = *devptr;
 
     try {
         if (cmd == "status") {

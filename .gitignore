@@ -6,7 +6,4 @@ build/
 .eggs/
 .venv/
 .pytest_cache/
-linkedin-article.md
-article-techy.md
 target/
-apk-analysis/

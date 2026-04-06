@@ -5,38 +5,98 @@ use std::process::Command;
 /// BMAP service UUID found in SDP records.
 pub const BMAP_UUID: &str = "00000000-deca-fade-deca-deafdecacaff";
 
-/// Auto-detect a paired BMAP-capable Bluetooth device.
+/// A discovered BMAP device.
+#[derive(Debug, Clone)]
+pub struct DiscoveredDevice {
+    pub mac: String,
+    pub device_type: String,
+    pub connected: bool,
+}
+
+/// Auto-detect a paired, connected BMAP-capable Bluetooth device.
 ///
-/// Returns the MAC address string, or None if not found.
-pub fn find_bmap_device() -> Option<String> {
-    let output = Command::new("bluetoothctl")
+/// Prioritizes connected devices. Returns (mac, device_type), or None.
+pub fn find_bmap_device() -> Option<(String, String)> {
+    let candidates = scan_paired_devices();
+
+    // Prefer connected
+    for d in &candidates {
+        if d.connected {
+            return Some((d.mac.clone(), d.device_type.clone()));
+        }
+    }
+    // Fall back to first paired
+    candidates.first().map(|d| (d.mac.clone(), d.device_type.clone()))
+}
+
+/// Scan all paired Bluetooth devices for BMAP-capable headphones.
+pub fn scan_paired_devices() -> Vec<DiscoveredDevice> {
+    let mut candidates = Vec::new();
+    let output = match Command::new("bluetoothctl")
         .args(["devices", "Paired"])
         .output()
-        .ok()?;
+    {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
+        Err(_) => return candidates,
+    };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
+    for line in output.lines() {
         let parts: Vec<&str> = line.splitn(3, ' ').collect();
         if parts.len() < 2 {
             continue;
         }
         let mac = parts[1];
 
-        let info = Command::new("bluetoothctl")
+        let info = match Command::new("bluetoothctl")
             .args(["info", mac])
             .output()
-            .ok()?;
-        let info_str = String::from_utf8_lossy(&info.stdout);
+        {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
+            Err(_) => continue,
+        };
 
-        for info_line in info_str.lines() {
-            let trimmed = info_line.trim();
-            if trimmed.starts_with("Icon: audio-headset") && info_str.contains(BMAP_UUID) {
-                return Some(mac.to_string());
-            }
-            if trimmed.to_lowercase().contains("bose") {
-                return Some(mac.to_string());
+        let is_audio = info.contains("audio-headset") || info.contains("audio-headphones");
+        let has_bmap = info.contains(BMAP_UUID);
+        if !(is_audio && has_bmap) {
+            continue;
+        }
+
+        let connected = info.contains("Connected: yes");
+        let device_type = detect_device_type(&info);
+
+        candidates.push(DiscoveredDevice {
+            mac: mac.to_string(),
+            device_type,
+            connected,
+        });
+    }
+    candidates
+}
+
+/// Detect device type from Modalias product ID.
+fn detect_device_type(info: &str) -> String {
+    // Modalias format: bluetooth:vXXXXpYYYYdZZZZ
+    for line in info.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Modalias:") {
+            let rest = rest.trim();
+            // Match "bluetooth:vXXXXpYYYYdZZZZ" and extract YYYY
+            if let Some(bt_rest) = rest.strip_prefix("bluetooth:v") {
+                if bt_rest.len() >= 9 {  // "XXXXpYYYY" minimum
+                    let after_vendor = &bt_rest[4..];  // skip vendor "XXXX"
+                    if after_vendor.starts_with('p') {
+                        let id_str = &after_vendor[1..5];
+                        if let Ok(product_id) = u16::from_str_radix(id_str, 16) {
+                            return match product_id {
+                                0x4082 => "qc_ultra2".to_string(),
+                                0x4020 | 0x400C => "qc35".to_string(),
+                                _ => "qc_ultra2".to_string(),
+                            };
+                        }
+                    }
+                }
             }
         }
     }
-    None
+    "qc_ultra2".to_string()
 }

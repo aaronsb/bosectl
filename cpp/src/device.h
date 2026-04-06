@@ -80,6 +80,8 @@ struct DeviceConfig {
     DeviceInfo info;
     /// RFCOMM channel for BMAP (2 for newer devices, 8 for QC35).
     uint8_t rfcomm_channel = 2;
+    /// Init packet required before device responds (QC35 needs GET [0.1]).
+    std::optional<Addr> init_packet;
     std::optional<Addr> battery;
     std::optional<Addr> firmware;
     std::optional<Addr> product_name;
