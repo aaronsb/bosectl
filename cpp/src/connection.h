@@ -71,8 +71,8 @@ public:
     }
 
     DeviceStatus status() {
-        auto idx = mode_idx();
-        auto mode_name = mode_name_from_idx(idx);
+        auto idx = safe_call<uint8_t>([&]{ return mode_idx(); }, 0);
+        auto mode_name = safe_call<std::string>([&]{ return mode_name_from_idx(idx); }, "");
         auto [cnc_cur, cnc_max] = safe_call<std::pair<uint8_t,uint8_t>>(
             [&]{ return cnc(); }, {0, 10});
         auto [prom_on, prom_lang] = safe_call<std::pair<bool,std::string>>(

@@ -40,6 +40,6 @@ pub fn connect(mac: Option<&str>, device_type: &str) -> BmapResult<BmapConnectio
     let config = devices::get_device(device_type)
         .ok_or_else(|| BmapError::InvalidArg(format!("Unknown device: {}", device_type)))?;
 
-    let transport = transport::RfcommTransport::connect(&mac, transport::BMAP_CHANNEL)?;
+    let transport = transport::RfcommTransport::connect(&mac, config.rfcomm_channel)?;
     Ok(BmapConnection::new(transport, config))
 }

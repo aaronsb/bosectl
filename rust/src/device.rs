@@ -82,6 +82,8 @@ pub struct DeviceStatus {
 #[derive(Debug, Clone)]
 pub struct DeviceConfig {
     pub info: DeviceInfo,
+    /// RFCOMM channel for BMAP (2 for newer devices, 8 for QC35).
+    pub rfcomm_channel: u8,
     pub battery: Option<Addr>,
     pub firmware: Option<Addr>,
     pub product_name: Option<Addr>,

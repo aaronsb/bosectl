@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
 
     std::unique_ptr<Transport> transport;
     try {
-        transport = std::make_unique<RfcommTransport>(mac);
+        transport = std::make_unique<RfcommTransport>(mac, config->rfcomm_channel);
     } catch (const std::exception& e) {
         std::cerr << "Connection failed: " << e.what() << "\n"
                   << "Is Bluetooth on? Are the headphones paired and connected?\n";

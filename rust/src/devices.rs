@@ -10,6 +10,7 @@ pub fn qc_ultra2() -> DeviceConfig {
             codename: "wolverine",
             platform: "OTG-QCC-384",
         },
+        rfcomm_channel: 2,
         battery: Some(Addr(2, 2)),
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
@@ -38,7 +39,8 @@ pub fn qc_ultra2() -> DeviceConfig {
     }
 }
 
-/// Bose QC35 configuration (stub — needs hardware verification).
+/// Bose QC35 configuration — verified against firmware 4.8.1.
+/// BMAP over RFCOMM channel 8.
 pub fn qc35() -> DeviceConfig {
     DeviceConfig {
         info: DeviceInfo {
@@ -46,19 +48,20 @@ pub fn qc35() -> DeviceConfig {
             codename: "baywolf",
             platform: "CSR8670",
         },
+        rfcomm_channel: 8,
         battery: Some(Addr(2, 2)),
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
-        cnc: Some(Addr(1, 5)),
+        cnc: None, // [3.2] auth-gated on fw 4.8.1
         eq: None,
-        buttons: None,
-        multipoint: Some(Addr(1, 10)),
-        sidetone: None,
-        auto_pause: Some(Addr(1, 24)),
+        buttons: Some(Addr(1, 9)),
+        multipoint: None, // [1.10] not supported
+        sidetone: Some(Addr(1, 11)),
+        auto_pause: None, // [1.24] not supported
         auto_answer: None,
         pairing: Some(Addr(4, 8)),
-        power: Some(Addr(7, 4)),
+        power: None, // block 7 not supported
         get_all_modes: None,
         current_mode: None,
         mode_config: None,

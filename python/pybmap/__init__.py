@@ -55,6 +55,7 @@ def connect(mac=None, device_type=None):
         device_type = "qc_ultra2"
 
     device = get_device(device_type)
-    transport = RfcommTransport(mac)
+    channel = getattr(device, "RFCOMM_CHANNEL", 2)
+    transport = RfcommTransport(mac, channel=channel)
     transport.connect()
     return BmapConnection(transport, device)

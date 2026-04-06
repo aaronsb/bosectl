@@ -196,8 +196,10 @@ impl<T: Transport> BmapConnection<T> {
     /// Full device status.
     pub fn status(&self) -> BmapResult<DeviceStatus> {
         // Single GET for mode index, derive name without extra round trip.
-        let current_idx = self.mode_idx()?;
-        let current_name = self.mode_name_from_idx(current_idx);
+        let (current_idx, current_name) = match self.mode_idx() {
+            Ok(idx) => (idx, self.mode_name_from_idx(idx)),
+            Err(_) => (0, String::new()),
+        };
         let (cnc_level, cnc_max) = self.cnc().unwrap_or((0, 10));
         let (prompts_enabled, prompts_language) = self.prompts().unwrap_or((false, "Unknown"));
 
@@ -714,7 +716,7 @@ mod tests {
         let dev = BmapConnection::new(t, devices::qc35());
         assert!(dev.has_feature("battery"));
         assert!(!dev.has_feature("eq"));
-        assert!(!dev.has_feature("sidetone"));
+        assert!(dev.has_feature("sidetone"));  // QC35 has sidetone
         assert!(!dev.has_feature("mode_config"));
     }
 

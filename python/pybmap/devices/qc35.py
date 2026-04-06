@@ -1,27 +1,30 @@
 """Bose QC35 / QC35 II device configuration.
 
-Qualcomm CSR8670 platform.
-No ECDH auth — all operators accessible without cloud auth.
+Verified against real QC35 hardware on firmware 4.8.1.
+BMAP over RFCOMM channel 8 (not channel 2 like newer devices).
 
-This is a stub based on known information from based-connect and other
-RE projects. Payload formats and feature availability need verification
-against real hardware.
-
-TODO: Connect QC35 via Bluetooth and verify/complete this config.
+Capabilities verified:
+  - Battery, firmware, serial, product name: GET works
+  - Device name, sidetone, voice prompts: GET + SETGET works
+  - Buttons: GET works (read-only)
+  - Pairing mode: START works
+  - NC level [3.2]: auth-gated on firmware 4.8.1 (was open on 1.x)
+  - No EQ, no spatial audio, no AudioModes block 31, no power off,
+    no multipoint, no auto-pause/answer
 """
 
 from . import parsers
 
+RFCOMM_CHANNEL = 8
+
 DEVICE_INFO = {
     "name": "Bose QuietComfort 35",
-    "codename": "baywolf",  # Verify
+    "codename": "baywolf",
     "platform": "CSR8670",
-    "product_id": None,  # TODO: determine from device
-    "variant": None,
+    "product_id": 0x4020,
+    "variant": 0x02,
 }
 
-# Feature map — addresses based on based-connect and community RE.
-# Many of these need verification on real hardware.
 FEATURES = {
     "battery": {
         "addr": (2, 2),
@@ -34,41 +37,28 @@ FEATURES = {
     "product_name": {
         "addr": (1, 2),
         "parser": parsers.parse_product_name,
+        "builder": lambda name: name.encode("utf-8"),
     },
     "voice_prompts": {
         "addr": (1, 3),
         "parser": parsers.parse_voice_prompts,
         "builder": parsers.build_voice_prompts,
     },
-    # QC35 has 3-level ANC (high/low/off), not a 0-10 CNC slider.
-    # The function block address and payload format may differ.
-    "cnc": {
-        "addr": (1, 5),  # TODO: verify
-        "parser": parsers.parse_cnc,
+    "sidetone": {
+        "addr": (1, 11),
+        "parser": parsers.parse_sidetone,
+        "builder": parsers.build_sidetone,
     },
-    "multipoint": {
-        "addr": (1, 10),  # TODO: verify
-        "parser": parsers.parse_multipoint,
-        "builder": parsers.build_toggle,
-    },
-    "auto_pause": {
-        "addr": (1, 24),  # TODO: verify
-        "parser": parsers.parse_bool,
-        "builder": parsers.build_toggle,
+    "buttons": {
+        "addr": (1, 9),
+        "parser": parsers.parse_buttons,
     },
     "pairing": {
-        "addr": (4, 8),  # TODO: verify
+        "addr": (4, 8),
     },
-    "power": {
-        "addr": (7, 4),  # TODO: verify
-    },
-    # QC35 does NOT have these features:
-    # - eq (no EQ control)
-    # - spatial (no spatial audio)
-    # - sidetone
-    # - auto_answer
-    # - mode_config / AudioModes block 31 (uses different ANC approach)
-    # - buttons (no configurable shortcut button)
+    # NC level at [3.2] is auth-gated on firmware 4.8.1.
+    # based-connect worked on firmware 1.x using SET on [3.2].
+    # START with 14-byte payload is accepted but does not change NC audibly.
 }
 
 PRESET_MODES = {
@@ -79,6 +69,6 @@ PRESET_MODES = {
 
 MODE_BY_IDX = {m["idx"]: name for name, m in PRESET_MODES.items()}
 
-EDITABLE_SLOTS = []  # QC35 has no editable mode slots
+EDITABLE_SLOTS = []
 
-STATUS_OFFSETS = {}  # No mode config on QC35
+STATUS_OFFSETS = {}

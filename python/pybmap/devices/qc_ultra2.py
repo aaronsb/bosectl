@@ -18,6 +18,8 @@ Auth notes:
 
 from . import parsers
 
+RFCOMM_CHANNEL = 2
+
 # ── Device Identity ──────────────────────────────────────────────────────────
 
 DEVICE_INFO = {
