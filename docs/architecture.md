@@ -293,16 +293,89 @@ The library uses SETGET (not SET) for all writes and START for mode
 switching. This gives full control over settings, profiles, and modes
 without any authentication.
 
+## Device Catalog
+
+The catalog module (`catalog.py` / `catalog.rs` / `catalog.h`) is the
+single source of truth for all known Bose BMAP devices. It's sourced from
+Bose's firmware manifest at `downloads.bose.com/lookup.xml`.
+
+```mermaid
+graph TD
+    CAT[Device Catalog<br/>14 known BMAP devices] --> SUP[Supported<br/>config ≠ None]
+    CAT --> UNSUP[Recognized but Unsupported<br/>config = None]
+    SUP --> DISC[Discovery<br/>PID → config lookup]
+    SUP --> CFG[Device Configs<br/>qc_ultra2, qc35]
+    DISC --> CONN[connect&#40;&#41;]
+    CFG --> CONN
+
+    style CAT fill:#ff9f43,stroke:#333,color:#fff
+    style SUP fill:#26de81,stroke:#333,color:#fff
+    style UNSUP fill:#778ca3,stroke:#333,color:#fff
+    style DISC fill:#4a9eff,stroke:#333,color:#fff
+    style CFG fill:#4a9eff,stroke:#333,color:#fff
+    style CONN fill:#4a9eff,stroke:#333,color:#fff
+```
+
+Each catalog entry carries:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `product_id` | USB PID / Bluetooth Modalias ID | `0x4082` |
+| `codename` | Bose internal codename | `"wolverine"` |
+| `name` | Marketing product name | `"QuietComfort Ultra Headphones"` |
+| `category` | `headphones`, `earbuds`, or `speaker` | `headphones` |
+| `config` | Library config key, or None | `"qc_ultra2"` |
+
+**Public API** (identical across all three libraries):
+
+```
+lookup_device(0x4082)    → BoseDevice{wolverine, "QC Ultra Headphones", config="qc_ultra2"}
+is_supported(0x4024)     → False (NCH 700: recognized, no config yet)
+supported_devices()      → [kleos, baywolf, wolverine]
+known_devices()          → all 14 entries
+usb_ids(0x4082)          → (0x05A7, 0x4082)
+modalias(0x4082)         → "bluetooth:v05A7p4082d0000"
+```
+
+The USB vendor ID `0x05A7` is shared by all Bose devices. The product ID
+appears in both USB descriptors (DFU mode) and Bluetooth Modalias strings
+(normal mode), making it the universal device identifier.
+
+Discovery uses the catalog to resolve product IDs to config keys. Devices
+with `config=None` are recognized (logged, not errored) but fall back to
+a default config since they don't have a tested implementation yet.
+
+### Supported Devices
+
+| PID | Codename | Product | Config |
+|-----|----------|---------|--------|
+| `0x4017` | kleos | QuietComfort 35 | `qc35` |
+| `0x4020` | baywolf | QuietComfort 35 II | `qc35` |
+| `0x4082` | wolverine | QuietComfort Ultra Headphones | `qc_ultra2` |
+
+### Known Unsupported (Future Targets)
+
+| PID | Codename | Product | Category |
+|-----|----------|---------|----------|
+| `0x4024` | goodyear | Noise Cancelling Headphones 700 | headphones |
+| `0x4061` | vedder | QuietComfort 45 | headphones |
+| `0x4060` | olivia | QuietComfort Earbuds II | earbuds |
+| `0x4063` | edith | Ultra Open Earbuds | earbuds |
+| `0x4075` | prince | QuietComfort Ultra Earbuds | earbuds |
+| `0x4039` | duran | SoundLink Flex | speaker |
+| `0x4073` | scotty | SoundLink Flex 2nd Gen | speaker |
+
 ## Adding a New Device
 
-To add support for a new Bose headphone model:
+To add support for a new Bose device:
 
-1. **Discover the RFCOMM channel** — try channels 2 and 8
-2. **Check if an init packet is needed** — send GET [0.1] and see if subsequent commands work
-3. **Probe features** — GET on known function addresses to see what responds
-4. **Create a device config** with the discovered addresses and parsers
-5. **Register in discovery** — add the Modalias product ID mapping
+1. **Add to the catalog** — add its PID, codename, and name with `config=None`
+2. **Discover the RFCOMM channel** — try channels 2 and 8
+3. **Check if an init packet is needed** — send GET [0.1] and see if subsequent commands work
+4. **Probe features** — GET on known function addresses to see what responds
+5. **Create a device config** with the discovered addresses and parsers
 6. **Register in the device registry** — add to `get_device()` / `DEVICES`
+7. **Set config in catalog** — change `None` to the new config key
 
 No changes to `BmapConnection` or the transport layer should be needed.
 Device-specific parsing (e.g. different ModeConfig layouts) is handled by
@@ -320,6 +393,7 @@ are in how each language expresses the patterns.
 ```
 pybmap/
 ├── __init__.py          # connect() entry point, public API re-exports
+├── catalog.py           # Device catalog (PIDs, codenames, USB/Modalias IDs)
 ├── protocol.py          # Packet codec (bmap_packet, parse_response)
 ├── transport.py         # RfcommTransport (AF_BLUETOOTH socket)
 ├── connection.py        # BmapConnection class
@@ -360,6 +434,7 @@ parser tests (parsers are pure functions). Connection tests use a
 ```
 rust/src/
 ├── lib.rs               # connect() entry point, public re-exports
+├── catalog.rs           # Device catalog (PIDs, codenames, USB/Modalias IDs)
 ├── protocol.rs          # Packet codec, BmapResponse struct
 ├── transport.rs         # Transport trait + RfcommTransport (libc sockets)
 ├── connection.rs        # BmapConnection<T: Transport> generic struct
@@ -414,6 +489,7 @@ pub enum BmapError {
 ```
 cpp/src/
 ├── bmap.h               # connect() function, public header
+├── catalog.h            # Device catalog (PIDs, codenames, USB/Modalias IDs)
 ├── protocol.h           # Packet codec (header-only)
 ├── transport.h          # Transport abstract class
 ├── transport.cpp        # RfcommTransport (BlueZ sockets)
