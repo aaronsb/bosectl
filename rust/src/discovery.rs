@@ -74,6 +74,16 @@ pub fn scan_paired_devices() -> Vec<DiscoveredDevice> {
 }
 
 /// Detect device type from Modalias product ID.
+///
+/// Known BMAP devices (from https://downloads.bose.com/lookup.xml):
+///   0x4017 kleos    — QuietComfort 35           → qc35
+///   0x4020 baywolf  — QuietComfort 35 II        → qc35
+///   0x4024 goodyear — NC Headphones 700         (unsupported)
+///   0x4060 olivia   — QC Earbuds II             (unsupported)
+///   0x4061 vedder   — QuietComfort 45           (unsupported)
+///   0x4063 edith    — Ultra Open Earbuds        (unsupported)
+///   0x4075 prince   — QC Ultra Earbuds          (unsupported)
+///   0x4082 wolverine — QC Ultra Headphones      → qc_ultra2
 fn detect_device_type(info: &str) -> String {
     // Modalias format: bluetooth:vXXXXpYYYYdZZZZ
     for line in info.lines() {
@@ -88,8 +98,8 @@ fn detect_device_type(info: &str) -> String {
                         let id_str = &after_vendor[1..5];
                         if let Ok(product_id) = u16::from_str_radix(id_str, 16) {
                             return match product_id {
-                                0x4082 => "qc_ultra2".to_string(),
-                                0x4020 | 0x400C => "qc35".to_string(),
+                                0x4082 => "qc_ultra2".to_string(),          // wolverine
+                                0x4020 | 0x4017 => "qc35".to_string(),     // baywolf / kleos
                                 _ => "qc_ultra2".to_string(),
                             };
                         }

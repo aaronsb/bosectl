@@ -47,6 +47,7 @@ def row(label, value, color=None):
 
 def cmd_status(dev):
     s = dev.status()
+    row("Model", dev.device_info.get("name", "Unknown"), C_MAGENTA)
     batt_color = C_GREEN if s.battery > 30 else C_YELLOW if s.battery > 10 else C_RED
     row("Battery", "%d%%" % s.battery, batt_color)
     if s.mode:

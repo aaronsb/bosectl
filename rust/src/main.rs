@@ -224,6 +224,7 @@ fn cmd_status(dev: &bmap::BmapConnection<impl bmap::Transport>) -> Result<(), Bm
     let cnc_bar: String = "█".repeat(s.cnc_level as usize)
         + &"░".repeat((s.cnc_max - s.cnc_level) as usize);
 
+    println!("  Model        {}", dev.config().info.name);
     println!("  Battery      {}%", s.battery);
     if !s.mode.is_empty() {
         println!("  Mode         {}", s.mode);
