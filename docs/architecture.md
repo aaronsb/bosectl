@@ -40,7 +40,8 @@ The lowest layer. Encodes and decodes raw BMAP packets on the wire.
 ```
 Byte 0:    fblock     — function block ID (e.g. 1=Settings, 2=Status, 31=AudioModes)
 Byte 1:    func       — function ID within the block
-Byte 2:    operator   — operation type (GET, SETGET, START, etc.)
+Byte 2:    flags      — operator in low nibble (& 0x0F), upper bits carry
+                         device_id and port_num (typically zero)
 Byte 3:    length     — payload length in bytes
 Byte 4+:   payload    — operation-specific data
 ```
@@ -94,9 +95,13 @@ sequenceDiagram
 ```
 
 **Key behaviors:**
-- **Normal mode** (`send_recv`): Send packet, wait up to 3 seconds for one response
-- **Drain mode** (`send_recv_drain`): Send packet, collect all responses until 500ms silence — used for commands that return multiple STATUS frames (e.g. `GetAll`)
+- **Normal mode**: Send packet, wait up to 3 seconds for one response
+- **Drain mode**: Send packet, collect all responses until 500ms silence — used for commands that return multiple STATUS frames (e.g. `GetAll`)
 - **200ms post-send delay**: Required by the BMAP protocol between send and first recv
+
+The drain interface differs slightly by language: Python uses a boolean
+parameter (`send_recv(packet, drain=True)`), while Rust and C++ have a
+separate method (`send_recv_drain(packet)`).
 
 ### Device Config
 
@@ -135,6 +140,7 @@ Each feature entry maps a name to its protocol address and codec functions:
 | EQ | 3-band [1.7] | Not supported |
 | Spatial audio | [31.6] ModeConfig | Not supported |
 | Mode profiles | 7 editable slots (4-10) | None |
+| Sidetone | [1.11] | [1.11] |
 | Multipoint | [1.10] | Not supported |
 | Button remap | Shortcut (0x80) | Action (0x10) |
 
@@ -199,7 +205,7 @@ parse_buttons([0x10, 0x04, 0x01, 0x07])  →  ButtonMapping{Action, single_press
 build_anr("high")                         →  bytes([0x01])
 build_sidetone(2)                         →  bytes([0x01, 0x02])
 build_buttons(0x10, 4, 2)                 →  bytes([0x10, 0x04, 0x02])
-build_mode_config_40(5, "Custom", cnc=8)  →  40-byte payload
+build_mode_config_40(5, "Custom", cnc_level=8)  →  40-byte payload
 ```
 
 Builders accept both integer IDs and string names where applicable
@@ -318,8 +324,8 @@ pybmap/
 ├── transport.py         # RfcommTransport (AF_BLUETOOTH socket)
 ├── connection.py        # BmapConnection class
 ├── discovery.py         # find_bmap_device() via bluetoothctl
-├── constants.py         # Protocol constants, lookup tables
-├── types.py             # NamedTuples (BmapResponse, ModeConfig, etc.)
+├── constants.py         # Operators, error codes, button/action/language tables
+├── types.py             # NamedTuples (BmapResponse, ModeConfig, ButtonMapping, etc.)
 ├── errors.py            # Exception hierarchy
 └── devices/
     ├── __init__.py      # Device registry (DEVICES dict, get_device())
@@ -439,7 +445,8 @@ public:
 Tests use a `MockTransport` subclass.
 
 **Error handling** uses `std::runtime_error` exceptions. No typed
-hierarchy — error context is in the message string. The `require()` helper
+hierarchy — auth errors (code 5) are not programmatically distinguishable
+from other device errors without parsing the message string. The `require()` helper
 converts `std::nullopt` to an exception for unsupported features:
 ```cpp
 static Addr require(const std::optional<Addr>& opt, const char* name) {
