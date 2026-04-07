@@ -4,7 +4,8 @@
         python-setup python-test python-lint python-build python-publish \
         rust-test rust-build rust-publish \
         cpp-test cpp-build \
-        integration
+        integration \
+        artifacts release
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -80,8 +81,43 @@ test: python-test rust-test cpp-test ## Run all tests across all languages
 
 lint: python-lint ## Lint all languages
 
+# ── Release Artifacts ────────────────────────────────────────────────────────
+
+ARCH := $(shell uname -m)
+DIST = dist
+
+artifacts: rust-build cpp-build ## Build release binaries with checksums
+	@mkdir -p $(DIST)
+	cp $(RUST_DIR)/target/release/bmapctl $(DIST)/bmapctl-rust-linux-$(ARCH)
+	strip $(DIST)/bmapctl-rust-linux-$(ARCH)
+	cmake -S $(CPP_DIR) -B $(CPP_BUILD) -DCMAKE_BUILD_TYPE=Release
+	cmake --build $(CPP_BUILD) --config Release
+	cp $(CPP_BUILD)/bmapctl $(DIST)/bmapctl-cpp-linux-$(ARCH)
+	strip $(DIST)/bmapctl-cpp-linux-$(ARCH)
+	cd $(DIST) && sha256sum bmapctl-* > SHA256SUMS
+	@echo ""
+	@echo "Artifacts in $(DIST)/:"
+	@ls -lh $(DIST)/
+	@echo ""
+	@cat $(DIST)/SHA256SUMS
+
+release: test artifacts ## Run tests, build artifacts, create GitHub release
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=v0.2.0"; exit 1; fi
+	gh release create $(VERSION) \
+		$(DIST)/bmapctl-rust-linux-$(ARCH) \
+		$(DIST)/bmapctl-cpp-linux-$(ARCH) \
+		$(DIST)/SHA256SUMS \
+		--title "$(VERSION)" \
+		--generate-notes
+	@echo ""
+	@echo "Released $(VERSION):"
+	@echo "  https://github.com/$$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases/tag/$(VERSION)"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+
 clean: ## Remove build artifacts
 	rm -rf $(VENV) $(PYTHON_DIR)/dist $(PYTHON_DIR)/build $(PYTHON_DIR)/*.egg-info
 	rm -rf $(PYTHON_DIR)/.pytest_cache $(PYTHON_DIR)/__pycache__
 	cd $(RUST_DIR) && cargo clean 2>/dev/null || true
 	rm -rf $(CPP_BUILD)
+	rm -rf $(DIST)
