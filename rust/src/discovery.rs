@@ -2,8 +2,7 @@
 
 use std::process::Command;
 
-/// BMAP service UUID found in SDP records.
-pub const BMAP_UUID: &str = "00000000-deca-fade-deca-deafdecacaff";
+use crate::catalog::{self, BMAP_UUID};
 
 /// A discovered BMAP device.
 #[derive(Debug, Clone)]
@@ -73,35 +72,25 @@ pub fn scan_paired_devices() -> Vec<DiscoveredDevice> {
     candidates
 }
 
-/// Detect device type from Modalias product ID.
-///
-/// Known BMAP devices (from https://downloads.bose.com/lookup.xml):
-///   0x4017 kleos    — QuietComfort 35           → qc35
-///   0x4020 baywolf  — QuietComfort 35 II        → qc35
-///   0x4024 goodyear — NC Headphones 700         (unsupported)
-///   0x4060 olivia   — QC Earbuds II             (unsupported)
-///   0x4061 vedder   — QuietComfort 45           (unsupported)
-///   0x4063 edith    — Ultra Open Earbuds        (unsupported)
-///   0x4075 prince   — QC Ultra Earbuds          (unsupported)
-///   0x4082 wolverine — QC Ultra Headphones      → qc_ultra2
+/// Detect device type from Modalias product ID via catalog lookup.
 fn detect_device_type(info: &str) -> String {
     // Modalias format: bluetooth:vXXXXpYYYYdZZZZ
     for line in info.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("Modalias:") {
             let rest = rest.trim();
-            // Match "bluetooth:vXXXXpYYYYdZZZZ" and extract YYYY
             if let Some(bt_rest) = rest.strip_prefix("bluetooth:v") {
-                if bt_rest.len() >= 9 {  // "XXXXpYYYY" minimum
-                    let after_vendor = &bt_rest[4..];  // skip vendor "XXXX"
+                if bt_rest.len() >= 9 {
+                    let after_vendor = &bt_rest[4..];
                     if after_vendor.starts_with('p') {
                         let id_str = &after_vendor[1..5];
                         if let Ok(product_id) = u16::from_str_radix(id_str, 16) {
-                            return match product_id {
-                                0x4082 => "qc_ultra2".to_string(),          // wolverine
-                                0x4020 | 0x4017 => "qc35".to_string(),     // baywolf / kleos
-                                _ => "qc_ultra2".to_string(),
-                            };
+                            if let Some(dev) = catalog::lookup_device(product_id) {
+                                if let Some(config) = dev.config {
+                                    return config.to_string();
+                                }
+                            }
+                            return "qc_ultra2".to_string();
                         }
                     }
                 }

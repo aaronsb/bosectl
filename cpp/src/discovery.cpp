@@ -1,5 +1,6 @@
 // Auto-detect paired BMAP devices via bluetoothctl (Linux).
 #include "discovery.h"
+#include "catalog.h"
 
 #include <array>
 #include <cstdio>
@@ -10,8 +11,6 @@
 #include <vector>
 
 namespace bmap {
-
-static const char* BMAP_UUID = "00000000-deca-fade-deca-deafdecacaff";
 
 static std::string exec(const std::string& cmd) {
     std::array<char, 256> buf;
@@ -24,22 +23,14 @@ static std::string exec(const std::string& cmd) {
     return result;
 }
 
-// Known BMAP devices (from https://downloads.bose.com/lookup.xml):
-//   0x4017 kleos    — QuietComfort 35           → qc35
-//   0x4020 baywolf  — QuietComfort 35 II        → qc35
-//   0x4024 goodyear — NC Headphones 700         (unsupported)
-//   0x4060 olivia   — QC Earbuds II             (unsupported)
-//   0x4061 vedder   — QuietComfort 45           (unsupported)
-//   0x4063 edith    — Ultra Open Earbuds        (unsupported)
-//   0x4075 prince   — QC Ultra Earbuds          (unsupported)
-//   0x4082 wolverine — QC Ultra Headphones      → qc_ultra2
+// Detect device type from Modalias product ID via catalog lookup.
 static std::string detect_device_type(const std::string& info) {
     std::regex modalias_re(R"(Modalias:\s*bluetooth:v[0-9A-Fa-f]{4}p([0-9A-Fa-f]{4}))");
     std::smatch match;
     if (std::regex_search(info, match, modalias_re)) {
         unsigned int product_id = std::stoul(match[1].str(), nullptr, 16);
-        if (product_id == 0x4082) return "qc_ultra2";                  // wolverine
-        if (product_id == 0x4020 || product_id == 0x4017) return "qc35"; // baywolf / kleos
+        auto* dev = lookup_device(static_cast<uint16_t>(product_id));
+        if (dev && dev->config) return dev->config;
     }
     return "qc_ultra2";
 }

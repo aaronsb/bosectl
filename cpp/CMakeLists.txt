@@ -18,6 +18,6 @@ target_link_libraries(bmapctl PRIVATE bmap bluetooth)
 
 # Tests
 enable_testing()
-add_executable(bmap_tests tests/test_main.cpp tests/test_protocol.cpp tests/test_parsers.cpp tests/test_connection.cpp)
+add_executable(bmap_tests tests/test_main.cpp tests/test_protocol.cpp tests/test_parsers.cpp tests/test_connection.cpp tests/test_catalog.cpp)
 target_link_libraries(bmap_tests PRIVATE bmap)
 add_test(NAME bmap_tests COMMAND bmap_tests)
