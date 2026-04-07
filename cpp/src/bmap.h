@@ -8,6 +8,7 @@
 #include "devices.h"
 #include "connection.h"
 #include "discovery.h"
+#include "catalog.h"
 
 namespace bmap {
 

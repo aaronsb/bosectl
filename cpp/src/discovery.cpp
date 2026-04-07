@@ -1,5 +1,6 @@
 // Auto-detect paired BMAP devices via bluetoothctl (Linux).
 #include "discovery.h"
+#include "catalog.h"
 
 #include <array>
 #include <cstdio>
@@ -10,8 +11,6 @@
 #include <vector>
 
 namespace bmap {
-
-static const char* BMAP_UUID = "00000000-deca-fade-deca-deafdecacaff";
 
 static std::string exec(const std::string& cmd) {
     std::array<char, 256> buf;
@@ -24,13 +23,14 @@ static std::string exec(const std::string& cmd) {
     return result;
 }
 
+// Detect device type from Modalias product ID via catalog lookup.
 static std::string detect_device_type(const std::string& info) {
     std::regex modalias_re(R"(Modalias:\s*bluetooth:v[0-9A-Fa-f]{4}p([0-9A-Fa-f]{4}))");
     std::smatch match;
     if (std::regex_search(info, match, modalias_re)) {
         unsigned int product_id = std::stoul(match[1].str(), nullptr, 16);
-        if (product_id == 0x4082) return "qc_ultra2";
-        if (product_id == 0x4020 || product_id == 0x400C) return "qc35";
+        auto* dev = lookup_device(static_cast<uint16_t>(product_id));
+        if (dev && dev->config) return dev->config;
     }
     return "qc_ultra2";
 }

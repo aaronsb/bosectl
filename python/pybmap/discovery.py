@@ -3,16 +3,7 @@
 import re
 import subprocess
 
-# Bose BMAP service UUID found in SDP records.
-BMAP_UUID = "00000000-deca-fade-deca-deafdecacaff"
-
-# Known product IDs from Modalias (bluetooth:vXXXXpYYYYdZZZZ).
-# The product ID (pYYYY) identifies the device model.
-PRODUCT_ID_MAP = {
-    0x4082: "qc_ultra2",
-    0x4020: "qc35",
-    0x400C: "qc35",       # QC35 II variant
-}
+from .catalog import BMAP_UUID, lookup_device
 
 
 def find_bmap_device():
@@ -75,16 +66,17 @@ def _scan_paired_devices():
 
 
 def _detect_device_type(info_text):
-    """Extract device type from bluetoothctl info output.
+    """Extract device type from bluetoothctl info output via catalog lookup.
 
     Parses Modalias (bluetooth:vXXXXpYYYYdZZZZ) to get the product ID,
-    then looks it up in PRODUCT_ID_MAP.
+    then looks it up in the device catalog.
 
     Falls back to "qc_ultra2" if the product ID is unknown.
     """
     match = re.search(r"Modalias:\s*bluetooth:v[0-9A-Fa-f]{4}p([0-9A-Fa-f]{4})", info_text)
     if match:
         product_id = int(match.group(1), 16)
-        if product_id in PRODUCT_ID_MAP:
-            return PRODUCT_ID_MAP[product_id]
+        entry = lookup_device(product_id)
+        if entry and entry.config:
+            return entry.config
     return "qc_ultra2"  # default for unknown BMAP devices

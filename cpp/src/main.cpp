@@ -59,6 +59,7 @@ int main(int argc, char** argv) {
     try {
         if (cmd == "status") {
             auto s = dev.status();
+            std::cout << "  Model        " << dev.config().info.name << "\n";
             std::cout << "  Battery      " << (int)s.battery << "%\n";
             if (!s.mode.empty())
                 std::cout << "  Mode         " << s.mode << "\n";
