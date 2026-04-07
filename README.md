@@ -1,9 +1,11 @@
 # bosectl
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3](https://img.shields.io/badge/Python-3-green.svg)](https://www.python.org)
-[![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![C++17](https://img.shields.io/badge/C++-17-blue.svg)](https://en.cppreference.com)
+[![Release](https://img.shields.io/github/v/release/aaronsb/bosectl)](https://github.com/aaronsb/bosectl/releases/latest)
+[![Devices](https://img.shields.io/badge/Devices-2_supported_·_14_known-green)](docs/architecture.md#device-catalog)
+[![Python 3](https://img.shields.io/badge/Python-3-3572A5.svg)](python/)
+[![Rust](https://img.shields.io/badge/Rust-1.70+-DEA584.svg)](rust/)
+[![C++17](https://img.shields.io/badge/C++-17-f34b7d.svg)](cpp/)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
 
 **Control Bose headphones from Linux — no app, no cloud, no account.**

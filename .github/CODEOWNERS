@@ -1,0 +1,8 @@
+# Default owner for all files
+* @aaronsb
+
+# Language-specific ownership
+python/ @aaronsb
+rust/   @aaronsb
+cpp/    @aaronsb
+docs/   @aaronsb

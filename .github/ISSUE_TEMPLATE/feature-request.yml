@@ -1,0 +1,30 @@
+name: Feature Request
+description: Suggest a new feature or device support
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options:
+        - New device support
+        - New feature for existing device
+        - Library API improvement
+        - CLI improvement
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      placeholder: What would you like to see?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      placeholder: Why is this useful? Any protocol details?

@@ -1,0 +1,86 @@
+name: Device Compatibility Report
+description: Report which features work (or don't) on a Bose device
+title: "[Device] "
+labels: ["device-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! This helps us expand device support.
+        Run `bosectl status` or `bmapctl status` and fill in what you can.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device Model
+      description: Marketing name (e.g. "QuietComfort 45", "QC Ultra Earbuds")
+      placeholder: QuietComfort 45
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware Version
+      description: From `bosectl status` or the Bose app
+      placeholder: "4.8.1"
+
+  - type: input
+    id: product-id
+    attributes:
+      label: Product ID (if known)
+      description: From Bluetooth Modalias (e.g. 0x4061)
+      placeholder: "0x4061"
+
+  - type: input
+    id: rfcomm-channel
+    attributes:
+      label: RFCOMM Channel
+      description: Which channel connected (2, 8, or other)?
+      placeholder: "2"
+
+  - type: dropdown
+    id: init-packet
+    attributes:
+      label: Init Packet Required?
+      description: Did the device need GET [0.1] before responding?
+      options:
+        - "Yes"
+        - "No"
+        - "Not tested"
+
+  - type: checkboxes
+    id: features
+    attributes:
+      label: Feature Report Card
+      description: Check features that work on this device
+      options:
+        - label: "Battery read (GET [2.2])"
+        - label: "Firmware read (GET [0.5])"
+        - label: "Device name read (GET [1.2])"
+        - label: "Device name write (SETGET [1.2])"
+        - label: "CNC level read (GET [1.5])"
+        - label: "CNC level write (SETGET via AudioModes)"
+        - label: "ANR modes read (GET [1.6])"
+        - label: "ANR modes write (SETGET [1.6])"
+        - label: "EQ read (GET [1.7])"
+        - label: "EQ write (SETGET [1.7])"
+        - label: "Button mapping read (GET [1.9])"
+        - label: "Button remap write (SETGET [1.9])"
+        - label: "Sidetone (GET/SETGET [1.11])"
+        - label: "Multipoint (GET/SETGET [1.10])"
+        - label: "Voice prompts (GET/SETGET [1.3])"
+        - label: "Mode switching (START [31.3])"
+        - label: "Mode profiles (START [31.1] + SETGET [31.6])"
+        - label: "Spatial audio"
+        - label: "Pairing mode (START [4.8])"
+        - label: "Power off (START [7.4])"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: Anything else — errors, quirks, partial functionality
+      placeholder: |
+        e.g. "CNC returns error 5 (auth required) on this firmware"
+        e.g. "EQ works but only 2 bands instead of 3"

@@ -1,0 +1,52 @@
+name: Bug Report
+description: Report a bug in the library or CLI
+labels: ["bug"]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: "QC Ultra 2 / QC35 / etc."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - Python (pybmap)
+        - Rust (bmap)
+        - C++ (bmap)
+        - CLI (bosectl / bmapctl)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Describe the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect to QC35
+        2. Run `bosectl anr high`
+        3. ...
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From `bosectl --help` or `bmapctl --help` (shows version + git hash)
+      placeholder: "0.1.0 (abc1234)"
