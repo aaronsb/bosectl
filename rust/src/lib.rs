@@ -18,6 +18,7 @@ pub mod device;
 pub mod devices;
 pub mod connection;
 pub mod discovery;
+pub mod catalog;
 
 pub use connection::BmapConnection;
 pub use transport::Transport;

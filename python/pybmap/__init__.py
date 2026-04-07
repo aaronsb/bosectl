@@ -18,6 +18,11 @@ from .connection import BmapConnection
 from .transport import RfcommTransport
 from .discovery import find_bmap_device
 from .devices import DEVICES, get_device
+from .catalog import (
+    BOSE_USB_VID, BMAP_UUID, BoseDevice, CATALOG,
+    lookup_device, known_devices, supported_devices, is_supported,
+    usb_ids, modalias,
+)
 from .errors import (
     BmapError, BmapConnectionError, BmapAuthError,
     BmapDeviceError, BmapTimeoutError, BmapNotFoundError,

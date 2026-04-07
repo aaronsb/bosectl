@@ -3,39 +3,7 @@
 import re
 import subprocess
 
-# Bose BMAP service UUID found in SDP records.
-BMAP_UUID = "00000000-deca-fade-deca-deafdecacaff"
-
-# BMAP-capable Bose devices from https://downloads.bose.com/lookup.xml
-# Keyed by USB PID (also appears in Bluetooth Modalias).
-# Devices with a config value are actively supported; None = recognized but unsupported.
-BOSE_DEVICES = {
-    # Headphones
-    0x4017: ("kleos",        "QuietComfort 35",              "qc35"),
-    0x4020: ("baywolf",      "QuietComfort 35 II",           "qc35"),
-    0x4024: ("goodyear",     "Noise Cancelling Headphones 700", None),
-    0x4061: ("vedder",       "QuietComfort 45",              None),
-    0x4082: ("wolverine",    "QuietComfort Ultra Headphones", "qc_ultra2"),
-    # Earbuds
-    0x4060: ("olivia",       "QuietComfort Earbuds II",      None),
-    0x4063: ("edith",        "Ultra Open Earbuds",           None),
-    0x4075: ("prince",       "QuietComfort Ultra Earbuds",   None),
-    # Speakers
-    0x4024: ("goodyear",     "Noise Cancelling Headphones 700", None),
-    0x402D: ("revel",        "Home Speaker 300",             None),
-    0x402F: ("lando",        "Portable Home Speaker",        None),
-    0x4039: ("duran",        "SoundLink Flex",               None),
-    0x403A: ("gwen",         "SoundLink Revolve+ II",        None),
-    0x4066: ("lonestarr",    "SoundLink Max",                None),
-    0x4073: ("scotty",       "SoundLink Flex 2nd Gen",       None),
-}
-
-# Active device configs — subset of BOSE_DEVICES that have implementations.
-PRODUCT_ID_MAP = {
-    pid: config
-    for pid, (_, _, config) in BOSE_DEVICES.items()
-    if config is not None
-}
+from .catalog import BMAP_UUID, CATALOG
 
 
 def find_bmap_device():
@@ -108,6 +76,7 @@ def _detect_device_type(info_text):
     match = re.search(r"Modalias:\s*bluetooth:v[0-9A-Fa-f]{4}p([0-9A-Fa-f]{4})", info_text)
     if match:
         product_id = int(match.group(1), 16)
-        if product_id in PRODUCT_ID_MAP:
-            return PRODUCT_ID_MAP[product_id]
+        entry = CATALOG.get(product_id)
+        if entry and entry.config:
+            return entry.config
     return "qc_ultra2"  # default for unknown BMAP devices
