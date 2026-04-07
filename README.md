@@ -2,255 +2,222 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3](https://img.shields.io/badge/Python-3-green.svg)](https://www.python.org)
+[![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org)
+[![C++17](https://img.shields.io/badge/C++-17-blue.svg)](https://en.cppreference.com)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
-[![Bose BMAP](https://img.shields.io/badge/Bose-BMAP-black.svg)](https://www.bose.com)
 
 **Control Bose headphones from Linux — no app, no cloud, no account.**
 
 ![bosectl CLI](docs/media/screenshot.png)
 
-A reverse-engineered implementation of the Bose BMAP protocol that gives
-you full control over noise cancellation, EQ, spatial audio, device settings, and
-more. Everything runs over a direct Bluetooth RFCOMM connection to the headphones.
+Libraries in Python, Rust, and C++ implementing the Bose BMAP protocol
+over Bluetooth RFCOMM. Full control over noise cancellation, EQ, spatial
+audio, button mapping, profiles, and device settings through a direct
+connection to the headphones.
 
-> **This is not an exploit.** We use the BMAP protocol's standard SETGET operator,
-> which the headphones accept without authentication. No keys are extracted, no
-> encryption is broken, no traffic is replayed. We're talking to our own hardware
-> through an interface the firmware explicitly supports.
+> **This is not an exploit.** We use the BMAP protocol's standard SETGET
+> operator, which the headphones accept without authentication. No keys
+> are extracted, no encryption is broken, no traffic is replayed.
 
-## What you can do
+## Supported Devices
 
+| Device | NC Control | EQ | Spatial | Profiles | Buttons | Status |
+|--------|-----------|-----|---------|----------|---------|--------|
+| **QC Ultra Headphones 2** | CNC 0-10 slider | 3-band | room/head | 7 custom slots | Shortcut remap | Verified |
+| **QuietComfort 35 / 35 II** | ANR off/high/wind/low | — | — | — | Action remap (VPA/ANC) | Verified |
+
+### Device Roadmap
+
+The library includes a [device catalog](docs/architecture.md#device-catalog)
+of all known BMAP-capable Bose products. These are recognized by Bluetooth
+product ID but don't have tested configurations yet — contributions welcome:
+
+| Device | Codename | Category | PID |
+|--------|----------|----------|-----|
+| Noise Cancelling Headphones 700 | goodyear | Headphones | `0x4024` |
+| QuietComfort 45 | vedder | Headphones | `0x4061` |
+| QuietComfort Earbuds II | olivia | Earbuds | `0x4060` |
+| QuietComfort Ultra Earbuds | prince | Earbuds | `0x4075` |
+| Ultra Open Earbuds | edith | Earbuds | `0x4063` |
+| SoundLink Flex (1st & 2nd gen) | duran / scotty | Speaker | `0x4039` / `0x4073` |
+| SoundLink Max | lonestarr | Speaker | `0x4066` |
+
+Adding a new device is a configuration entry — no library code changes needed.
+See [Adding a New Device](docs/architecture.md#adding-a-new-device).
+
+## Quick Start
+
+### Library Usage
+
+```python
+import pybmap
+
+with pybmap.connect() as dev:
+    print(dev.battery())            # 80
+    print(dev.name())               # "Obsidian Countess"
+    dev.set_anr("high")             # QC35: full noise cancellation
+    dev.set_cnc(8)                  # QC Ultra 2: CNC level 0-10
+    dev.set_eq(3, 0, -2)            # Bass +3, mid flat, treble -2
+    dev.set_buttons(0x10, 4, 2)     # Remap Action button to ANC
 ```
-$ ./bosectl status
-Battery:    70%
-Mode:       quiet
-CNC:        7/10
-EQ:         +3/+0/-2
-Name:       Fargo
-FW:         8.2.20+g34cf029
-Sidetone:   medium
-Multipoint: on
-AutoPause:  on
-Prompts:    off (US English)
 
-$ ./bosectl cnc 8          # Set noise cancellation level (0-10)
-$ ./bosectl eq 5 0 -3      # Set EQ: bass=+5, mid=0, treble=-3
-$ ./bosectl spatial head    # Spatial audio with head tracking
-$ ./bosectl quiet           # Switch to Quiet (full ANC) mode
-$ ./bosectl name "My Cans"  # Rename your headphones (any UTF-8 string)
+```rust
+use bmap::connect;
+
+let dev = connect(None, None)?;
+println!("{}%", dev.battery()?);    // 80
+dev.set_anr("high")?;              // QC35
+dev.set_cnc(8)?;                   // QC Ultra 2
 ```
 
-### Full command list
+```cpp
+#include "bmap.h"
 
-| Command | Description |
-|---------|-------------|
-| `quiet` `aware` `immersion` `cinema` `home` | Switch audio mode |
-| `cnc <0-10>` | Set noise cancellation level |
-| `eq <bass> <mid> <treble>` | Set EQ (-10 to +10 each) |
-| `eq flat` | Reset EQ to 0/0/0 |
-| `spatial <off\|room\|head>` | Spatial audio mode |
-| `name [text]` | Get/set device name |
-| `sidetone <off\|low\|medium\|high>` | Sidetone level |
-| `multipoint <on\|off>` | Toggle multipoint connection |
-| `autopause <on\|off>` | Auto play/pause on ear removal |
-| `autoanswer <on\|off>` | Auto-answer incoming calls |
-| `prompts <on\|off>` | Toggle voice prompts |
-| `pair` | Enter Bluetooth pairing mode |
-| `off` | Power off headphones |
-| `status` | Show all current settings |
-| `battery` | Battery percentage (just the number) |
-| `current` | Current mode name (just the word) |
-| `buttons` | Show button mapping |
-| `dump` | Dump all AudioModes state |
-| `raw <hex>` | Send raw BMAP packet |
+auto dev = bmap::connect();
+std::cout << (int)dev->battery() << "%\n";
+dev->set_anr("high");              // QC35
+dev->set_cnc(8);                   // QC Ultra 2
+```
 
-## Requirements
+### CLI Usage
 
-- **Linux** with BlueZ (virtually every distro has this — it's the standard
-  Linux Bluetooth stack)
-- **Python 3.6+** (uses only the standard library — no pip install needed)
-- **Bluetooth** adapter (built-in or USB dongle)
-- **Bose headphones** paired to your machine (QC Ultra 2, QC35, and potentially others)
+```bash
+# Auto-detects paired Bose device
+bosectl status              # Show model, battery, mode, settings
+bosectl cnc 7               # Noise cancellation level (QC Ultra 2)
+bosectl anr high            # Noise cancellation mode (QC35)
+bosectl eq 3 0 -2           # EQ: bass/mid/treble
+bosectl buttons set ANC     # Remap programmable button
+bosectl quiet               # Switch to Quiet mode
+```
 
-Not required: Bose app, Bose account, internet connection, phone.
+### Device Catalog API
 
-## Quick start
+```python
+import pybmap
 
-### 1. Pair your headphones
+# Look up any known Bose device by product ID
+dev = pybmap.lookup_device(0x4082)
+print(dev.name)       # "QuietComfort Ultra Headphones"
+print(dev.codename)   # "wolverine"
 
-If your headphones are already paired to your Linux machine (you can hear
-audio through them), skip to step 2.
+# USB/Bluetooth identification
+pybmap.usb_ids(0x4082)    # (0x05A7, 0x4082)
+pybmap.modalias(0x4082)   # "bluetooth:v05A7p4082d0000"
 
-Otherwise, put your headphones in pairing mode (slide the power switch up
-and hold until the LED blinks blue), then:
+# Check support status
+pybmap.is_supported(0x4082)  # True — has tested config
+pybmap.is_supported(0x4061)  # False — QC45, recognized but untested
+pybmap.supported_devices()   # [kleos, baywolf, wolverine]
+pybmap.known_devices()       # all 14 BMAP devices
+```
+
+## Installation
+
+### Prerequisites
+
+- **Linux** with BlueZ (standard Bluetooth stack)
+- **Bluetooth** adapter (built-in or USB)
+- **Bose headphones** paired via `bluetoothctl`
+
+### From Release Binaries
+
+```bash
+# Download from GitHub releases
+curl -LO https://github.com/aaronsb/bosectl/releases/latest/download/bmapctl-rust-linux-x86_64
+curl -LO https://github.com/aaronsb/bosectl/releases/latest/download/SHA256SUMS
+sha256sum -c SHA256SUMS
+chmod +x bmapctl-rust-linux-x86_64
+sudo cp bmapctl-rust-linux-x86_64 /usr/local/bin/bmapctl
+```
+
+### From Source
+
+```bash
+git clone https://github.com/aaronsb/bosectl.git
+cd bosectl
+make test          # Run all tests (Python + Rust + C++)
+make artifacts     # Build release binaries + SHA256SUMS
+```
+
+See `make help` for all targets.
+
+### Pairing
+
+If your headphones aren't already paired:
 
 ```bash
 bluetoothctl
 > scan on
-# Wait for your headphones to appear, then:
 > pair XX:XX:XX:XX:XX:XX
 > trust XX:XX:XX:XX:XX:XX
 > connect XX:XX:XX:XX:XX:XX
 > exit
 ```
 
-Replace `XX:XX:XX:XX:XX:XX` with the MAC address shown in the scan output.
+`bosectl` auto-detects paired Bose devices by their BMAP service UUID —
+no MAC address configuration needed, even with renamed headphones.
 
-### 2. Download and run
+## Architecture
+
+Three libraries sharing the same layered design:
+
+```
+Application → BmapConnection → Device Config → Transport → Protocol → Bluetooth RFCOMM
+```
+
+- **Protocol** — binary BMAP packet codec
+- **Transport** — RFCOMM socket with drain mode for async responses
+- **Device Config** — data-only description of each headphone model (addresses, parsers, quirks)
+- **BmapConnection** — typed API that dispatches to the right address/parser per device
+- **Catalog** — all known Bose BMAP devices with product IDs, codenames, and USB identifiers
+
+Device differences (RFCOMM channel, init packets, feature availability) are
+expressed as config data, not code branches. Adding a new device is a
+config entry pointing to existing parsers.
+
+Full documentation: **[docs/architecture.md](docs/architecture.md)**
+
+## How It Works
+
+Bose headphones speak **BMAP** (Bose Messaging and Protocol) over
+Bluetooth RFCOMM. The protocol is organized into function blocks
+(groups of features) and operators (read, write, action).
+
+The key insight: while Bose gates SET (operator 0) behind cloud-mediated
+ECDH authentication, **SETGET** (operator 2) and **START** (operator 5)
+are unauthenticated on the Settings and AudioModes blocks. This gives
+full control over every user-facing setting.
+
+Full protocol reference: **[NOTES.md](NOTES.md)**
+
+### How We Found This
+
+1. Connected over RFCOMM, probed all channels — channel 2 (QC Ultra 2) and 8 (QC35) responded with BMAP
+2. Captured Bluetooth HCI traffic while toggling settings in the Bose app
+3. DNS-hijacked the cloud API and noticed mode switching still worked — the app uses START, not SET
+4. Systematically tested every operator on every function block to map the auth boundary
+
+## Project Structure
+
+```
+├── python/pybmap/       # Python library + bosectl CLI
+├── rust/src/            # Rust library + bmapctl CLI
+├── cpp/src/             # C++ library + bmapctl CLI
+├── docs/                # Architecture guide, device docs
+├── NOTES.md             # Protocol reverse engineering notes
+├── Makefile             # Build, test, release across all languages
+└── fixtures/            # Captured protocol data
+```
+
+## Building & Releasing
 
 ```bash
-git clone https://github.com/aaronsb/bosectl.git
-cd bosectl
-chmod +x bosectl
-./bosectl status
+make test                       # All tests (119 Python, 59 Rust, 51 C++)
+make artifacts                  # Build + strip + SHA256SUMS in dist/
+make release VERSION=v0.2.0     # Test → build → gh release create
+make clean                      # Remove all build artifacts
 ```
-
-`bosectl` auto-detects your Bose headphones from the paired device list
-using the Bose vendor UUID — no MAC address configuration needed, even
-if you've renamed your headphones.
-
-### 3. Try it out
-
-```bash
-./bosectl status              # See everything
-./bosectl cnc 7               # Set noise cancellation to 7/10
-./bosectl eq 3 0 -2           # Bass +3, mid flat, treble -2
-./bosectl spatial head        # Spatial audio with head tracking
-./bosectl profile set Work cnc=8 spatial=off   # Save a custom profile
-./bosectl Work                # Switch to it by name
-./bosectl quiet               # Back to full ANC
-```
-
-### Troubleshooting
-
-- **"Connection failed"** — Make sure the headphones are powered on, paired,
-  and connected via Bluetooth. Only one RFCOMM connection can be active at a
-  time, so close the Bose app on any connected phone first.
-- **"No Bose device found"** — `bosectl` detects Bose headphones by their
-  vendor UUID, so it works even with renamed devices. If auto-detection
-  fails, set `BOSE_MAC=XX:XX:XX:XX:XX:XX` as an environment variable.
-- **"Device or resource busy"** — Wait a second and try again. The headphones
-  need a brief cooldown between Bluetooth connections.
-
-No Bose app installation, Bose account, or internet connection needed.
-
-## How it works
-
-Bose headphones speak a protocol called **BMAP** (Bose Messaging and Protocol)
-over Bluetooth SPP/RFCOMM channel 2. Every setting — ANC mode, EQ, device name,
-button mapping — is read and written via BMAP packets.
-
-### BMAP packet format
-
-```
-[fblock_id, function_id, flags, payload_length, ...payload]
-
-flags byte: (device_id << 6) | (port_num << 4) | (operator & 0x0F)
-```
-
-The protocol is organized into **function blocks** (groups of related features)
-and **operators** (what you want to do):
-
-| Operator | ID | Description |
-|----------|----|-------------|
-| SET | 0 | Write a value (persistent) |
-| GET | 1 | Read a value |
-| SETGET | 2 | Write + read back |
-| STATUS | 3 | Unsolicited state notification |
-| ERROR | 4 | Error response |
-| START | 5 | Trigger an action |
-| RESULT | 6 | Action completed |
-
-### The authentication gap
-
-Bose protects write operations behind cloud-mediated ECDH P-384 authentication.
-When the app wants to change a setting, the headphones issue a challenge, the app
-forwards it to Bose's cloud servers (`nadc.data.api.bose.io`), Bose signs it, and
-the app relays the response back. Only then do the headphones accept SET commands.
-
-**But Bose didn't gate every operator.** Through protocol analysis, we found three
-gaps in the authentication policy:
-
-1. **START on AudioModes (block 31) is unauthenticated.** This is the operator
-   the app uses for real-time mode switching. It lets us switch between Quiet,
-   Aware, Immersion, Cinema, and custom modes instantly.
-
-2. **SETGET on AudioModes is unauthenticated.** While SET requires auth, SETGET
-   (write-and-read-back) does not. Custom mode slots (indices 5-10) accept full
-   configuration: CNC level, spatial audio, wind block, ANC toggle, and mode name.
-   Preset modes (0-3) are firmware-locked regardless of auth.
-
-3. **SETGET on Settings (block 1) is unauthenticated.** The entire Settings block
-   — EQ, device name, sidetone, multipoint, auto play/pause, button mapping — accepts
-   SETGET without auth. Only CNC level [1.5] on the Settings block requires auth
-   (but we bypass that through AudioModes).
-
-The net result: everything the Bose app can do, we can do without the app.
-
-## How we found this
-
-### Bluetooth exploration
-
-We connected to the headphones over RFCOMM and probed all channels (1-30).
-Channel 2 responded with BMAP protocol data. We enumerated all function blocks
-and functions by sending GET requests and observing which ones returned STATUS
-vs ERROR responses.
-
-### Traffic interception
-
-To understand what the app sends when you toggle a setting, we captured Bluetooth
-traffic via Android's HCI snoop log and `btsnoop`. We wrote `bmap-capture.py` to
-automate before/after snapshots — it reads every known function, waits while you
-change a setting in the app, reads again, and diffs. The `captures/` directory
-contains the raw data from these sessions.
-
-### Cloud API analysis
-
-We intercepted the app's HTTPS traffic to understand the authentication flow. The
-app communicates with `nadc.data.api.bose.io` using QUIC/HTTP3 (falling back to
-HTTPS) and performs an ECDH key exchange signed by Bose's servers. The headphones
-won't accept SET commands without this cloud signature.
-
-The breakthrough came when we noticed the app could still toggle ANC modes even
-with the cloud API DNS-hijacked. Diffing all BMAP traffic before and after revealed
-that the app was using START on block 31 (AudioModes), not SET on block 1
-(Settings). The START operator had no authentication check.
-
-### Systematic operator testing
-
-Once we understood the auth gap on START, we systematically tested every operator
-on every function. This revealed that SETGET was also unauthenticated on both the
-AudioModes and Settings blocks — a much larger hole than just START.
-
-## Protocol reference
-
-Full protocol documentation is in [NOTES.md](NOTES.md), including:
-- Complete function block map (blocks 0-31)
-- All Settings functions and their payload formats
-- ModeConfig SETGET payload structure (40 bytes)
-- Button remapping protocol (IDs, events, action modes)
-- Voice prompt language codes
-- Authentication system details (ECDH P-384, cloud endpoints)
-- BMAP error codes
-
-## Compatibility
-
-Tested on:
-- **Bose QC Ultra 2** (codename "wolverine", QCC-384) — firmware 8.2.20
-- **Bose QC35** (codename "baywolf", CSR8670) — firmware 4.8.1
-
-The BMAP protocol is shared across Bose's Bluetooth product line. Other models
-(QC 45, QC Ultra Earbuds, NC 700, etc.) likely use similar function blocks —
-adding a new device is just a config dict with the right addresses.
-
-## Tools included
-
-| File | Description |
-|------|-------------|
-| `bosectl` | CLI tool for controlling headphones |
-| `bmap-capture.py` | Interactive capture tool — snapshots all BMAP state before/after a setting change |
-| `captures/` | Raw capture data from setting toggle experiments |
-| `NOTES.md` | Full protocol documentation and reverse engineering notes |
 
 ## License
 
