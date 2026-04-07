@@ -533,3 +533,104 @@ static Addr require(const std::optional<Addr>& opt, const char* name) {
 
 **Ownership**: `BmapConnection` owns the transport via `std::unique_ptr<Transport>`.
 The `connect()` function returns `std::unique_ptr<BmapConnection>`.
+
+---
+
+## Building & Testing
+
+A top-level `Makefile` orchestrates all three implementations.
+Prerequisites: Python 3, Rust/Cargo, CMake, GCC/Clang, `libbluetooth-dev`.
+
+### Quick Start
+
+```bash
+make test        # run all test suites (Python + Rust + C++)
+make artifacts   # build release binaries + SHA256SUMS
+```
+
+### Available Targets
+
+| Target | Description |
+|--------|-------------|
+| `make test` | Run all tests across all three languages |
+| `make python-test` | Python unit tests (auto-creates virtualenv) |
+| `make rust-test` | Rust tests via `cargo test` |
+| `make cpp-test` | C++ tests via CMake + ctest |
+| `make artifacts` | Build release binaries, strip, generate checksums |
+| `make release VERSION=vX.Y.Z` | Full release: test → build → `gh release create` |
+| `make clean` | Remove all build artifacts, venvs, dist/ |
+| `make integration` | Integration tests (requires paired Bluetooth device) |
+| `make help` | Show all targets |
+
+### Build Flow
+
+```mermaid
+graph LR
+    subgraph test
+        PT[python-test] --> T[test]
+        RT[rust-test] --> T
+        CT[cpp-test] --> T
+    end
+
+    subgraph artifacts
+        RB[rust-build<br/>cargo build --release] --> A[artifacts]
+        CB[cpp-build<br/>cmake Release] --> A
+        A --> STRIP[strip binaries]
+        STRIP --> SHA[SHA256SUMS]
+    end
+
+    T --> REL[release]
+    SHA --> REL
+    REL --> GH[gh release create]
+
+    style T fill:#26de81,stroke:#333,color:#fff
+    style A fill:#4a9eff,stroke:#333,color:#fff
+    style REL fill:#ff9f43,stroke:#333,color:#fff
+    style GH fill:#a55eea,stroke:#333,color:#fff
+```
+
+### Release Process
+
+```bash
+# 1. Ensure all tests pass and artifacts build
+make test
+make artifacts
+
+# 2. Create a tagged release with binaries
+make release VERSION=v0.2.0
+
+# This runs: test → artifacts → gh release create
+# Binaries are named: bmapctl-{rust,cpp}-linux-{arch}
+# SHA256SUMS is included for verification
+```
+
+### Artifact Verification
+
+```bash
+# Download and verify
+cd dist/
+sha256sum -c SHA256SUMS
+
+# Install
+chmod +x bmapctl-rust-linux-x86_64
+sudo cp bmapctl-rust-linux-x86_64 /usr/local/bin/bmapctl
+```
+
+### Language-Specific Builds
+
+Each language can be built independently:
+
+```bash
+# Python — virtualenv auto-created
+make python-setup   # create venv, install deps
+make python-test    # run pytest
+make python-build   # sdist + wheel in python/dist/
+
+# Rust
+make rust-build     # cargo build --release
+make rust-test      # cargo test
+
+# C++
+make cpp-build      # cmake + make (Debug)
+make cpp-test       # build + run bmap_tests
+```
