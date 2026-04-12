@@ -164,6 +164,20 @@ fn main() {
                 })
             }
         }
+        "source" => dev.source().map(|s| {
+            if let Some(mac) = &s.source_mac {
+                println!("{} ({})", s.source_type, mac);
+            } else {
+                println!("{}", s.source_type);
+            }
+        }),
+        "route" => {
+            if args.len() < 3 {
+                eprintln!("Usage: bmapctl route <XX:XX:XX:XX:XX:XX>");
+                process::exit(1);
+            }
+            dev.route(&args[2]).map(|_| println!("Routed to {}", args[2]))
+        }
         "profiles" => dev.modes().map(|modes| {
             for m in &modes {
                 print!("  {:2}  {}", m.mode_idx, m.name);
@@ -276,6 +290,8 @@ fn usage() {
     println!("  prompts             Show voice prompt status");
     println!("  buttons             Show button mapping");
     println!("  buttons set <action> Remap button (e.g. ANC, VPA, Disabled)");
+    println!("  source              Show active audio source");
+    println!("  route <MAC>         Switch active BT device (XX:XX:XX:XX:XX:XX)");
     println!("  pair                Enter pairing mode");
     println!("  off                 Power off");
     println!("  raw <hex>           Send raw BMAP packet");

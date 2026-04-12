@@ -191,6 +191,14 @@ class BmapConnection:
         """Auto-answer calls enabled (bool)."""
         return self._get("auto_answer")
 
+    def source(self):
+        """Active audio source. Returns AudioSource namedtuple.
+
+        Queries AudioManagement [5.1] for the current source type
+        (none, bluetooth, auxiliary) and associated data.
+        """
+        return self._get("source")
+
     def anr(self):
         """Active Noise Reduction mode (str: off/high/wind/low).
 
@@ -283,7 +291,7 @@ class BmapConnection:
             raise ValueError("CNC level must be 0-10, got %d" % level)
         slot, config = self._ensure_editable_profile()
         self._write_mode_from_config(slot, config, cnc_level=level)
-        self._start("current_mode", bytes([slot, 0]))
+        self._activate_slot(slot)
 
     def set_anr(self, level):
         """Set Active Noise Reduction mode (off/high/wind/low).
@@ -314,7 +322,7 @@ class BmapConnection:
         spatial = SPATIAL_VALUES[mode]
         slot, config = self._ensure_editable_profile()
         self._write_mode_from_config(slot, config, spatial=spatial)
-        self._start("current_mode", bytes([slot, 0]))
+        self._activate_slot(slot)
 
     def set_name(self, new_name):
         """Set device Bluetooth name (any UTF-8 string)."""
@@ -383,6 +391,22 @@ class BmapConnection:
         if resp and parser and resp.payload:
             return parser(resp.payload)
         return resp
+
+    def route(self, mac):
+        """Switch active audio to a paired BT device by MAC address.
+
+        Uses DeviceManagement ROUTING [4.12] START to route audio UP
+        to the specified device.
+
+        Args:
+            mac: Target device MAC as "XX:XX:XX:XX:XX:XX".
+        """
+        feat = self._feature("routing")
+        builder = feat.get("builder")
+        payload = builder(mac)
+        resp = self._start("routing", payload)
+        if resp and resp.op == OP_ERROR:
+            self._raise_error(resp)
 
     def pair(self):
         """Enter Bluetooth pairing mode."""
@@ -462,6 +486,20 @@ class BmapConnection:
         return name in self._device.FEATURES
 
     # ── Internal Helpers ─────────────────────────────────────────────────────
+
+    def _activate_slot(self, slot):
+        """Switch to a slot, bouncing through another mode if already active.
+
+        The headphone won't re-apply a mode config if it thinks it's already
+        on that mode. When we've just written new config to the current slot,
+        we need to switch away and back to force it to reload.
+        """
+        current = self.mode_idx()
+        if current == slot:
+            # Bounce through Quiet (idx 0) — any preset works
+            bounce = 0 if slot != 0 else 1
+            self._start("current_mode", bytes([bounce, 0]))
+        self._start("current_mode", bytes([slot, 0]))
 
     def _ensure_editable_profile(self):
         """Ensure we're on an editable profile. Returns (slot_idx, ModeConfig).

@@ -25,6 +25,8 @@ pub fn qc_ultra2() -> DeviceConfig {
         auto_answer: Some(Addr(1, 27)),
         anr: None,
         pairing: Some(Addr(4, 8)),
+        routing: Some(Addr(4, 12)),
+        source: Some(Addr(5, 1)),
         power: Some(Addr(7, 4)),
         get_all_modes: Some(Addr(31, 1)),
         current_mode: Some(Addr(31, 3)),
@@ -67,6 +69,8 @@ pub fn qc35() -> DeviceConfig {
         auto_answer: None,
         anr: Some(Addr(1, 6)),  // OFF=0, HIGH=1, WIND=2, LOW=3
         pairing: Some(Addr(4, 8)),
+        routing: None,
+        source: None,
         power: None, // block 7 not supported
         get_all_modes: None,
         current_mode: None,

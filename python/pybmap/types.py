@@ -43,6 +43,12 @@ DeviceStatus = namedtuple("DeviceStatus", [
     "prompts_language",
 ])
 
+# Audio source information.
+AudioSource = namedtuple("AudioSource", [
+    "source_type",  # "none", "bluetooth", or "auxiliary"
+    "source_mac",   # MAC string if bluetooth, else None
+])
+
 # Button mapping entry.
 ButtonMapping = namedtuple("ButtonMapping", [
     "button_id",

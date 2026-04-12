@@ -60,6 +60,13 @@ pub struct ButtonMapping {
     pub action_name: &'static str,
 }
 
+/// Audio source information.
+#[derive(Debug, Clone)]
+pub struct AudioSource {
+    pub source_type: &'static str,
+    pub source_mac: Option<String>,
+}
+
 /// Full device status snapshot.
 #[derive(Debug, Clone)]
 pub struct DeviceStatus {
@@ -100,6 +107,8 @@ pub struct DeviceConfig {
     /// ANR mode address (QC35: off/high/wind/low at [1.6]).
     pub anr: Option<Addr>,
     pub pairing: Option<Addr>,
+    pub routing: Option<Addr>,
+    pub source: Option<Addr>,
     pub power: Option<Addr>,
     pub get_all_modes: Option<Addr>,
     pub current_mode: Option<Addr>,
@@ -346,6 +355,42 @@ pub fn action_id_from_name(name: &str) -> Option<u8> {
         "linking" => Some(21),
         _ => None,
     }
+}
+
+/// Parse AudioManagement SOURCE GET [5.1] response.
+pub fn parse_source(payload: &[u8]) -> AudioSource {
+    if payload.len() < 3 {
+        return AudioSource { source_type: "none", source_mac: None };
+    }
+    let (source_type, mac) = match payload[2] {
+        0 => ("none", None),
+        1 => {
+            let mac = if payload.len() >= 9 {
+                Some(format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                    payload[3], payload[4], payload[5], payload[6], payload[7], payload[8]))
+            } else {
+                None
+            };
+            ("bluetooth", mac)
+        }
+        2 => ("auxiliary", None),
+        _ => ("unknown", None),
+    };
+    AudioSource { source_type, source_mac: mac }
+}
+
+/// Build DeviceManagement ROUTING START [4.12] payload.
+/// flags=0x82 (bit7=UP, bit1=device slot), followed by 6-byte MAC.
+pub fn build_routing(mac_str: &str) -> Result<Vec<u8>, String> {
+    let parts: Vec<&str> = mac_str.split(':').collect();
+    if parts.len() != 6 {
+        return Err("MAC must be XX:XX:XX:XX:XX:XX".into());
+    }
+    let mut payload = vec![0x82u8];
+    for part in parts {
+        payload.push(u8::from_str_radix(part, 16).map_err(|_| "Invalid MAC byte")?);
+    }
+    Ok(payload)
 }
 
 /// Build a button remap SETGET payload: [buttonId, eventType, actionMode].

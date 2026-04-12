@@ -94,6 +94,14 @@ FEATURES = {
     "pairing": {
         "addr": (4, 8),
     },
+    "routing": {
+        "addr": (4, 12),
+        "builder": parsers.build_routing,
+    },
+    "source": {
+        "addr": (5, 1),
+        "parser": parsers.parse_source,
+    },
     "power": {
         "addr": (7, 4),
     },

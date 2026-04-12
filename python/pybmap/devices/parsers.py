@@ -8,9 +8,10 @@ different byte layouts per firmware) are defined in the device config's
 
 from ..constants import (
     PROMPTS, BUTTON_IDS, BUTTON_EVENTS, ACTION_MODES, VOICE_LANGUAGES,
+    SOURCE_TYPES,
 )
 from ..protocol import encode_mode_name
-from ..types import ModeConfig, EqBand, ButtonMapping
+from ..types import ModeConfig, EqBand, ButtonMapping, AudioSource
 
 
 # ── Standard Parsers ─────────────────────────────────────────────────────────
@@ -213,6 +214,38 @@ def build_voice_prompts(enabled, language_id):
     """Build voice prompts SETGET payload."""
     byte0 = ((1 if enabled else 0) << 5) | (language_id & 0x1F)
     return bytes([byte0])
+
+
+# ── Audio Source / Routing ───────────────────────────────────────────────────
+
+def parse_source(payload):
+    """Parse AudioManagement SOURCE GET [5.1] response.
+
+    Layout: [supported_hi, supported_lo, active_type, ...source_data]
+    Source types: 0=none, 1=bluetooth (6 bytes MAC), 2=auxiliary.
+    Returns AudioSource namedtuple.
+    """
+    if len(payload) < 3:
+        return AudioSource(source_type="none", source_mac=None)
+    active = payload[2]
+    source_type = SOURCE_TYPES.get(active, "unknown(%d)" % active)
+    mac = None
+    if active == 1 and len(payload) >= 9:
+        mac = ":".join("%02X" % b for b in payload[3:9])
+    return AudioSource(source_type=source_type, source_mac=mac)
+
+
+def build_routing(mac_str):
+    """Build DeviceManagement ROUTING START [4.12] payload.
+
+    Payload: [flags, mac0, mac1, mac2, mac3, mac4, mac5]
+    flags = 0x82 (bit7=UP routing direction, bit1=device slot).
+    mac_str: "XX:XX:XX:XX:XX:XX" format.
+    """
+    mac_bytes = bytes(int(b, 16) for b in mac_str.split(":"))
+    if len(mac_bytes) != 6:
+        raise ValueError("MAC must be 6 bytes (XX:XX:XX:XX:XX:XX)")
+    return bytes([0x82]) + mac_bytes
 
 
 # ── ModeConfig Parsers/Builders (device-specific, but share common patterns)

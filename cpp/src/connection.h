@@ -31,6 +31,7 @@ public:
     bool auto_pause()                     { return parse_bool(get(require(config_.auto_pause, "auto_pause"))); }
     bool auto_answer()                    { return parse_bool(get(require(config_.auto_answer, "auto_answer"))); }
     std::pair<bool, std::string> prompts(){ return parse_voice_prompts(get(require(config_.voice_prompts, "voice_prompts"))); }
+    AudioSource source()                 { return parse_source(get(require(config_.source, "source"))); }
     std::string anr()                    { return parse_anr(get(require(config_.anr, "anr"))); }
     std::optional<ButtonMapping> buttons(){ return parse_buttons(get(require(config_.buttons, "buttons"))); }
 
@@ -71,6 +72,8 @@ public:
         if (name == "auto_pause") return config_.auto_pause.has_value();
         if (name == "auto_answer") return config_.auto_answer.has_value();
         if (name == "anr") return config_.anr.has_value();
+        if (name == "routing") return config_.routing.has_value();
+        if (name == "source") return config_.source.has_value();
         if (name == "mode_config") return config_.mode_config.has_value();
         return false;
     }
@@ -123,7 +126,7 @@ public:
         auto [slot, config] = ensure_editable_profile();
         config.cnc_level = level;
         write_mode(slot, config);
-        start(require(config_.current_mode, "current_mode"), {slot, 0});
+        activate_slot(slot);
     }
 
     void set_spatial(const std::string& mode) {
@@ -135,7 +138,7 @@ public:
         auto [slot, config] = ensure_editable_profile();
         config.spatial = val;
         write_mode(slot, config);
-        start(require(config_.current_mode, "current_mode"), {slot, 0});
+        activate_slot(slot);
     }
 
     void set_eq(int8_t bass, int8_t mid, int8_t treble) {
@@ -201,6 +204,11 @@ public:
         auto result = parse_buttons(resp ? resp->payload : std::vector<uint8_t>{});
         if (!result) throw std::runtime_error("Could not parse button remap response");
         return *result;
+    }
+
+    void route(const std::string& mac) {
+        auto payload = build_routing(mac);
+        start(require(config_.routing, "routing"), payload);
     }
 
     void power_off() { start(require(config_.power, "power"), {0x00}); }
@@ -305,6 +313,18 @@ private:
     template<typename T, typename F>
     T safe_call(F fn, T default_val) {
         try { return fn(); } catch (...) { return default_val; }
+    }
+
+    // Switch to a slot, bouncing through another mode if already active.
+    // The headphone won't re-apply config if it thinks it's already on that mode.
+    void activate_slot(uint8_t slot) {
+        auto addr = require(config_.current_mode, "current_mode");
+        auto current = safe_call<uint8_t>([&]{ return mode_idx(); }, 255);
+        if (current == slot) {
+            uint8_t bounce = (slot != 0) ? 0 : 1;
+            start(addr, {bounce, 0});
+        }
+        start(addr, {slot, 0});
     }
 
     std::pair<uint8_t, ModeConfig> ensure_editable_profile() {

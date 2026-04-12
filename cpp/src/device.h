@@ -58,6 +58,11 @@ struct ButtonMapping {
     std::string action_name;
 };
 
+struct AudioSource {
+    std::string source_type;
+    std::string source_mac; // empty if not bluetooth
+};
+
 struct DeviceStatus {
     uint8_t battery;
     std::string mode;
@@ -96,6 +101,8 @@ struct DeviceConfig {
     /// ANR mode address (QC35: off/high/wind/low at [1.6]).
     std::optional<Addr> anr;
     std::optional<Addr> pairing;
+    std::optional<Addr> routing;
+    std::optional<Addr> source;
     std::optional<Addr> power;
     std::optional<Addr> get_all_modes;
     std::optional<Addr> current_mode;
@@ -230,6 +237,40 @@ inline std::optional<ButtonMapping> parse_buttons(const std::vector<uint8_t>& p)
     btn.event_name = evt_name(btn.event);
     btn.action_name = act_name(btn.action);
     return btn;
+}
+
+// ── Audio Source / Routing ──────────────────────────────────────────────────
+
+inline AudioSource parse_source(const std::vector<uint8_t>& p) {
+    AudioSource src;
+    if (p.size() < 3) { src.source_type = "none"; return src; }
+    switch (p[2]) {
+        case 0: src.source_type = "none"; break;
+        case 1: {
+            src.source_type = "bluetooth";
+            if (p.size() >= 9) {
+                char buf[18];
+                snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
+                         p[3], p[4], p[5], p[6], p[7], p[8]);
+                src.source_mac = buf;
+            }
+            break;
+        }
+        case 2: src.source_type = "auxiliary"; break;
+        default: src.source_type = "unknown"; break;
+    }
+    return src;
+}
+
+inline std::vector<uint8_t> build_routing(const std::string& mac_str) {
+    std::vector<uint8_t> payload = {0x82};
+    // Parse XX:XX:XX:XX:XX:XX
+    size_t pos = 0;
+    for (int i = 0; i < 6; i++) {
+        payload.push_back(static_cast<uint8_t>(std::stoi(mac_str.substr(pos, 2), nullptr, 16)));
+        pos += 3; // skip colon
+    }
+    return payload;
 }
 
 // ── Button Helpers ──────────────────────────────────────────────────────────

@@ -76,7 +76,9 @@ Packet: [31, 3, 0x05, 2, MODE_INDEX, VOICE_PROMPT]
 | [7.4]    | Control.Power  | **RESULT** | **0=power off, 1=power on** |
 | [4.1]    | DevMgmt.Connect | InvalidData | Needs device MAC — may initiate BT connection |
 | [4.8]    | DevMgmt.PairingMode | **RESULT** | **0x01=enable, 0x00=disable** |
-| [5.3]    | AudioMgmt.Control | InvalidData | Needs payload — likely play/pause/skip |
+| [4.12]   | DevMgmt.Routing | **RESULT** | **Switch active multipoint device** (see below) |
+| [5.1]    | AudioMgmt.Source | GET only | **Query active audio source** (see below) |
+| [5.3]    | AudioMgmt.Control | InvalidData | Needs payload — play/pause/skip (see AudioControlValue) |
 | [18.19]  | ValidatedDeviceIdentityKeypair | PROCESSING | Accepts public key for auth flow |
 
 #### AudioModes SETGET — Full Config Control (No Auth!)
@@ -462,6 +464,71 @@ uses START to change modes in real time (it's the "instant switch" path).
 SET_GET is used for persistent config changes. This distinction means we can
 control the headphones in real time but can't change saved configuration.
 
+## Audio Source & Device Routing (APK-sourced)
+
+### AudioManagement Source [5.1] — Query Active Source
+GET-only function. Response payload:
+```
+[0-1]  Supported sources (bitset, 2 bytes)
+[2]    Active source type: 0=NONE, 1=BLUETOOTH, 2=AUXILIARY
+[3+]   Source-specific data (BLUETOOTH: 6 bytes MAC address)
+```
+
+Source types from `AudioControlSourceType.java`:
+- NONE (0x00) — no active source
+- BLUETOOTH (0x01) — BT A2DP, 6 bytes additional data (MAC)
+- AUXILIARY (0x02) — 3.5mm line-in, no additional data
+
+**No SET/START on [5.1]** — source switching happens implicitly (plug in aux,
+or route a BT device via [4.12]).
+
+### DeviceManagement Routing [4.12] — Switch Active BT Device
+START operator to route audio to a specific paired BT device (multipoint switch).
+
+Payload (7 bytes):
+```
+[0]    Flags: 0x82 (bit7=UP routing direction, bit1=device slot)
+[1-6]  Target device MAC address (6 bytes)
+```
+
+Response handling (from `DeviceManagementBmapPacketParser.java`):
+- **RESULT**: bytes [1-6] = MAC of now-active device (success)
+- **ERROR**: bytes [0-1] = 16-bit error code
+- **STATUS**: bytes [2-7] = MAC of newly routed device
+
+ROUTING_TYPE enum: UP=1 (value << 7 = 0x80), DOWN=0.
+
+### AudioManagement Control [5.3] — Transport Controls
+START operator with single-byte payload. Values from `AudioControlValue.java`:
+```
+0x00  STOP
+0x01  PLAY
+0x02  PAUSE
+0x03  TRACK_FORWARD
+0x04  TRACK_BACK
+0x05  FAST_FORWARD_PRESS
+0x06  FAST_FORWARD_RELEASE
+0x07  REWIND_PRESS
+0x08  REWIND_RELEASE
+```
+
+### DeviceManagement Functions (Block 4) — Full Map
+From `DeviceManagementPackets.java`:
+| Func | Name | Notes |
+|------|------|-------|
+| 0 | FblockInfo | |
+| 1 | Connect | Needs device MAC |
+| 2 | Disconnect | |
+| 3 | RemoveDevice | |
+| 4 | ListDevices | Returns paired device list |
+| 5 | Info | Device info query |
+| 7 | ClearDeviceList | |
+| 8 | PairingMode | 0x01=enable, 0x00=disable |
+| 9 | LocalMacAddress | |
+| 10 | PrepareP2P | |
+| 11 | P2PMode | |
+| 12 | Routing | Switch active multipoint device |
+
 ## BMAP Error Codes
 | Code | Name             | Description |
 |------|------------------|-------------|
@@ -586,7 +653,8 @@ of unauthenticated NC control on this firmware version.
 - ~~Try USB-C connection~~ **PARTIALLY DONE** — USB HID interface found, needs init handshake
 - Crack USB BMAP initialization — capture USB traffic from app to find handshake sequence
 - Explore [31.9] AudioModes Reset — factory reset individual modes?
-- Explore [5.3] AudioManagement Control — play/pause/skip payload format
+- ~~Reverse audio source/device routing~~ **DONE** — [5.1] source query, [4.12] routing START, [5.3] transport controls
+- Implement [5.3] AudioManagement Control — play/pause/skip (payload format now known)
 - Build a system tray widget / PipeWire integration
 - Investigate firmware downgrade via bose-dfu over USB
 - Map the unknown bytes [40-41] in ModeConfig STATUS (mode-type specific config?)

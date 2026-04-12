@@ -24,6 +24,8 @@ static void usage() {
               << "  prompts             Show voice prompt status\n"
               << "  buttons             Show button mapping\n"
               << "  buttons set <action> Remap button (e.g. ANC, VPA, Disabled)\n"
+              << "  source              Show active audio source\n"
+              << "  route <MAC>         Switch active BT device (XX:XX:XX:XX:XX:XX)\n"
               << "  pair                Enter pairing mode\n"
               << "  off                 Power off\n\n"
               << "Environment:\n"
@@ -169,6 +171,16 @@ int main(int argc, char** argv) {
                               << "Action:  " << btn->action_name << "\n";
                 }
             }
+        } else if (cmd == "source") {
+            auto src = dev.source();
+            if (!src.source_mac.empty())
+                std::cout << src.source_type << " (" << src.source_mac << ")\n";
+            else
+                std::cout << src.source_type << "\n";
+        } else if (cmd == "route") {
+            if (argc < 3) { std::cerr << "Usage: bmapctl route <XX:XX:XX:XX:XX:XX>\n"; return 1; }
+            dev.route(argv[2]);
+            std::cout << "Routed to " << argv[2] << "\n";
         } else if (cmd == "profiles") {
             auto all = dev.modes();
             for (auto& m : all) {

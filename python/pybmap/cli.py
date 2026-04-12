@@ -263,6 +263,11 @@ def usage():
     cmd("prompts on|off", "Toggle voice prompts")
     print()
 
+    section("Routing")
+    cmd("source", "Show active audio source (BT/aux/none)")
+    cmd("route <MAC>", "Switch active device (XX:XX:XX:XX:XX:XX)")
+    print()
+
     section("Control")
     cmd("pair", "Enter Bluetooth pairing mode")
     cmd("off", "Power off headphones")
@@ -399,6 +404,18 @@ def main():
                 sys.exit(1)
             dev.set_spatial(sys.argv[2].lower())
             print("Spatial: %s" % sys.argv[2].lower())
+        elif cmd == "source":
+            src = dev.source()
+            if src.source_mac:
+                print("%s (%s)" % (src.source_type, src.source_mac))
+            else:
+                print(src.source_type)
+        elif cmd == "route":
+            if len(sys.argv) < 3:
+                print("Usage: bosectl route <XX:XX:XX:XX:XX:XX>", file=sys.stderr)
+                sys.exit(1)
+            dev.route(sys.argv[2])
+            print("Routed to %s" % sys.argv[2])
         elif cmd == "buttons":
             cmd_buttons(dev, sys.argv[2:])
         elif cmd == "pair":

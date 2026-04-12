@@ -170,6 +170,13 @@ impl<T: Transport> BmapConnection<T> {
         Ok(parse_anr(&payload))
     }
 
+    /// Active audio source (none/bluetooth/auxiliary).
+    pub fn source(&self) -> BmapResult<AudioSource> {
+        let addr = self.addr(self.config.source)?;
+        let payload = self.get(addr)?;
+        Ok(parse_source(&payload))
+    }
+
     /// Auto play/pause enabled.
     pub fn auto_pause(&self) -> BmapResult<bool> {
         let addr = self.addr(self.config.auto_pause)?;
@@ -262,6 +269,8 @@ impl<T: Transport> BmapConnection<T> {
             "auto_pause" => self.config.auto_pause.is_some(),
             "auto_answer" => self.config.auto_answer.is_some(),
             "anr" => self.config.anr.is_some(),
+            "routing" => self.config.routing.is_some(),
+            "source" => self.config.source.is_some(),
             "mode_config" => self.config.mode_config.is_some(),
             _ => false,
         }
@@ -322,8 +331,7 @@ impl<T: Transport> BmapConnection<T> {
         }
         let (slot, config) = self.ensure_editable_profile()?;
         self.write_mode_from_config(slot, &config, Some(level), None, None, None)?;
-        let addr = self.addr(self.config.current_mode)?;
-        self.start(addr, &[slot, 0])?;
+        self.activate_slot(slot)?;
         Ok(())
     }
 
@@ -337,8 +345,7 @@ impl<T: Transport> BmapConnection<T> {
         };
         let (slot, config) = self.ensure_editable_profile()?;
         self.write_mode_from_config(slot, &config, None, Some(spatial), None, None)?;
-        let addr = self.addr(self.config.current_mode)?;
-        self.start(addr, &[slot, 0])?;
+        self.activate_slot(slot)?;
         Ok(())
     }
 
@@ -427,6 +434,15 @@ impl<T: Transport> BmapConnection<T> {
         })
     }
 
+    /// Switch active audio to a paired BT device by MAC address.
+    pub fn route(&self, mac: &str) -> BmapResult<()> {
+        let addr = self.addr(self.config.routing)?;
+        let payload = build_routing(mac)
+            .map_err(|e| BmapError::InvalidArg(e))?;
+        self.start(addr, &payload)?;
+        Ok(())
+    }
+
     /// Enter pairing mode.
     pub fn pair(&self) -> BmapResult<()> {
         let addr = self.addr(self.config.pairing)?;
@@ -465,6 +481,22 @@ impl<T: Transport> BmapConnection<T> {
     }
 
     // ── Internal Helpers ────────────────────────────────────────────────────
+
+    /// Switch to a slot, bouncing through another mode if already active.
+    ///
+    /// The headphone won't re-apply a mode config if it thinks it's already
+    /// on that mode. When we've just written new config to the current slot,
+    /// we need to switch away and back to force it to reload.
+    fn activate_slot(&self, slot: u8) -> BmapResult<()> {
+        let addr = self.addr(self.config.current_mode)?;
+        let current = self.mode_idx()?;
+        if current == slot {
+            let bounce = if slot != 0 { 0 } else { 1 };
+            self.start(addr, &[bounce, 0])?;
+        }
+        self.start(addr, &[slot, 0])?;
+        Ok(())
+    }
 
     fn ensure_editable_profile(&self) -> BmapResult<(u8, ModeConfig)> {
         let modes = self.modes()?;

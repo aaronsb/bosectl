@@ -82,3 +82,6 @@ ACTION_MODES = {
     15: "ClientInteraction", 16: "SpotifyGo", 17: "ModesCarousel",
     19: "SpatialAudioMode", 20: "LineInSwitch", 21: "Linking",
 }
+
+# Audio source types from AudioManagement [5.1].
+SOURCE_TYPES = {0: "none", 1: "bluetooth", 2: "auxiliary"}

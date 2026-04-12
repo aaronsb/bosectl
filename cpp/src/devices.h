@@ -20,6 +20,8 @@ inline DeviceConfig qc_ultra2() {
     c.auto_pause = Addr{1, 24};
     c.auto_answer = Addr{1, 27};
     c.pairing = Addr{4, 8};
+    c.routing = Addr{4, 12};
+    c.source = Addr{5, 1};
     c.power = Addr{7, 4};
     c.get_all_modes = Addr{31, 1};
     c.current_mode = Addr{31, 3};
