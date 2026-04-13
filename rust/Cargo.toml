@@ -1,6 +1,6 @@
 [package]
 name = "bmap"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Control Bluetooth audio devices over the BMAP protocol"
 license = "MIT"
