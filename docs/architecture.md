@@ -322,7 +322,7 @@ Each catalog entry carries:
 |-------|-------------|---------|
 | `product_id` | USB PID / Bluetooth Modalias ID | `0x4082` |
 | `codename` | Bose internal codename | `"wolverine"` |
-| `name` | Marketing product name | `"QuietComfort Ultra Headphones"` |
+| `name` | Marketing product name | `"QuietComfort Ultra Headphones (2nd Gen)"` |
 | `category` | `headphones`, `earbuds`, or `speaker` | `headphones` |
 | `config` | Library config key, or None | `"qc_ultra2"` |
 

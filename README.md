@@ -37,12 +37,14 @@ product ID but don't have tested configurations yet — contributions welcome:
 | Device | Codename | Category | PID |
 |--------|----------|----------|-----|
 | Noise Cancelling Headphones 700 | goodyear | Headphones | `0x4024` |
-| QuietComfort 45 | vedder | Headphones | `0x4061` |
-| QuietComfort Earbuds II | olivia | Earbuds | `0x4060` |
-| QuietComfort Ultra Earbuds | prince | Earbuds | `0x4075` |
-| Ultra Open Earbuds | edith | Earbuds | `0x4063` |
-| SoundLink Flex (1st & 2nd gen) | duran / scotty | Speaker | `0x4039` / `0x4073` |
-| SoundLink Max | lonestarr | Speaker | `0x4066` |
+| QuietComfort 45 | duran | Headphones | `0x4039` |
+| QuietComfort Headphones | prince | Headphones | `0x4075` |
+| QuietComfort Ultra Headphones | lonestarr | Headphones | `0x4066` |
+| QuietComfort Earbuds II | smalls | Earbuds | `0x4064` |
+| QuietComfort Ultra Earbuds | scotty | Earbuds | `0x4072` |
+| Ultra Open Earbuds | serena | Earbuds | `0x4068` |
+| SoundLink Flex | phelps | Speaker | `0xBC59` |
+| SoundLink Flex 2 | mathers | Speaker | `0xBC61` |
 
 Adding a new device is a configuration entry — no library code changes needed.
 See [Adding a New Device](docs/architecture.md#adding-a-new-device).

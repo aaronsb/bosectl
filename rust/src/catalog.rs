@@ -116,6 +116,21 @@ mod tests {
     fn test_lookup_known() {
         let dev = lookup_device(0x4082).unwrap();
         assert_eq!(dev.codename, "wolverine");
+        assert_eq!(dev.name, "QuietComfort Ultra Headphones (2nd Gen)");
+        assert_eq!(dev.config, Some("qc_ultra2"));
+    }
+
+    #[test]
+    fn test_lookup_qc35_original() {
+        let dev = lookup_device(0x400C).unwrap();
+        assert_eq!(dev.codename, "wolfcastle");
+        assert_eq!(dev.config, Some("qc35"));
+    }
+
+    #[test]
+    fn test_lookup_qc_ultra2_earbuds() {
+        let dev = lookup_device(0x4062).unwrap();
+        assert_eq!(dev.codename, "edith");
         assert_eq!(dev.config, Some("qc_ultra2"));
     }
 
@@ -126,8 +141,10 @@ mod tests {
 
     #[test]
     fn test_is_supported() {
-        assert!(is_supported(0x4082));
-        assert!(is_supported(0x4020));
+        assert!(is_supported(0x4082)); // wolverine
+        assert!(is_supported(0x4062)); // edith
+        assert!(is_supported(0x4020)); // baywolf
+        assert!(is_supported(0x400C)); // wolfcastle
         assert!(!is_supported(0x4024)); // NCH 700, no config
         assert!(!is_supported(0xFFFF));
     }
@@ -135,7 +152,7 @@ mod tests {
     #[test]
     fn test_supported_devices() {
         let devs = supported_devices();
-        assert!(devs.len() >= 2); // at least QC35 + QC Ultra 2
+        assert!(devs.len() >= 4); // wolfcastle, baywolf, edith, wolverine
         assert!(devs.iter().all(|d| d.config.is_some()));
     }
 

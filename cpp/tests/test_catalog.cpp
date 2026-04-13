@@ -48,7 +48,7 @@ TEST(catalog_is_supported) {
 
 TEST(catalog_supported_devices) {
     auto devs = supported_devices();
-    ASSERT_TRUE(devs.size() >= 3u);
+    ASSERT_TRUE(devs.size() >= 4u);  // wolfcastle, baywolf, edith, wolverine
     for (auto* d : devs) {
         ASSERT_TRUE(d->config != nullptr);
     }
