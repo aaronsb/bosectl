@@ -20,9 +20,19 @@ TEST(catalog_lookup_qc35) {
 }
 
 TEST(catalog_lookup_qc35_original) {
-    auto* dev = lookup_device(0x4017);
+    auto* dev = lookup_device(0x400C);
     ASSERT_TRUE(dev != nullptr);
-    ASSERT_EQ(std::string(dev->codename), std::string("kleos"));
+    ASSERT_EQ(std::string(dev->codename), std::string("wolfcastle"));
+    ASSERT_TRUE(dev->config != nullptr);
+    ASSERT_EQ(std::string(dev->config), std::string("qc35"));
+}
+
+TEST(catalog_lookup_qc_ultra2_earbuds) {
+    auto* dev = lookup_device(0x4062);
+    ASSERT_TRUE(dev != nullptr);
+    ASSERT_EQ(std::string(dev->codename), std::string("edith"));
+    ASSERT_TRUE(dev->config != nullptr);
+    ASSERT_EQ(std::string(dev->config), std::string("qc_ultra2"));
 }
 
 TEST(catalog_lookup_unknown) {

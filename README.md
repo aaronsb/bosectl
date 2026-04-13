@@ -100,7 +100,7 @@ import pybmap
 
 # Look up any known Bose device by product ID
 dev = pybmap.lookup_device(0x4082)
-print(dev.name)       # "QuietComfort Ultra Headphones"
+print(dev.name)       # "QuietComfort Ultra Headphones (2nd Gen)"
 print(dev.codename)   # "wolverine"
 
 # USB/Bluetooth identification
@@ -109,9 +109,9 @@ pybmap.modalias(0x4082)   # "bluetooth:v05A7p4082d0000"
 
 # Check support status
 pybmap.is_supported(0x4082)  # True — has tested config
-pybmap.is_supported(0x4061)  # False — QC45, recognized but untested
-pybmap.supported_devices()   # [kleos, baywolf, wolverine]
-pybmap.known_devices()       # all 14 BMAP devices
+pybmap.is_supported(0x4039)  # False — QC45, recognized but untested
+pybmap.supported_devices()   # [wolfcastle, baywolf, edith, wolverine]
+pybmap.known_devices()       # full APK-sourced catalog
 ```
 
 ## Installation
