@@ -286,12 +286,28 @@ class BmapConnection:
         """Set noise cancellation level (0-10).
 
         Scale is inverted: 0 = maximum ANC (blocks most outside sounds),
-        10 = most ambient pass-through. The effect is only audible when
-        anc_toggle=on AND wind_block=off — wind block masks CNC changes.
+        10 = most ambient pass-through.
+
+        Uses [31.10] AudioSettings if available (QC Ultra 2), otherwise
+        modifies the current editable mode via [31.6] ModeConfig SETGET
+        and switches to it (QC45).
         """
         if not 0 <= level <= 10:
             raise ValueError("CNC level must be 0-10, got %d" % level)
-        self._update_audio_settings(cnc_level=level)
+        if self.has_feature("audio_settings"):
+            self._update_audio_settings(cnc_level=level)
+        elif self.has_feature("mode_config"):
+            self._set_cnc_via_mode_config(level)
+        else:
+            raise BmapError("Device does not support CNC level control")
+
+    def _set_cnc_via_mode_config(self, level):
+        """Set CNC by writing to an editable mode and switching to it."""
+        slot, config = self._ensure_editable_profile()
+        self._write_mode_from_config(slot, config, cnc_level=level)
+        current = self.mode_idx()
+        if current != slot:
+            self._start("current_mode", bytes([slot, 0]))
 
     def set_anc(self, enabled):
         """Toggle Active Noise Cancellation on/off (bool)."""
