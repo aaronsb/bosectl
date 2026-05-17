@@ -350,3 +350,80 @@ def build_mode_config_40(mode_idx, name, cnc_level=0, auto_cnc=False,
     payload.append(1 if wind_block else 0)
     payload.append(1 if anc_toggle else 0)
     return bytes(payload)
+
+
+def parse_mode_config_47(payload):
+    """Parse ModeConfig STATUS (47 bytes) — QC45 / CSR8670 firmware.
+
+    STATUS layout (47 bytes, no ancToggle vs QC Ultra 2's 48):
+        [0]     modeIndex
+        [1:3]   voicePrompt
+        [3:6]   flags: [3]=editable, [4]=configured, [5]=unknown
+        [6:38]  modeName (32 bytes)
+        [38:40] unknown
+        [40:42] unknown
+        [42]    cncLevel
+        [43]    autoCNC
+        [44]    spatial
+        [45]    windBlock
+        [46]    unknown
+    """
+    if len(payload) < 6:
+        return None
+
+    mode_idx = payload[0]
+    prompt_b1, prompt_b2 = payload[1], payload[2]
+    prompt_name = PROMPTS.get((prompt_b1, prompt_b2), "(%d,%d)" % (prompt_b1, prompt_b2))
+
+    if len(payload) >= 47:
+        editable = bool(payload[3])
+        configured = bool(payload[4])
+        flags = "%02x %02x %02x" % (payload[3], payload[4], payload[5])
+        name = payload[6:38].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        return ModeConfig(
+            mode_idx=mode_idx, prompt=prompt_name,
+            prompt_bytes=(prompt_b1, prompt_b2), name=name,
+            cnc_level=payload[42], auto_cnc=bool(payload[43]),
+            spatial=payload[44], wind_block=bool(payload[45]),
+            anc_toggle=False,
+            editable=editable, configured=configured, flags=flags, raw=payload,
+        )
+    elif len(payload) >= 39:
+        name = payload[3:35].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        return ModeConfig(
+            mode_idx=mode_idx, prompt=prompt_name,
+            prompt_bytes=(prompt_b1, prompt_b2), name=name,
+            cnc_level=payload[35], auto_cnc=bool(payload[36]),
+            spatial=payload[37], wind_block=bool(payload[38]),
+            anc_toggle=False,
+            editable=True, configured=True, flags="", raw=payload,
+        )
+    else:
+        name = (payload[3:35] if len(payload) >= 35 else payload[3:])
+        name = name.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        return ModeConfig(
+            mode_idx=mode_idx, prompt=prompt_name,
+            prompt_bytes=(prompt_b1, prompt_b2), name=name,
+            cnc_level=0, auto_cnc=False, spatial=0,
+            wind_block=False, anc_toggle=False,
+            editable=False, configured=False, flags="", raw=payload,
+        )
+
+
+def build_mode_config_39(mode_idx, name, cnc_level=0, auto_cnc=False,
+                         spatial=0, wind_block=0,
+                         prompt_b1=0, prompt_b2=0):
+    """Build 39-byte ModeConfig SETGET payload — QC45 / CSR8670 firmware.
+
+    Same as QC Ultra 2's 40-byte format but without the ancToggle byte.
+    """
+    payload = bytearray()
+    payload.append(mode_idx)
+    payload.append(prompt_b1)
+    payload.append(prompt_b2)
+    payload.extend(encode_mode_name(name))
+    payload.append(cnc_level)
+    payload.append(1 if auto_cnc else 0)
+    payload.append(spatial)
+    payload.append(1 if wind_block else 0)
+    return bytes(payload)
