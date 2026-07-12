@@ -1,0 +1,311 @@
+#compdef bosectl
+
+# ---------------------------------------------------------------------------
+# bosectl — Zsh tab completion for Bose headphone control over BMAP
+# ---------------------------------------------------------------------------
+# Install: copy to a directory in $fpath, e.g.:
+#   mkdir -p ~/.zsh/completions
+#   cp _bosectl ~/.zsh/completions/
+#   echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+#   echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+#
+# Or for a single session:  autoload -Uz _bosectl && compdef _bosectl bosectl
+# ---------------------------------------------------------------------------
+
+# ── Preset mode names (all known devices) ────────────────────────────────────
+
+_preset_modes=(quiet aware immersion cinema)
+
+# ── Top-level commands ───────────────────────────────────────────────────────
+
+_bosectl_commands() {
+  local -a commands
+  commands=(
+    # Modes
+    'quiet:Quiet — full ANC'
+    'aware:Aware — transparency'
+    'immersion:Immersion — spatial audio with head tracking'
+    'cinema:Cinema — spatial audio with fixed stage'
+
+    # Profiles
+    'profiles:List all audio profiles'
+    'profile:Create, update, or delete a custom profile'
+    'switch:Switch to a profile by name'
+
+    # Settings
+    'cnc:Noise cancellation level (0-10)'
+    'anc:Toggle Active Noise Cancellation'
+    'wind:Toggle Wind Block'
+    'eq:3-band equalizer (-10 to +10 each)'
+    'spatial:Spatial audio mode (off, room, head)'
+    'name:Get or set device Bluetooth name'
+    'anr:Active Noise Reduction mode (QC35: off, high, wind, low)'
+    'sidetone:Sidetone level (off, low, medium, high)'
+    'multipoint:Toggle multipoint connection'
+    'autopause:Toggle auto play/pause on ear removal'
+    'autoanswer:Toggle auto-answer calls'
+    'prompts:Toggle voice prompts'
+
+    # Routing
+    'source:Show active audio source'
+    'route:Switch active device by MAC address'
+
+    # Control
+    'pair:Enter Bluetooth pairing mode'
+    'off:Power off headphones'
+
+    # Info
+    'status:Show all settings'
+    'battery:Battery percentage'
+    'current:Current mode name'
+    'buttons:Show or remap button configuration'
+
+    # Debug
+    'dump:Dump all AudioModes state'
+    'raw:Send raw BMAP packet (hex bytes)'
+  )
+  _describe -t commands 'bosectl command' commands
+}
+
+# ── Sub-commands ─────────────────────────────────────────────────────────────
+
+_bosectl_profile() {
+  local -a subcmds
+  subcmds=(
+    'set:Create or update a custom profile'
+    'create:Alias for set'
+    'add:Alias for set'
+    'rm:Delete a custom profile'
+    'delete:Alias for rm'
+    'del:Alias for rm'
+  )
+  _describe -t profile-cmds 'profile subcommand' subcmds
+}
+
+_bosectl_buttons() {
+  local -a subcmds
+  subcmds=(
+    'set:Remap a button action'
+  )
+  _describe -t button-cmds 'buttons subcommand' subcmds
+}
+
+# ── Value completions ────────────────────────────────────────────────────────
+
+_bosectl_bool() {
+  local -a vals
+  vals=('on' 'off')
+  _describe -t bool 'value' vals
+}
+
+_bosectl_cnc() {
+  local -a levels
+  levels=({0..10})
+  _describe -t cnc 'CNC level (0=max ANC, 10=most ambient)' levels
+}
+
+_bosectl_eq() {
+  local -a eq_cmds
+  eq_cmds=('flat:Reset all bands to zero' 'get:Show current EQ')
+  _describe -t eq-cmds 'eq command' eq_cmds
+}
+
+_bosectl_spatial() {
+  local -a modes
+  modes=('off' 'room' 'head')
+  _describe -t spatial 'spatial audio mode' modes
+}
+
+_bosectl_sidetone() {
+  local -a levels
+  levels=('off' 'low' 'medium' 'high')
+  _describe -t sidetone 'sidetone level' levels
+}
+
+_bosectl_anr() {
+  local -a levels
+  levels=('off' 'high' 'wind' 'low')
+  _describe -t anr 'ANR level' levels
+}
+
+_bosectl_buttons_action() {
+  local -a actions
+  actions=(
+    'NotConfigured:No action assigned'
+    'VPA:Voice assistant'
+    'ANC:Toggle noise cancellation'
+    'BatteryLevel:Speak battery level'
+    'PlayPause:Play/pause media'
+    'IncreaseCNC:Increase noise cancellation'
+    'DecreaseCNC:Decrease noise cancellation'
+    'ToggleWakeWord:Toggle voice assistant wake word'
+    'SwitchDevice:Switch connected device'
+    'ConversationMode:Quick conversation mode'
+    'TrackForward:Skip to next track'
+    'TrackBack:Go to previous track'
+    'FetchNotifications:Read notifications'
+    'WindMode:Toggle wind block'
+    'Disabled:Disable the button'
+    'ClientInteraction:Client app interaction'
+    'SpotifyGo:Spotify quick play'
+    'ModesCarousel:Cycle through modes'
+    'SpatialAudioMode:Toggle spatial audio'
+    'LineInSwitch:Switch to line-in'
+    'Linking:Link/unlink devices'
+  )
+  _describe -t actions 'button action' actions
+}
+
+# ── Options for profile set ──────────────────────────────────────────────────
+
+_bosectl_profile_opts() {
+  local -a opts
+  opts=(
+    'cnc=:CNC level (0-10):_bosectl_cnc'
+    'spatial=:Spatial audio mode:(off room head)'
+    'wind=:Wind block:(on off)'
+    'anc=:ANC toggle:(on off)'
+    'name=:Profile display name:'
+  )
+  # Only complete options if we're past the profile name (arg position >= 3)
+  # For simplicity, always offer options after the first argument
+  _describe -t profile-opts 'profile option' opts
+}
+
+# ── Main completion function ─────────────────────────────────────────────────
+
+_bosectl() {
+  local context state state_descr line
+  typeset -A opt_args
+
+  _arguments -C \
+    '1: :_bosectl_commands' \
+    '*:: :->args'
+
+  case $state in
+    args)
+      local cmd="${words[1]}"
+      local sub="${words[2]}"
+
+      case $cmd in
+        # ── Preset modes: no arguments ──
+        quiet|aware|immersion|cinema)
+          # No arguments
+          ;;
+
+        # ── Read-only commands: no arguments ──
+        status|battery|current|profiles|source|pair|off|dump)
+          ;;
+
+        # ── Commands that accept an optional boolean ──
+        anc|wind|multipoint|autopause|autoanswer|prompts)
+          [[ $CURRENT -eq 2 ]] && _bosectl_bool
+          ;;
+
+        # ── CNC: level 0-10 ──
+        cnc)
+          [[ $CURRENT -eq 2 ]] && _bosectl_cnc
+          ;;
+
+        # ── EQ: bass mid treble or flat/get ──
+        eq)
+          case $CURRENT in
+            2) _bosectl_eq ;;
+
+            3) _message -e numbers 'bass (-10..+10)'
+               _values 'bass' {-10..10} ;;
+            4) _message -e numbers 'mid (-10..+10)'
+               _values 'mid' {-10..10} ;;
+            5) _message -e numbers 'treble (-10..+10)'
+               _values 'treble' {-10..10} ;;
+          esac
+          ;;
+
+        # ── Spatial: mode name ──
+        spatial)
+          [[ $CURRENT -eq 2 ]] && _bosectl_spatial
+          ;;
+
+        # ── Sidetone: level name ──
+        sidetone)
+          [[ $CURRENT -eq 2 ]] && _bosectl_sidetone
+          ;;
+
+        # ── ANR (QC35): level name ──
+        anr)
+          [[ $CURRENT -eq 2 ]] && _bosectl_anr
+          ;;
+
+        # ── Name: free-form text ──
+        name)
+          # No completion — any text is valid
+          ;;
+
+        # ── Route: MAC address ──
+        route)
+          [[ $CURRENT -eq 2 ]] && _message -e mac 'MAC address (XX:XX:XX:XX:XX:XX)'
+          ;;
+
+        # ── Switch: mode name ──
+        switch)
+          [[ $CURRENT -eq 2 ]] && _describe -t modes 'mode name' _preset_modes
+          ;;
+
+        # ── Buttons: optional 'set' subcommand ──
+        buttons)
+          case $CURRENT in
+            2) _bosectl_buttons ;;
+            3) _bosectl_buttons_action ;;
+          esac
+          ;;
+
+        # ── Profile: subcommands ──
+        profile)
+          case $CURRENT in
+            2) _bosectl_profile ;;
+            3)
+              case $sub in
+                set|create|add)
+                  _message -e name 'profile name'
+                  ;;
+                rm|delete|del)
+                  _message -e name 'profile name to delete'
+                  ;;
+                *)
+                  # Treat as profile name for shorthand (profile <name> ...)
+                  _message -e name 'profile name'
+                  ;;
+              esac
+              ;;
+            4)
+              case $sub in
+                set|create|add)
+                  _bosectl_profile_opts
+                  ;;
+              esac
+              ;;
+            *)
+              case $sub in
+                set|create|add)
+                  _bosectl_profile_opts
+                  ;;
+              esac
+              ;;
+          esac
+          ;;
+
+        # ── Raw: hex bytes ──
+        raw)
+          _message -e hex 'hex bytes (e.g. "01 05 02 02 08 01")'
+          ;;
+
+        # ── Unknown: offer top-level commands again ──
+        *)
+          _bosectl_commands
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_bosectl "$@"

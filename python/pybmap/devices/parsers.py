@@ -335,6 +335,56 @@ def build_audio_settings(cnc_level=0, auto_cnc=False, spatial=0,
     ])
 
 
+def build_cnc(level):
+    """Build CNC SETGET payload for [1.5] — QC Earbuds / direct CNC path.
+
+    Payload: [level, enabled_flag]. Level 0-10. Enabled=1.
+    """
+    return bytes([level & 0xFF, 1])
+
+
+def parse_mode_config_44(payload):
+    """Parse ModeConfig STATUS (44 bytes) — QC Earbuds (1st Gen) firmware.
+
+    STATUS layout:
+        [0]     modeIndex
+        [1:3]   voicePrompt
+        [3:6]   flags: [3]=editable, [4]=configured, [5]=unknown
+        [6:38]  modeName (32 bytes)
+        [38:44] config tail (6 bytes, format varies; largely unknown)
+    """
+    if len(payload) < 6:
+        return None
+
+    mode_idx = payload[0]
+    prompt_b1, prompt_b2 = payload[1], payload[2]
+    prompt_name = PROMPTS.get((prompt_b1, prompt_b2), "(%d,%d)" % (prompt_b1, prompt_b2))
+
+    if len(payload) >= 44:
+        editable = bool(payload[3])
+        configured = bool(payload[4])
+        flags = "%02x %02x %02x" % (payload[3], payload[4], payload[5])
+        name = payload[6:38].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        # Tail bytes 38-43: format is device-specific and SETGET is
+        # non-functional on this firmware, so we don't parse them deeply.
+        return ModeConfig(
+            mode_idx=mode_idx, prompt=prompt_name,
+            prompt_bytes=(prompt_b1, prompt_b2), name=name,
+            cnc_level=0, auto_cnc=False, spatial=0,
+            wind_block=False, anc_toggle=False,
+            editable=editable, configured=configured, flags=flags, raw=payload,
+        )
+    else:
+        name = payload[6:].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        return ModeConfig(
+            mode_idx=mode_idx, prompt=prompt_name,
+            prompt_bytes=(prompt_b1, prompt_b2), name=name,
+            cnc_level=0, auto_cnc=False, spatial=0,
+            wind_block=False, anc_toggle=False,
+            editable=False, configured=False, flags="", raw=payload,
+        )
+
+
 def build_mode_config_40(mode_idx, name, cnc_level=0, auto_cnc=False,
                          spatial=0, wind_block=1, anc_toggle=1,
                          prompt_b1=0, prompt_b2=0):

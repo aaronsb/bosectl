@@ -30,6 +30,13 @@ class TestLookup:
         assert dev.codename == "edith"
         assert dev.config == "qc_ultra2"
 
+    def test_qc_earbuds(self):
+        dev = lookup_device(0x402F)
+        assert dev is not None
+        assert dev.codename == "lando"
+        assert dev.name == "QuietComfort Earbuds"
+        assert dev.config == "qc_earbuds"
+
     def test_unsupported_known(self):
         dev = lookup_device(0x4024)
         assert dev is not None
@@ -46,6 +53,7 @@ class TestSupport:
         assert is_supported(0x4062)  # edith
         assert is_supported(0x4020)  # baywolf
         assert is_supported(0x400C)  # wolfcastle
+        assert is_supported(0x402F)  # lando (QC Earbuds)
 
     def test_not_supported(self):
         assert not is_supported(0x4024)  # NCH 700
@@ -53,7 +61,7 @@ class TestSupport:
 
     def test_supported_devices(self):
         devs = supported_devices()
-        assert len(devs) >= 4  # wolfcastle, baywolf, edith, wolverine
+        assert len(devs) >= 5  # wolfcastle, baywolf, edith, wolverine, lando
         assert all(d.config is not None for d in devs)
 
     def test_known_devices(self):

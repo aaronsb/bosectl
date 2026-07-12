@@ -54,7 +54,7 @@ CATALOG = {
     0x4018: BoseDevice(0x4018, "levi",       "SoundSport Free",                      "earbuds", None),
     0x402C: BoseDevice(0x402C, "celine",     "Frames",                               "earbuds", None),
     0x402D: BoseDevice(0x402D, "revel",      "Sport Earbuds",                        "earbuds", None),
-    0x402F: BoseDevice(0x402F, "lando",      "QuietComfort Earbuds",                 "earbuds", None),
+    0x402F: BoseDevice(0x402F, "lando",      "QuietComfort Earbuds",                 "earbuds", "qc_earbuds"),
     0x403A: BoseDevice(0x403A, "gwen",       "Sport Open Earbuds",                   "earbuds", None),
     0x404C: BoseDevice(0x404C, "celine_ii",  "Frames (2nd Gen)",                     "earbuds", None),
     0x4060: BoseDevice(0x4060, "olivia",     "Frames Tempo",                         "earbuds", None),
