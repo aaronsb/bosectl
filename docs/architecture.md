@@ -368,7 +368,12 @@ implemented.
 To add support for a new Bose device:
 
 1. **Add to the catalog** — add its PID, codename, and name with `config=None`
-2. **Discover the RFCOMM channel** — try channels 2 and 8
+2. **Discover the RFCOMM channel** — it is SDP-assigned per model and is not
+   always 2 (the QuietComfort Headphones answer on 9). Scan channels 1-30 with
+   an `AF_BLUETOOTH`/`BTPROTO_RFCOMM` socket: refused channels raise `ECONNREFUSED`,
+   so only a few will open. Several may open without speaking BMAP, so probe each
+   open one with a real GET (e.g. battery) and keep the one that replies.
+   `BMAP_CHANNEL=<n>` overrides the configured channel while probing.
 3. **Check if an init packet is needed** — send GET [0.1] and see if subsequent commands work
 4. **Probe features** — GET on known function addresses to see what responds
 5. **Create a device config** with the discovered addresses and parsers
@@ -403,7 +408,8 @@ pybmap/
     ├── __init__.py      # Device registry (DEVICES dict, get_device())
     ├── parsers.py       # Shared parser/builder functions
     ├── qc_ultra2.py     # QC Ultra 2 config (module-level constants)
-    └── qc35.py          # QC35 config (module-level constants)
+    ├── qc35.py          # QC35 config (module-level constants)
+    └── qc_headphones.py # QuietComfort Headphones config (derives from qc_ultra2)
 ```
 
 **Device configs** are Python modules with module-level constants.

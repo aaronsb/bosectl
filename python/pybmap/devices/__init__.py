@@ -2,16 +2,19 @@
 
 from . import qc_ultra2
 from . import qc35
+from . import qc_headphones
 
 # Registry of supported devices keyed by type string.
 DEVICES = {
     "qc_ultra2": qc_ultra2,
     "qc35": qc35,
+    "qc_headphones": qc_headphones,
 }
 
 # Product ID -> device type (for auto-detection after connecting).
 PRODUCT_IDS = {
     0x4082: "qc_ultra2",
+    0x4075: "qc_headphones",
     # TODO: add QC35 product ID once verified
 }
 

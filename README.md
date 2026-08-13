@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/aaronsb/bosectl)](https://github.com/aaronsb/bosectl/releases/latest)
-[![Devices](https://img.shields.io/badge/Devices-2_supported_·_14_known-green)](docs/architecture.md#device-catalog)
+[![Devices](https://img.shields.io/badge/Devices-3_supported_·_14_known-green)](docs/architecture.md#device-catalog)
 [![Python 3](https://img.shields.io/badge/Python-3-3572A5.svg)](python/)
 [![Rust](https://img.shields.io/badge/Rust-1.70+-DEA584.svg)](rust/)
 [![C++17](https://img.shields.io/badge/C++-17-f34b7d.svg)](cpp/)
@@ -27,6 +27,7 @@ connection to the headphones.
 |--------|-----------|-----|---------|----------|---------|--------|
 | **QC Ultra Headphones 2** | CNC 0-10 slider | 3-band | room/head | 7 custom slots | Shortcut remap | Verified |
 | **QuietComfort 35 / 35 II** | ANR off/high/wind/low | — | — | — | Action remap (VPA/ANC) | Verified |
+| **QuietComfort Headphones** | quiet/aware modes | 3-band | — | — | Shortcut read | Verified |
 
 ### Device Roadmap
 
@@ -38,7 +39,6 @@ product ID but don't have tested configurations yet — contributions welcome:
 |--------|----------|----------|-----|
 | Noise Cancelling Headphones 700 | goodyear | Headphones | `0x4024` |
 | QuietComfort 45 | duran | Headphones | `0x4039` |
-| QuietComfort Headphones | prince | Headphones | `0x4075` |
 | QuietComfort Ultra Headphones | lonestarr | Headphones | `0x4066` |
 | QuietComfort Earbuds II | smalls | Earbuds | `0x4064` |
 | QuietComfort Ultra Earbuds | scotty | Earbuds | `0x4072` |

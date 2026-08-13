@@ -279,7 +279,9 @@ class BmapConnection:
             idx = found
 
         resp = self._start("current_mode", bytes([idx, 1 if announce else 0]))
-        if resp and resp.op != OP_RESULT:
+        # PROCESSING is an async ack, not a failure — the QuietComfort
+        # Headphones answer START [31.3] with it and apply the switch anyway.
+        if resp and resp.op not in (OP_RESULT, OP_PROCESSING):
             raise BmapDeviceError("Mode switch failed: %s" % fmt_response(resp))
 
     def set_cnc(self, level):

@@ -14,6 +14,8 @@ Usage:
         ...
 """
 
+import os
+
 from .connection import BmapConnection
 from .transport import RfcommTransport
 from .discovery import find_bmap_device
@@ -64,6 +66,10 @@ def connect(mac=None, device_type=None):
 
     device = get_device(device_type)
     channel = getattr(device, "RFCOMM_CHANNEL", 2)
+    # The BMAP RFCOMM channel is per-model (SDP-assigned); QuietComfort
+    # Headphones (0x4075) use 9, not the 2 the verified devices use.
+    if "BMAP_CHANNEL" in os.environ:
+        channel = int(os.environ["BMAP_CHANNEL"])
     transport = RfcommTransport(mac, channel=channel)
     transport.connect()
 
