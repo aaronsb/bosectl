@@ -35,6 +35,7 @@ pub const CATALOG: &[BoseDevice] = &[
     BoseDevice { product_id: 0x400C, codename: "wolfcastle", name: "QuietComfort 35",                        category: Category::Headphones, config: Some("qc35") },
     BoseDevice { product_id: 0x4015, codename: "stetson",    name: "Hearphones",                             category: Category::Headphones, config: None },
     BoseDevice { product_id: 0x4020, codename: "baywolf",    name: "QuietComfort 35 II",                     category: Category::Headphones, config: Some("qc35") },
+    BoseDevice { product_id: 0x4039, codename: "duran", name: "QuietComfort 45", category: Category::Headphones, config: Some("qc35") },
     BoseDevice { product_id: 0x4021, codename: "atlas",      name: "ProFlight",                              category: Category::Headphones, config: None },
     BoseDevice { product_id: 0x4024, codename: "goodyear",   name: "Noise Cancelling Headphones 700",        category: Category::Headphones, config: None },
     BoseDevice { product_id: 0x402B, codename: "beanie",     name: "Hearphones II",                          category: Category::Headphones, config: None },
