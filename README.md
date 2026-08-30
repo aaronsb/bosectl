@@ -135,9 +135,28 @@ pybmap.known_devices()       # full catalog
 - **Bluetooth** enabled in System Settings
 - **Bose headphones** paired/connected via System Settings
 
-### Installation (macOS & Linux Python CLI)
+### Installation (Python CLI)
 
-Run the included installer to set up dependencies (such as PyObjC on macOS) and symlink `bosectl` globally:
+#### Linux
+
+Run the included Linux installer to set up BlueZ, Python dependencies, and configure Bluetooth access:
+
+```bash
+git clone https://github.com/aaronsb/bosectl.git
+cd bosectl
+./linux_install.sh
+```
+
+The installer will:
+- Detect your Linux distribution and install BlueZ dependencies
+- Create a Python virtual environment with pybmap
+- Add your user to the `bluetooth` group for unprivileged access
+- Symlink `bosectl` to `/usr/local/bin/` for global access
+- Verify the installation and show next steps
+
+#### macOS
+
+Run the included macOS installer to set up dependencies (PyObjC) and symlink `bosectl` globally:
 
 ```bash
 git clone https://github.com/aaronsb/bosectl.git
