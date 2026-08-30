@@ -1,0 +1,63 @@
+name: Build Windows bmapctl
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    name: Build Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Show rustc/cargo versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Build release (bmapctl)
+        working-directory: rust
+        run: |
+          cargo build --release --locked
+
+      - name: Create dist dir and copy exe
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item -Path rust\target\release\bmapctl.exe -Destination dist\bmapctl-windows-x86_64.exe -Force
+          Get-ChildItem dist | ForEach-Object { Write-Output "ARTIFACT: $($_.FullName)" }
+
+      - name: Attempt to strip binary (optional)
+        run: |
+          if (Get-Command llvm-strip -ErrorAction SilentlyContinue) {
+            llvm-strip dist\bmapctl-windows-x86_64.exe
+          } else {
+            Write-Output "strip not available on runner; skipping"
+          }
+
+      - name: Compute SHA256SUMS
+        run: |
+          $h = Get-FileHash dist\bmapctl-windows-x86_64.exe -Algorithm SHA256
+          "$($h.Hash)  bmapctl-windows-x86_64.exe" | Out-File -FilePath dist\SHA256SUMS -Encoding ascii
+          Get-Content dist\SHA256SUMS
+
+      - name: Run help to verify
+        run: |
+          & dist\bmapctl-windows-x86_64.exe --help > dist\help.txt 2>&1 || echo "help exited with $LASTEXITCODE"
+          Get-Content dist\help.txt -ErrorAction SilentlyContinue
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bmapctl-windows-x86_64
+          path: dist
