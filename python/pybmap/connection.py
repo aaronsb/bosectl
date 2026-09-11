@@ -17,7 +17,7 @@ from .constants import (
     VOICE_LANGUAGES,
 )
 from .protocol import bmap_packet, parse_response, parse_all_responses, fmt_response
-from .errors import BmapError, BmapAuthError, BmapDeviceError
+from .errors import BmapError, BmapAuthError, BmapDeviceError, BmapDesyncError
 from .types import DeviceStatus, AudioSettings
 
 
@@ -53,12 +53,30 @@ class BmapConnection:
             )
         return features[name]
 
+    def _check_address(self, parsed, fblock, func):
+        """Reject a response that came from a different address.
+
+        The firmware answers in order, so after a reconnect the socket can
+        still hold responses queued before the drop and every read returns
+        the previous request's answer. Without this check the payload is
+        handed to the wrong parser and surfaces as plausible-looking data.
+        """
+        if parsed is None:
+            return None
+        if (parsed.fblock, parsed.func) != (fblock, func):
+            raise BmapDesyncError(
+                "Response came from [%d.%d], expected [%d.%d]. "
+                "Reopen the connection."
+                % (parsed.fblock, parsed.func, fblock, func)
+            )
+        return parsed
+
     def _get(self, feature_name):
         """Send a GET request and return the parsed payload."""
         feat = self._feature(feature_name)
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
-        parsed = parse_response(resp)
+        parsed = self._check_address(parse_response(resp), fblock, func)
         if parsed is None:
             return None
         if parsed.op == OP_ERROR:
@@ -75,7 +93,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_SETGET, payload)
         )
-        parsed = parse_response(resp)
+        parsed = self._check_address(parse_response(resp), fblock, func)
         if parsed and parsed.op == OP_ERROR:
             self._raise_error(parsed)
         return parsed
@@ -87,7 +105,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_START, payload)
         )
-        parsed = parse_response(resp)
+        parsed = self._check_address(parse_response(resp), fblock, func)
         if parsed and parsed.op == OP_ERROR:
             self._raise_error(parsed)
         return parsed
@@ -151,7 +169,7 @@ class BmapConnection:
         feat = self._feature("current_mode")
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
-        parsed = parse_response(resp)
+        parsed = self._check_address(parse_response(resp), fblock, func)
         if parsed and parsed.payload:
             return parsed.payload[0]
         return None
@@ -347,14 +365,11 @@ class BmapConnection:
         """Set 3-band equalizer (-10 to +10 each)."""
         feat = self._feature("eq")
         builder = feat.get("builder")
-        fblock, func = feat["addr"]
         for band_id, val in enumerate([bass, mid, treble]):
             if not -10 <= val <= 10:
                 raise ValueError("EQ value must be -10 to +10")
             payload = builder(val, band_id) if builder else bytes([val & 0xFF, band_id])
-            self._transport.send_recv(
-                bmap_packet(fblock, func, OP_SETGET, payload)
-            )
+            self._setget("eq", payload)
 
     def set_spatial(self, mode):
         """Set spatial audio mode ("off", "room", or "head")."""

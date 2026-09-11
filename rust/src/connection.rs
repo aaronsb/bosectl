@@ -34,11 +34,28 @@ impl<T: Transport> BmapConnection<T> {
         ))
     }
 
+    /// Reject a response that came from a different address.
+    ///
+    /// The firmware answers in order, so after a reconnect the socket can
+    /// still hold responses queued before the drop and every read returns
+    /// the previous request's answer. Without this check the payload is
+    /// handed to the wrong parser and surfaces as plausible-looking data.
+    fn check_address(&self, resp: &BmapResponse, addr: Addr) -> BmapResult<()> {
+        if resp.fblock != addr.0 || resp.func != addr.1 {
+            return Err(BmapError::Desync(format!(
+                "Response came from [{}.{}], expected [{}.{}]. Reopen the connection.",
+                resp.fblock, resp.func, addr.0, addr.1
+            )));
+        }
+        Ok(())
+    }
+
     fn get(&self, addr: Addr) -> BmapResult<Vec<u8>> {
         let pkt = bmap_packet(addr.0, addr.1, Operator::Get, &[]);
         let data = self.transport.send_recv(&pkt)?;
         let resp = parse_response(&data)
             .ok_or_else(|| BmapError::Timeout("Empty response".into()))?;
+        self.check_address(&resp, addr)?;
         self.check_error(&resp)?;
         Ok(resp.payload)
     }
@@ -48,6 +65,7 @@ impl<T: Transport> BmapConnection<T> {
         let data = self.transport.send_recv(&pkt)?;
         let resp = parse_response(&data)
             .ok_or_else(|| BmapError::Timeout("Empty response".into()))?;
+        self.check_address(&resp, addr)?;
         self.check_error(&resp)?;
         Ok(resp)
     }
@@ -57,6 +75,7 @@ impl<T: Transport> BmapConnection<T> {
         let data = self.transport.send_recv(&pkt)?;
         let resp = parse_response(&data)
             .ok_or_else(|| BmapError::Timeout("Empty response".into()))?;
+        self.check_address(&resp, addr)?;
         self.check_error(&resp)?;
         Ok(resp)
     }

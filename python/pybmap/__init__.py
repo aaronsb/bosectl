@@ -25,7 +25,7 @@ from .catalog import (
 )
 from .errors import (
     BmapError, BmapConnectionError, BmapAuthError,
-    BmapDeviceError, BmapTimeoutError, BmapNotFoundError,
+    BmapDeviceError, BmapTimeoutError, BmapNotFoundError, BmapDesyncError,
 )
 from .types import DeviceStatus, ModeConfig, EqBand, ButtonMapping, BmapResponse
 from .protocol import bmap_packet, parse_response, parse_all_responses

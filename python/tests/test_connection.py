@@ -4,7 +4,10 @@ import pytest
 from pybmap.connection import BmapConnection
 from pybmap.protocol import bmap_packet
 from pybmap.constants import OP_GET, OP_SETGET, OP_STATUS, OP_RESULT, OP_ERROR
-from pybmap.errors import BmapError, BmapAuthError, BmapDeviceError
+from pybmap.errors import (
+    BmapError, BmapAuthError, BmapDeviceError,
+    BmapDesyncError, BmapConnectionError,
+)
 from pybmap.devices import qc_ultra2, qc_prince, qc45
 from pybmap.types import ModeConfig
 
@@ -389,3 +392,32 @@ class TestProfileLookup:
         monkeypatch.setattr(qc45_conn, "modes", lambda: {3: _mode(3, "Gym")})
         with pytest.raises(BmapError, match="not found"):
             qc45_conn.delete_profile("Nope")
+
+
+class TestResponseAddressCheck:
+    """A response from the wrong address must not be parsed as the right one.
+
+    Observed on a QC45 after the headset dropped and reconnected: the socket
+    still held responses queued before the drop, so every read returned the
+    previous request's answer.
+    """
+
+    def test_mismatched_address_raises(self, mock_dev):
+        # Ask for battery [2.2], answer with firmware [0.5].
+        mock_dev._transport.responses[(2, 2)] = (
+            bytes([0, 5, OP_STATUS, 3]) + b"4.0")
+        with pytest.raises(BmapDesyncError, match=r"\[0\.5\].*expected \[2\.2\]"):
+            mock_dev.battery()
+
+    def test_matching_address_passes(self, mock_dev):
+        assert mock_dev.battery() == 80
+
+    def test_setget_checks_address_too(self, mock_dev):
+        mock_dev._transport.responses[(1, 7)] = (
+            bytes([2, 2, OP_STATUS, 1]) + bytes([42]))
+        with pytest.raises(BmapDesyncError):
+            mock_dev.set_eq(1, 2, 3)
+
+    def test_desync_is_a_connection_error(self):
+        # Callers that already retry on connection loss should retry on this.
+        assert issubclass(BmapDesyncError, BmapConnectionError)

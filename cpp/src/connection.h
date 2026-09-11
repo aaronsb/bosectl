@@ -229,7 +229,7 @@ public:
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
         auto data = transport_->send_recv(pkt);
         auto resp = parse_response(data);
-        if (resp) check_error(*resp);
+        if (resp) { check_address(*resp, addr); check_error(*resp); }
         auto result = parse_buttons(resp ? resp->payload : std::vector<uint8_t>{});
         if (!result) throw std::runtime_error("Could not parse button remap response");
         return *result;
@@ -293,11 +293,28 @@ private:
         return *opt;
     }
 
+    // Reject a response that came from a different address.
+    //
+    // The firmware answers in order, so after a reconnect the socket can still
+    // hold responses queued before the drop and every read returns the previous
+    // request's answer. Without this check the payload is handed to the wrong
+    // parser and surfaces as plausible-looking data.
+    void check_address(const BmapResponse& resp, Addr addr) {
+        if (resp.fblock != addr.fblock || resp.func != addr.func) {
+            throw std::runtime_error(
+                "Response came from [" + std::to_string(resp.fblock) + "." +
+                std::to_string(resp.func) + "], expected [" +
+                std::to_string(addr.fblock) + "." + std::to_string(addr.func) +
+                "]. Reopen the connection.");
+        }
+    }
+
     std::vector<uint8_t> get(Addr addr) {
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::Get);
         auto data = transport_->send_recv(pkt);
         auto resp = parse_response(data);
         if (!resp) throw std::runtime_error("Empty response");
+        check_address(*resp, addr);
         check_error(*resp);
         return resp->payload;
     }
@@ -306,7 +323,7 @@ private:
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
         auto data = transport_->send_recv(pkt);
         auto resp = parse_response(data);
-        if (resp) check_error(*resp);
+        if (resp) { check_address(*resp, addr); check_error(*resp); }
     }
 
     BmapResponse start(Addr addr, const std::vector<uint8_t>& payload) {
@@ -314,6 +331,7 @@ private:
         auto data = transport_->send_recv(pkt);
         auto resp = parse_response(data);
         if (!resp) throw std::runtime_error("Empty response");
+        check_address(*resp, addr);
         check_error(*resp);
         return *resp;
     }
