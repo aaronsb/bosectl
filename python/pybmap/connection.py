@@ -506,12 +506,7 @@ class BmapConnection:
 
     def update_profile(self, name, **settings):
         """Update an existing custom profile by name."""
-        modes = self.modes()
-        found = None
-        for idx, config in modes.items():
-            if config.name.lower() == name.lower():
-                found = (idx, config)
-                break
+        found = self._find_profile(name)
         if found is None:
             raise BmapError("Profile '%s' not found" % name)
         idx, config = found
@@ -519,14 +514,23 @@ class BmapConnection:
             raise BmapError("Cannot modify preset mode '%s'" % name)
         self._write_mode_from_config(idx, config, **settings)
 
+    def _find_profile(self, name):
+        """Look up a profile by name, preferring editable slots.
+
+        A custom profile may carry the same name as a preset. Returning the
+        preset first makes that custom profile impossible to edit or delete.
+        """
+        modes = self.modes()
+        matches = [(idx, cfg) for idx, cfg in sorted(modes.items())
+                   if cfg.name.lower() == name.lower()]
+        for idx, cfg in matches:
+            if cfg.editable:
+                return (idx, cfg)
+        return matches[0] if matches else None
+
     def delete_profile(self, name):
         """Delete a custom profile by resetting its slot."""
-        modes = self.modes()
-        found = None
-        for idx, config in modes.items():
-            if config.name.lower() == name.lower():
-                found = (idx, config)
-                break
+        found = self._find_profile(name)
         if found is None:
             raise BmapError("Profile '%s' not found" % name)
         idx, config = found
@@ -607,13 +611,17 @@ class BmapConnection:
         return modes[idx]
 
     def _find_free_slot(self, modes):
-        """Find the first unconfigured editable slot."""
+        """Find the first free editable slot.
+
+        A slot is free when its name is the "None" sentinel or blank. The
+        'configured' bit is not part of the test: firmware sets it on first
+        write and never clears it, so a deleted slot keeps it and would
+        otherwise stay unusable. Matches find_free_slot() in the C++ library.
+        """
         for idx in self._device.EDITABLE_SLOTS:
-            if idx in modes:
-                config = modes[idx]
-                if not config.configured and config.name.lower() in ("none", ""):
-                    return idx
-            else:
+            if idx not in modes:
+                return idx
+            if modes[idx].name.strip().lower() in ("none", ""):
                 return idx
         return None
 

@@ -525,8 +525,11 @@ impl<T: Transport> BmapConnection<T> {
     /// Delete a custom profile by name.
     pub fn delete_profile(&self, name: &str) -> BmapResult<()> {
         let modes = self.modes()?;
+        // Prefer an editable slot: a custom profile may share a preset's name,
+        // and matching the preset first makes that profile undeletable.
         let mc = modes.iter()
-            .find(|m| m.name.eq_ignore_ascii_case(name))
+            .find(|m| m.editable && m.name.eq_ignore_ascii_case(name))
+            .or_else(|| modes.iter().find(|m| m.name.eq_ignore_ascii_case(name)))
             .ok_or_else(|| BmapError::InvalidArg(format!("Profile '{}' not found", name)))?;
         if !mc.editable {
             return Err(BmapError::InvalidArg(format!("Cannot delete preset '{}'", name)));
@@ -544,10 +547,14 @@ impl<T: Transport> BmapConnection<T> {
     // ── Internal Helpers ────────────────────────────────────────────────────
 
     fn find_free_slot(&self, modes: &[ModeConfig]) -> BmapResult<u8> {
+        // A slot is free when its name is the "None" sentinel or blank. The
+        // `configured` bit is not part of the test: firmware sets it on first
+        // write and never clears it, so a deleted slot keeps it and would
+        // otherwise stay unusable. Matches find_free_slot() in the C++ library.
         for &slot in self.config.editable_slots {
             match modes.iter().find(|m| m.mode_idx == slot) {
-                Some(m) if !m.configured && m.name.eq_ignore_ascii_case("none") => return Ok(slot),
-                Some(m) if !m.configured && m.name.is_empty() => return Ok(slot),
+                Some(m) if m.name.trim().is_empty() => return Ok(slot),
+                Some(m) if m.name.trim().eq_ignore_ascii_case("none") => return Ok(slot),
                 None => return Ok(slot),
                 _ => continue,
             }

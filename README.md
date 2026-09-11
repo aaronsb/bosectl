@@ -29,7 +29,7 @@ connection to the headphones.
 | **QuietComfort Headphones** | CNC 0-10 + Wind Block via ModeConfig  | —      | field observed | 2 user slots observed | —                      | Verified (`prince`) |
 | **QuietComfort 35 / 35 II** | ANR off/high/wind/low                 | —      | —              | —                     | Action remap (VPA/ANC) | Verified           |
 | **QuietComfort Earbuds**    | CNC 0-10 via direct SETGET            | 3-band | —              | 4 fixed modes         | Remap                  | Verified (`lando`) |
-| **QuietComfort 45**         | CNC 0-10 via ModeConfig               | 3-band | —              | 2 user slots          | Remap                  | Inferred (`duran`), untested on hardware |
+| **QuietComfort 45**         | CNC 0-10 via ModeConfig               | 3-band | —              | 2 user slots          | Remap                  | Verified (`duran`) |
 | **Ultra Open Earbuds**      | — (open-ear)                          | 3-band | —              | switch only           | —                      | Partial (`serena`), from device report |
 
 ### Device Roadmap
@@ -114,8 +114,8 @@ pybmap.modalias(0x4082)   # "bluetooth:v05A7p4082d0000"
 # Check support status
 pybmap.is_supported(0x4082)  # True — has tested config
 pybmap.is_supported(0x4075)  # True — QuietComfort Headphones (prince)
-pybmap.is_supported(0x4039)  # False — QC45, recognized but untested
-pybmap.supported_devices()   # [wolfcastle, baywolf, edith, prince, wolverine]
+pybmap.is_supported(0x4039)  # True — QuietComfort 45 (duran)
+pybmap.supported_devices()   # [wolfcastle, baywolf, duran, prince, wolverine, lando, edith, serena]
 pybmap.known_devices()       # full catalog
 ```
 

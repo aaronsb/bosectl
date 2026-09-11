@@ -262,17 +262,21 @@ public:
 
     void delete_profile(const std::string& name) {
         auto all = modes();
+        // Prefer an editable slot: a custom profile may share a preset's name,
+        // and matching the preset first makes that profile undeletable.
+        const ModeConfig* match = nullptr;
         for (auto& m : all) {
-            if (m.name == name) {
-                if (!m.editable) throw std::runtime_error("Cannot delete preset: " + name);
-                ModeConfig mc{};
-                mc.mode_idx = m.mode_idx;
-                mc.name = "None";
-                write_mode(m.mode_idx, mc);
-                return;
-            }
+            if (m.name != name) continue;
+            if (m.editable) { match = &m; break; }
+            if (!match) match = &m;
         }
-        throw std::runtime_error("Profile not found: " + name);
+        if (!match) throw std::runtime_error("Profile not found: " + name);
+        if (!match->editable) throw std::runtime_error("Cannot delete preset: " + name);
+
+        ModeConfig mc{};
+        mc.mode_idx = match->mode_idx;
+        mc.name = "None";
+        write_mode(match->mode_idx, mc);
     }
 
     std::vector<BmapResponse> send_raw(const std::vector<uint8_t>& data) {

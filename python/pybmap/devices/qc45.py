@@ -3,11 +3,19 @@
 Codename "duran", product ID 0x4039, CSR8670 platform.
 RFCOMM channel 8, requires INIT_PACKET (0,1) before responding.
 
-Layout inferred from the Bose app's BMAP tables (#21); unverified on
-hardware. The 47-byte STATUS / 39-byte SETGET ModeConfig format is shared
-with QuietComfort Headphones (prince), whose parsers this module reuses.
+Layout was inferred from the Bose app's BMAP tables (#21) and is now
+confirmed on hardware, firmware 4.0.4-4360+de6a887. The 47-byte STATUS /
+39-byte SETGET ModeConfig format is shared with QuietComfort Headphones
+(prince), whose parsers this module reuses.
 
-Capabilities expected from the APK tables:
+Wind block and CNC level are mutually exclusive in a ModeConfig write: when
+byte 38 (wind) is 1, the firmware stores 0 at byte 42 (cnc) regardless of
+what was sent. Set wind block off to set a level. This matches QC35, where
+wind is one of the ANR [1.6] enum values rather than a separate flag.
+
+A 40-byte ModeConfig payload is rejected with ERROR Length (01). 39 is correct.
+
+Capabilities confirmed on hardware:
   - Battery, firmware, serial, product name: GET works
   - Device name, sidetone, voice prompts: GET + SETGET works
   - Buttons: GET + SETGET works (Shortcut button with SwitchDevice action)

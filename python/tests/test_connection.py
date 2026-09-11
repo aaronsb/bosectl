@@ -5,7 +5,8 @@ from pybmap.connection import BmapConnection
 from pybmap.protocol import bmap_packet
 from pybmap.constants import OP_GET, OP_SETGET, OP_STATUS, OP_RESULT, OP_ERROR
 from pybmap.errors import BmapError, BmapAuthError, BmapDeviceError
-from pybmap.devices import qc_ultra2, qc_prince
+from pybmap.devices import qc_ultra2, qc_prince, qc45
+from pybmap.types import ModeConfig
 
 
 class MockTransport:
@@ -313,3 +314,78 @@ class TestDiscoveryMacGuard:
         assert _MAC_RE.match("AA:bb:CC:dd:EE:ff")
         assert not _MAC_RE.match("AA:bb:CC:dd:EE:ff;rm")
         assert not _MAC_RE.match("AA-bb-CC-dd-EE-ff")
+
+
+def _mode(idx, name, editable=True, configured=True):
+    """Build a ModeConfig row for slot-selection tests."""
+    return ModeConfig(
+        mode_idx=idx, prompt="NONE", prompt_bytes=(0, 0), name=name,
+        cnc_level=0, auto_cnc=False, spatial=0, wind_block=False,
+        anc_toggle=False, editable=editable, configured=configured,
+        flags="", raw=b"",
+    )
+
+
+@pytest.fixture
+def qc45_conn():
+    return BmapConnection(MockTransport(), qc45)
+
+
+class TestFreeSlot:
+    """Firmware leaves 'configured' set after a slot is cleared."""
+
+    def test_cleared_slot_is_reusable(self, qc45_conn):
+        modes = {
+            0: _mode(0, "Quiet", editable=False),
+            1: _mode(1, "Aware", editable=False),
+            2: _mode(2, "None", configured=True),
+            3: _mode(3, "Gym"),
+        }
+        assert qc45_conn._find_free_slot(modes) == 2
+
+    def test_blank_name_is_reusable(self, qc45_conn):
+        modes = {2: _mode(2, "", configured=True), 3: _mode(3, "Gym")}
+        assert qc45_conn._find_free_slot(modes) == 2
+
+    def test_named_slots_are_not_free(self, qc45_conn):
+        modes = {2: _mode(2, "Gym"), 3: _mode(3, "Commute")}
+        assert qc45_conn._find_free_slot(modes) is None
+
+    def test_missing_slot_is_free(self, qc45_conn):
+        assert qc45_conn._find_free_slot({2: _mode(2, "Gym")}) == 3
+
+
+class TestProfileLookup:
+    """A custom profile may share a preset's name (issue #29)."""
+
+    def test_prefers_editable_over_preset(self, qc45_conn, monkeypatch):
+        modes = {
+            1: _mode(1, "Aware", editable=False),
+            3: _mode(3, "Aware", editable=True),
+        }
+        monkeypatch.setattr(qc45_conn, "modes", lambda: modes)
+        idx, cfg = qc45_conn._find_profile("Aware")
+        assert idx == 3 and cfg.editable
+
+    def test_delete_targets_custom_not_preset(self, qc45_conn, monkeypatch):
+        modes = {
+            1: _mode(1, "Aware", editable=False),
+            3: _mode(3, "Aware", editable=True),
+        }
+        monkeypatch.setattr(qc45_conn, "modes", lambda: modes)
+        written = []
+        monkeypatch.setattr(qc45_conn, "_write_mode",
+                            lambda slot, name, **kw: written.append(slot))
+        qc45_conn.delete_profile("Aware")
+        assert written == [3]
+
+    def test_preset_only_match_still_refused(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes",
+                            lambda: {1: _mode(1, "Aware", editable=False)})
+        with pytest.raises(BmapError, match="preset"):
+            qc45_conn.delete_profile("Aware")
+
+    def test_unknown_name_raises(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {3: _mode(3, "Gym")})
+        with pytest.raises(BmapError, match="not found"):
+            qc45_conn.delete_profile("Nope")
