@@ -26,7 +26,7 @@ connection to the headphones.
 | Device                      | NC Control                            | EQ     | Spatial        | Profiles              | Buttons                | Status             |
 | --------------------------- | ------------------------------------- | ------ | -------------- | --------------------- | ---------------------- | ------------------ |
 | **QC Ultra Headphones 2**   | CNC 0-10 slider                       | 3-band | room/head      | 7 custom slots        | Shortcut remap         | Verified           |
-| **QuietComfort Headphones** | CNC 0-10 + Wind Block via ModeConfig  | —      | field observed | 2 user slots observed | —                      | Verified (`prince`) |
+| **QuietComfort Headphones** | CNC 0-10 + Wind Block via ModeConfig  | 3-band | field observed | 2 user slots observed | —                      | Verified (`prince`) |
 | **QuietComfort 35 / 35 II** | ANR off/high/wind/low                 | —      | —              | —                     | Action remap (VPA/ANC) | Verified           |
 | **QuietComfort Earbuds**    | CNC 0-10 via direct SETGET            | 3-band | —              | 4 fixed modes         | Remap                  | Verified (`lando`) |
 | **QuietComfort 45**         | CNC 0-10 via ModeConfig               | 3-band | —              | 2 user slots          | Remap                  | Inferred (`duran`), untested on hardware |
