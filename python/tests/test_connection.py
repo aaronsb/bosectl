@@ -7,8 +7,12 @@ import pytest
 from pybmap.connection import BmapConnection
 from pybmap.protocol import bmap_packet
 from pybmap.constants import OP_GET, OP_SETGET, OP_STATUS, OP_RESULT, OP_ERROR
-from pybmap.errors import BmapError, BmapAuthError, BmapDeviceError
-from pybmap.devices import qc_ultra2, qc_ultra2_earbuds, qc_prince
+from pybmap.errors import (
+    BmapError, BmapAuthError, BmapDeviceError,
+    BmapDesyncError, BmapConnectionError, BmapInvalidArgError,
+)
+from pybmap.devices import qc_ultra2, qc_ultra2_earbuds, qc_prince, qc45
+from pybmap.types import ModeConfig
 
 
 EARBUDS_BATTERY_FIXTURE = bytes.fromhex(
@@ -434,3 +438,198 @@ class TestDiscoveryMacGuard:
         assert _MAC_RE.match("AA:bb:CC:dd:EE:ff")
         assert not _MAC_RE.match("AA:bb:CC:dd:EE:ff;rm")
         assert not _MAC_RE.match("AA-bb-CC-dd-EE-ff")
+
+
+def _mode(idx, name, editable=True, configured=True):
+    """Build a ModeConfig row for slot-selection tests."""
+    return ModeConfig(
+        mode_idx=idx, prompt="NONE", prompt_bytes=(0, 0), name=name,
+        cnc_level=0, auto_cnc=False, spatial=0, wind_block=False,
+        anc_toggle=False, editable=editable, configured=configured,
+        flags="", raw=b"",
+    )
+
+
+@pytest.fixture
+def qc45_conn():
+    return BmapConnection(MockTransport(), qc45)
+
+
+class TestFreeSlot:
+    """Firmware leaves 'configured' set after a slot is cleared."""
+
+    def test_cleared_slot_is_reusable(self, qc45_conn):
+        modes = {
+            0: _mode(0, "Quiet", editable=False),
+            1: _mode(1, "Aware", editable=False),
+            2: _mode(2, "None", configured=True),
+            3: _mode(3, "Gym"),
+        }
+        assert qc45_conn._find_free_slot(modes) == 2
+
+    def test_blank_name_is_reusable(self, qc45_conn):
+        modes = {2: _mode(2, "", configured=True), 3: _mode(3, "Gym")}
+        assert qc45_conn._find_free_slot(modes) == 2
+
+    def test_named_slots_are_not_free(self, qc45_conn):
+        modes = {2: _mode(2, "Gym"), 3: _mode(3, "Commute")}
+        assert qc45_conn._find_free_slot(modes) is None
+
+    def test_missing_slot_is_free(self, qc45_conn):
+        assert qc45_conn._find_free_slot({2: _mode(2, "Gym")}) == 3
+
+
+class TestProfileLookup:
+    """A custom profile may share a preset's name (issue #29)."""
+
+    def test_prefers_editable_over_preset(self, qc45_conn, monkeypatch):
+        modes = {
+            1: _mode(1, "Aware", editable=False),
+            3: _mode(3, "Aware", editable=True),
+        }
+        monkeypatch.setattr(qc45_conn, "modes", lambda: modes)
+        idx, cfg = qc45_conn._find_profile("Aware")
+        assert idx == 3 and cfg.editable
+
+    def test_delete_targets_custom_not_preset(self, qc45_conn, monkeypatch):
+        modes = {
+            1: _mode(1, "Aware", editable=False),
+            3: _mode(3, "Aware", editable=True),
+        }
+        monkeypatch.setattr(qc45_conn, "modes", lambda: modes)
+        written = []
+        monkeypatch.setattr(qc45_conn, "_write_mode",
+                            lambda slot, name, **kw: written.append(slot))
+        qc45_conn.delete_profile("Aware")
+        assert written == [3]
+
+    def test_preset_only_match_still_refused(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes",
+                            lambda: {1: _mode(1, "Aware", editable=False)})
+        with pytest.raises(BmapError, match="preset"):
+            qc45_conn.delete_profile("Aware")
+
+    def test_unknown_name_raises(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {3: _mode(3, "Gym")})
+        with pytest.raises(BmapError, match="not found"):
+            qc45_conn.delete_profile("Nope")
+
+
+class TestResponseAddressCheck:
+    """A response from the wrong address must not be parsed as the right one.
+
+    Observed on a QC45 after the headset dropped and reconnected: the socket
+    still held responses queued before the drop, so every read returned the
+    previous request's answer.
+    """
+
+    def test_mismatched_address_raises(self, mock_dev):
+        # Ask for battery [2.2], answer with firmware [0.5].
+        mock_dev._transport.responses[(2, 2)] = (
+            bytes([0, 5, OP_STATUS, 3]) + b"4.0")
+        with pytest.raises(BmapDesyncError, match=r"\[0\.5\].*expected \[2\.2\]"):
+            mock_dev.battery()
+
+    def test_matching_address_passes(self, mock_dev):
+        assert mock_dev.battery() == 80
+
+    def test_setget_checks_address_too(self, mock_dev):
+        mock_dev._transport.responses[(1, 7)] = (
+            bytes([2, 2, OP_STATUS, 1]) + bytes([42]))
+        with pytest.raises(BmapDesyncError):
+            mock_dev.set_eq(1, 2, 3)
+
+    def test_desync_is_a_connection_error(self):
+        # Callers that already retry on connection loss should retry on this.
+        assert issubclass(BmapDesyncError, BmapConnectionError)
+
+
+class TestSetEqResponse:
+    """set_eq checks each SETGET reply instead of discarding it."""
+
+    def test_device_error_surfaces_and_stops(self, mock_dev):
+        mock_dev._transport.add_response(1, 7, OP_ERROR, bytes([1]))
+        with pytest.raises(BmapDeviceError) as info:
+            mock_dev.set_eq(1, 2, 3)
+        assert info.value.error_code == 1
+        assert len(mock_dev._transport.sent) == 1
+
+    def test_success_sends_three_bands(self, mock_dev):
+        mock_dev.set_eq(1, 2, 3)
+        assert [p[:3] for p in mock_dev._transport.sent] == [bytes([1, 7, OP_SETGET])] * 3
+
+
+class TestEmptyReply:
+    """GET, SETGET and START all reject an invalid or empty reply the same way."""
+
+    @pytest.mark.parametrize("call, key, response", [
+        (lambda d: d.set_multipoint(True), (1, 10), bytes([1, 10, 0x08, 0])),
+        (lambda d: d.set_eq(0, 0, 0), (1, 7), b""),
+        (lambda d: d.set_mode("aware"), (31, 3), bytes([31, 3, OP_RESULT, 4, 1])),
+        (lambda d: d.power_off(), (7, 4), b""),
+    ])
+    def test_raises_device_error(self, mock_dev, call, key, response):
+        mock_dev._transport.responses[key] = response
+        with pytest.raises(BmapDeviceError, match="Invalid or empty response"):
+            call(mock_dev)
+
+
+class TestPresetNameRefused:
+    """A new custom profile may not take a preset's name (see #29)."""
+
+    def test_create_refuses_preset_name(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {3: _mode(3, "Gym")})
+        written = []
+        monkeypatch.setattr(qc45_conn, "_write_mode",
+                            lambda slot, name, **kw: written.append(slot))
+        with pytest.raises(BmapInvalidArgError, match="preset"):
+            qc45_conn.create_profile(" AWARE")
+        assert written == []
+
+    def test_create_refuses_on_device_preset_name(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {
+            1: _mode(1, "Focus", editable=False), 3: _mode(3, "Gym")})
+        with pytest.raises(BmapInvalidArgError, match="preset"):
+            qc45_conn.create_profile("focus")
+
+    def test_rename_to_preset_refused(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {3: _mode(3, "Gym")})
+        with pytest.raises(BmapInvalidArgError, match="preset"):
+            qc45_conn.update_profile("Gym", rename="Quiet")
+
+    def test_create_reuses_cleared_slot(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {
+            2: _mode(2, "None"), 3: _mode(3, "Gym")})
+        written = []
+        monkeypatch.setattr(qc45_conn, "_write_mode",
+                            lambda slot, name, **kw: written.append((slot, name)))
+        assert qc45_conn.create_profile("Commute") == 2
+        assert written == [(2, "Commute")]
+
+
+class TestStrayFrames:
+    """Late or unsolicited frames ahead of the reply are skipped, not fatal."""
+
+    def test_late_status_ahead_of_reply_is_skipped(self, mock_dev):
+        # prince sends STATUS [31.3] after acking START with PROCESSING.
+        mock_dev._transport.responses[(2, 2)] = (
+            bytes([31, 3, OP_STATUS, 1, 0x01])
+            + bytes([2, 2, OP_STATUS, 4, 80, 0xff, 0xff, 0x00]))
+        assert mock_dev.battery() == 80
+
+    def test_only_foreign_frames_is_desync(self, mock_dev):
+        mock_dev._transport.responses[(2, 2)] = (
+            bytes([31, 3, OP_STATUS, 1, 0x01]) + bytes([0, 5, OP_STATUS, 1, 0x34]))
+        with pytest.raises(BmapDesyncError, match=r"\[31\.3\], expected \[2\.2\]"):
+            mock_dev.battery()
+
+    def test_setget_skips_stray_frame(self, mock_dev):
+        mock_dev._transport.responses[(1, 10)] = (
+            bytes([31, 3, OP_STATUS, 1, 0x01]) + bytes([1, 10, OP_STATUS, 1, 0x07]))
+        mock_dev.set_multipoint(True)
+
+    def test_status_does_not_swallow_desync(self, mock_dev):
+        # A desync on any optional field must fail the snapshot, not default it.
+        mock_dev._transport.responses[(1, 7)] = bytes([0, 5, OP_STATUS, 1, 0x34])
+        with pytest.raises(BmapDesyncError):
+            mock_dev.status()

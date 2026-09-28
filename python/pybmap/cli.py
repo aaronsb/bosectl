@@ -6,8 +6,17 @@ import sys
 
 import pybmap
 from pybmap.constants import SPATIAL_NAMES, SIDETONE_NAMES, VOICE_LANGUAGES
-from pybmap.errors import BmapError, BmapConnectionError, BmapInvalidArgError
+from pybmap.errors import (
+    BmapError, BmapConnectionError, BmapInvalidArgError,
+    BmapAuthError, BmapDeviceError, BmapTimeoutError,
+)
 from pybmap.protocol import fmt_response
+
+# Failures that mean the link or the device misbehaved, as opposed to a name
+# that did not resolve. BmapDesyncError is a BmapConnectionError.
+_LINK_OR_DEVICE_ERRORS = (
+    BmapConnectionError, BmapAuthError, BmapDeviceError, BmapTimeoutError,
+)
 
 # ── ANSI Colors ──────────────────────────────────────────────────────────────
 
@@ -160,15 +169,20 @@ def cmd_profile_set(dev, args):
         settings["wind_block"] = bool_map.get(opts["wind"].lower(), 0)
     if "anc" in opts:
         settings["anc_toggle"] = bool_map.get(opts["anc"].lower(), 1)
-    if "name" in opts:
-        settings["name"] = opts["name"]
+    new_name = opts.get("name")
 
-    try:
-        dev.update_profile(lookup_name, **settings)
+    # Decide update vs create up front. Catching update_profile's errors and
+    # falling through to create turned "profile set Aware" into a duplicate
+    # of the preset, and a dropped link into a stray new profile.
+    wanted = lookup_name.lower()
+    if any(p.name.lower() == wanted for p in dev.profiles()):
+        dev.update_profile(lookup_name, rename=new_name, **settings)
         print("Updated: %s" % lookup_name)
-    except BmapError:
-        slot = dev.create_profile(lookup_name, **settings)
-        print("Created (slot %d): %s" % (slot, lookup_name))
+    else:
+        # create_profile refuses preset names.
+        name = new_name or lookup_name
+        slot = dev.create_profile(name, **settings)
+        print("Created (slot %d): %s" % (slot, name))
 
 
 def cmd_buttons(dev, args):
@@ -469,6 +483,8 @@ def main():
             try:
                 dev.set_mode(sys.argv[1])
                 print("OK: %s" % sys.argv[1])
+            except _LINK_OR_DEVICE_ERRORS:
+                raise  # A dropped or desynced link is not an unknown command.
             except BmapError:
                 print("Unknown command: %s" % cmd, file=sys.stderr)
                 sys.exit(1)

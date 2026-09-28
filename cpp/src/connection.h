@@ -3,12 +3,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "device.h"
+#include "errors.h"
 #include "protocol.h"
 #include "transport.h"
 
@@ -16,6 +18,28 @@ namespace bmap {
 
 /// The device name field is 32 bytes on every BMAP device seen so far.
 inline constexpr size_t MAX_NAME_BYTES = 31;
+
+namespace detail {
+
+inline std::string trim_lower(const std::string& s) {
+    auto b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return "";
+    auto e = s.find_last_not_of(" \t\r\n");
+    std::string out = s.substr(b, e - b + 1);
+    for (auto& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
+
+inline bool iequals(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i]))) return false;
+    }
+    return true;
+}
+
+} // namespace detail
 
 class BmapConnection {
 public:
@@ -148,16 +172,21 @@ public:
         auto addr = require(config_.current_mode, "current_mode");
         uint8_t idx = 255;
         for (auto& [n, m] : config_.preset_modes) {
-            if (n == name) { idx = m.idx; break; }
+            if (detail::iequals(n, name)) { idx = m.idx; break; }
         }
         if (idx == 255) {
             auto all = modes();
             for (auto& m : all) {
-                if (m.name == name) { idx = m.mode_idx; break; }
+                if (detail::iequals(m.name, name)) { idx = m.mode_idx; break; }
             }
         }
-        if (idx == 255) throw std::runtime_error("Unknown mode: " + name);
-        start(addr, {idx, static_cast<uint8_t>(announce ? 1 : 0)});
+        if (idx == 255) throw std::invalid_argument("Unknown mode: " + name);
+        auto resp = start(addr, {idx, static_cast<uint8_t>(announce ? 1 : 0)});
+        // Some firmware (QC Headphones "prince") acks START [31.3] with
+        // PROCESSING and applies the switch asynchronously.
+        if (resp.op != Operator::Result && resp.op != Operator::Processing) {
+            throw device_error("Mode switch failed: " + resp.fmt());
+        }
     }
 
     void set_cnc(uint8_t level) {
@@ -203,8 +232,7 @@ public:
     void set_eq(int8_t bass, int8_t mid, int8_t treble) {
         auto addr = require(config_.eq, "eq");
         for (auto [band_id, val] : std::vector<std::pair<uint8_t,int8_t>>{{0,bass},{1,mid},{2,treble}}) {
-            transport_->send_recv(bmap_packet(addr.fblock, addr.func, Operator::SetGet,
-                                              {static_cast<uint8_t>(val), band_id}));
+            setget(addr, {static_cast<uint8_t>(val), band_id});
         }
     }
 
@@ -259,13 +287,9 @@ public:
 
     ButtonMapping set_buttons(uint8_t button_id, uint8_t event, uint8_t action) {
         auto addr = require(config_.buttons, "buttons");
-        auto payload = build_buttons(button_id, event, action);
-        auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
-        auto data = transport_->send_recv(pkt);
-        auto resp = parse_response(data);
-        if (resp) check_error(*resp);
-        auto result = parse_buttons(resp ? resp->payload : std::vector<uint8_t>{});
-        if (!result) throw std::runtime_error("Could not parse button remap response");
+        auto resp = setget(addr, build_buttons(button_id, event, action));
+        auto result = parse_buttons(resp.payload);
+        if (!result) throw device_error("Could not parse button remap response");
         return *result;
     }
 
@@ -282,6 +306,7 @@ public:
     uint8_t create_profile(const std::string& name, uint8_t cnc = 0, uint8_t spatial = 0,
                            bool wind = true, bool anc = true) {
         auto all = modes();
+        refuse_preset_name(name, all);
         auto slot = find_free_slot(all);
         ModeConfig mc{};
         mc.mode_idx = slot;
@@ -296,17 +321,21 @@ public:
 
     void delete_profile(const std::string& name) {
         auto all = modes();
+        // Prefer an editable slot: a custom profile may share a preset's name,
+        // and matching the preset first makes that profile undeletable.
+        const ModeConfig* match = nullptr;
         for (auto& m : all) {
-            if (m.name == name) {
-                if (!m.editable) throw std::runtime_error("Cannot delete preset: " + name);
-                ModeConfig mc{};
-                mc.mode_idx = m.mode_idx;
-                mc.name = "None";
-                write_mode(m.mode_idx, mc);
-                return;
-            }
+            if (!detail::iequals(m.name, name)) continue;
+            if (m.editable) { match = &m; break; }
+            if (!match) match = &m;
         }
-        throw std::runtime_error("Profile not found: " + name);
+        if (!match) throw std::invalid_argument("Profile '" + name + "' not found");
+        if (!match->editable) throw std::invalid_argument("Cannot delete preset '" + name + "'");
+
+        ModeConfig mc{};
+        mc.mode_idx = match->mode_idx;
+        mc.name = "None";
+        write_mode(match->mode_idx, mc);
     }
 
     std::vector<BmapResponse> send_raw(const std::vector<uint8_t>& data) {
@@ -319,33 +348,59 @@ private:
     DeviceConfig config_;
 
     static Addr require(const std::optional<Addr>& opt, const char* name) {
-        if (!opt) throw std::runtime_error(std::string(name) + " not supported on this device");
+        if (!opt) throw unsupported_error(std::string(name) + " not supported on this device");
         return *opt;
+    }
+
+    // Pick the frame answering `addr` out of a received buffer.
+    //
+    // The buffer can hold more than the reply: an unsolicited STATUS, or a
+    // late frame such as the STATUS prince sends after acking START [31.3]
+    // with PROCESSING. Those are skipped. If frames arrived but none came
+    // from the requested address, the socket is out of step with the
+    // requests: after a reconnect it can still hold answers queued before
+    // the drop, and every read returns the previous request's answer.
+    // Parsing that as the right reply would surface plausible-looking wrong
+    // data, so throw desync_error instead.
+    //
+    // Returns nullopt when the buffer holds no valid frame at all.
+    std::optional<BmapResponse> select_reply(const std::vector<uint8_t>& data, Addr addr) {
+        auto frames = parse_all_responses(data);
+        for (auto& f : frames) {
+            if (f.fblock == addr.fblock && f.func == addr.func) return f;
+        }
+        if (frames.empty()) return std::nullopt;
+        throw desync_error(
+            "Response came from [" + std::to_string(frames[0].fblock) + "." +
+            std::to_string(frames[0].func) + "], expected [" +
+            std::to_string(addr.fblock) + "." + std::to_string(addr.func) +
+            "]. Reopen the connection.");
+    }
+
+    // Validate a single reply: present, from the right address, not ERROR.
+    // Every single-reply path (GET, SETGET, START) goes through here so a
+    // truncated frame, a desynced socket or a device error surface the same
+    // way in all of them.
+    BmapResponse check_reply(const std::vector<uint8_t>& data, Addr addr) {
+        auto resp = select_reply(data, addr);
+        if (!resp) throw device_error("Invalid or empty response");
+        check_error(*resp);
+        return *resp;
     }
 
     std::vector<uint8_t> get(Addr addr) {
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::Get);
-        auto data = transport_->send_recv(pkt);
-        auto resp = parse_response(data);
-        if (!resp) throw std::runtime_error("Invalid or empty response");
-        check_error(*resp);
-        return resp->payload;
+        return check_reply(transport_->send_recv(pkt), addr).payload;
     }
 
-    void setget(Addr addr, const std::vector<uint8_t>& payload) {
+    BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
-        auto data = transport_->send_recv(pkt);
-        auto resp = parse_response(data);
-        if (resp) check_error(*resp);
+        return check_reply(transport_->send_recv(pkt), addr);
     }
 
     BmapResponse start(Addr addr, const std::vector<uint8_t>& payload) {
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::Start, payload);
-        auto data = transport_->send_recv(pkt);
-        auto resp = parse_response(data);
-        if (!resp) throw std::runtime_error("Empty response");
-        check_error(*resp);
-        return *resp;
+        return check_reply(transport_->send_recv(pkt), addr);
     }
 
     std::vector<BmapResponse> start_drain(Addr addr, const std::vector<uint8_t>& payload) {
@@ -356,7 +411,7 @@ private:
 
     void check_error(const BmapResponse& resp) {
         if (resp.op == Operator::Error && !resp.payload.empty()) {
-            throw std::runtime_error(resp.fmt());
+            throw device_error(resp.fmt(), resp.payload[0]);
         }
     }
 
@@ -373,9 +428,14 @@ private:
         return "custom(" + std::to_string(idx) + ")";
     }
 
+    // Fall back to default_val for an optional status field, except on a
+    // desync: every later read on the same socket would be wrong too, so a
+    // snapshot built from defaults would hide it.
     template<typename T, typename F>
     T safe_call(F fn, T default_val) {
-        try { return fn(); } catch (...) { return default_val; }
+        try { return fn(); }
+        catch (const desync_error&) { throw; }
+        catch (...) { return default_val; }
     }
 
     // Write audio settings via [31.10] preserving non-overridden fields.
@@ -419,18 +479,39 @@ private:
         return {slot, mc};
     }
 
+    // A slot is free when its name is the "None" sentinel or blank. The
+    // `configured` bit is not part of the test: firmware sets it on first
+    // write and never clears it, so a deleted slot keeps it and would
+    // otherwise stay unusable. Same rule as the Python and Rust libraries.
     uint8_t find_free_slot(const std::vector<ModeConfig>& all) {
         for (auto slot : config_.editable_slots) {
-            bool found = false;
+            const ModeConfig* row = nullptr;
             for (auto& m : all) {
-                if (m.mode_idx == slot && m.configured && m.name != "None") {
-                    found = true;
-                    break;
-                }
+                if (m.mode_idx == slot) { row = &m; break; }
             }
-            if (!found) return slot;
+            if (!row) return slot;
+            auto name = detail::trim_lower(row->name);
+            if (name.empty() || name == "none") return slot;
         }
-        throw std::runtime_error("No free profile slot available");
+        throw device_error("No free profile slot available");
+    }
+
+    // Refuse a custom profile name that matches a preset (any case). Mode
+    // switching resolves preset names first, so a custom profile named like
+    // a preset can never be selected by name.
+    void refuse_preset_name(const std::string& name, const std::vector<ModeConfig>& all) {
+        auto wanted = detail::trim_lower(name);
+        bool is_preset = false;
+        for (auto& [n, _] : config_.preset_modes) {
+            if (detail::trim_lower(n) == wanted) is_preset = true;
+        }
+        for (auto& m : all) {
+            if (!m.editable && detail::trim_lower(m.name) == wanted) is_preset = true;
+        }
+        if (is_preset) {
+            throw std::invalid_argument(
+                "'" + name + "' is a preset mode name; choose a different profile name");
+        }
     }
 
     ModeConfig current_mode_config() {

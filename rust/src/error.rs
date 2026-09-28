@@ -22,12 +22,15 @@ pub enum BmapError {
     Unsupported(String),
     /// Invalid argument.
     InvalidArg(String),
+    /// A response carried a different address than the request.
+    Desync(String),
 }
 
 impl fmt::Display for BmapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Connection(msg) => write!(f, "Connection error: {}", msg),
+            Self::Desync(msg) => write!(f, "Out of sync: {}", msg),
             Self::Auth(msg) => write!(f, "Authentication required: {}", msg),
             Self::Device { message, code } => write!(f, "Device error {}: {}", code, message),
             Self::Timeout(msg) => write!(f, "Timeout: {}", msg),

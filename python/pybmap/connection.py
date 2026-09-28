@@ -16,8 +16,11 @@ from .constants import (
     OP_PROCESSING, SIDETONE_NAMES, SIDETONE_VALUES, SPATIAL_VALUES,
     VOICE_LANGUAGES,
 )
-from .protocol import bmap_packet, parse_response, parse_all_responses, fmt_response
-from .errors import BmapError, BmapAuthError, BmapDeviceError
+from .protocol import bmap_packet, parse_all_responses, fmt_response
+from .errors import (
+    BmapError, BmapAuthError, BmapDeviceError, BmapDesyncError,
+    BmapInvalidArgError,
+)
 from .types import AudioSettings, BatteryStatus, DeviceStatus
 from .devices import parsers
 
@@ -54,17 +57,52 @@ class BmapConnection:
             )
         return features[name]
 
+    def _select_reply(self, data, fblock, func):
+        """Pick the frame answering [fblock.func] out of a received buffer.
+
+        The buffer can hold more than the reply: an unsolicited STATUS, or a
+        late frame such as the STATUS prince sends after acking START [31.3]
+        with PROCESSING. Those are skipped. If frames arrived but none came
+        from the requested address, the socket is out of step with the
+        requests: after a reconnect it can still hold answers queued before
+        the drop, and every read returns the previous request's answer.
+        Parsing that as the right reply would surface plausible-looking wrong
+        data, so raise instead.
+
+        Returns None when the buffer holds no valid frame at all.
+        """
+        frames = parse_all_responses(data)
+        for frame in frames:
+            if (frame.fblock, frame.func) == (fblock, func):
+                return frame
+        if frames:
+            raise BmapDesyncError(
+                "Response came from [%d.%d], expected [%d.%d]. "
+                "Reopen the connection."
+                % (frames[0].fblock, frames[0].func, fblock, func)
+            )
+        return None
+
+    def _check_reply(self, data, fblock, func):
+        """Validate a single reply: present, from the right address, not ERROR.
+
+        Every single-reply path (GET, SETGET, START) goes through here so a
+        truncated frame, a desynced socket or a device error surface the same
+        way in all of them.
+        """
+        parsed = self._select_reply(data, fblock, func)
+        if parsed is None:
+            raise BmapDeviceError("Invalid or empty response")
+        if parsed.op == OP_ERROR:
+            self._raise_error(parsed)
+        return parsed
+
     def _get_payload(self, feature_name):
         """Send a GET request and return its raw payload."""
         feat = self._feature(feature_name)
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
-        parsed = parse_response(resp)
-        if parsed is None:
-            raise BmapDeviceError("Invalid or empty response")
-        if parsed.op == OP_ERROR:
-            self._raise_error(parsed)
-        return parsed.payload
+        return self._check_reply(resp, fblock, func).payload
 
     def _get(self, feature_name):
         """Send a GET request and return its parsed payload."""
@@ -82,10 +120,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_SETGET, payload)
         )
-        parsed = parse_response(resp)
-        if parsed and parsed.op == OP_ERROR:
-            self._raise_error(parsed)
-        return parsed
+        return self._check_reply(resp, fblock, func)
 
     def _start(self, feature_name, payload=b""):
         """Send a START request and return the parsed response."""
@@ -94,10 +129,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_START, payload)
         )
-        parsed = parse_response(resp)
-        if parsed and parsed.op == OP_ERROR:
-            self._raise_error(parsed)
-        return parsed
+        return self._check_reply(resp, fblock, func)
 
     def _start_drain(self, feature_name, payload=b""):
         """Send a START request and drain all responses."""
@@ -109,9 +141,15 @@ class BmapConnection:
         return parse_all_responses(data)
 
     def _safe_read(self, method, default):
-        """Call a read method, returning default on BmapError."""
+        """Call a read method, returning default on BmapError.
+
+        A desync is re-raised: every later read on the same socket would be
+        wrong too, so a status snapshot built from defaults would hide it.
+        """
         try:
             return method()
+        except BmapDesyncError:
+            raise
         except BmapError:
             return default
 
@@ -197,7 +235,7 @@ class BmapConnection:
         feat = self._feature("current_mode")
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
-        parsed = parse_response(resp)
+        parsed = self._select_reply(resp, fblock, func)
         if parsed and parsed.payload:
             return parsed.payload[0]
         return None
@@ -352,7 +390,7 @@ class BmapConnection:
         resp = self._start("current_mode", bytes([idx, 1 if announce else 0]))
         # Some firmware (QC Headphones "prince") acks START [31.3] with
         # PROCESSING and applies the switch asynchronously.
-        if resp and resp.op not in (OP_RESULT, OP_PROCESSING):
+        if resp.op not in (OP_RESULT, OP_PROCESSING):
             raise BmapDeviceError("Mode switch failed: %s" % fmt_response(resp))
 
     def set_cnc(self, level):
@@ -395,14 +433,11 @@ class BmapConnection:
         """Set 3-band equalizer (-10 to +10 each)."""
         feat = self._feature("eq")
         builder = feat.get("builder")
-        fblock, func = feat["addr"]
         for band_id, val in enumerate([bass, mid, treble]):
             if not -10 <= val <= 10:
                 raise ValueError("EQ value must be -10 to +10")
             payload = builder(val, band_id) if builder else bytes([val & 0xFF, band_id])
-            self._transport.send_recv(
-                bmap_packet(fblock, func, OP_SETGET, payload)
-            )
+            self._setget("eq", payload)
 
     def set_spatial(self, mode):
         """Set spatial audio mode ("off", "room", or "head")."""
@@ -512,7 +547,7 @@ class BmapConnection:
         payload = builder(button_id, event, action)
         resp = self._setget("buttons", payload)
         parser = feat.get("parser")
-        if resp and parser and resp.payload:
+        if parser and resp.payload:
             return parser(resp.payload)
         return resp
 
@@ -528,9 +563,7 @@ class BmapConnection:
         feat = self._feature("routing")
         builder = feat.get("builder")
         payload = builder(mac)
-        resp = self._start("routing", payload)
-        if resp and resp.op == OP_ERROR:
-            self._raise_error(resp)
+        self._start("routing", payload)
 
     def pair(self):
         """Enter Bluetooth pairing mode."""
@@ -545,6 +578,7 @@ class BmapConnection:
         Returns the slot index used.
         """
         modes = self.modes()
+        self._refuse_preset_name(name, modes)
         slot = self._find_free_slot(modes)
         if slot is None:
             raise BmapError("No free profile slot available")
@@ -552,29 +586,60 @@ class BmapConnection:
                          wind_block=wind_block, anc_toggle=anc_toggle)
         return slot
 
-    def update_profile(self, name, **settings):
-        """Update an existing custom profile by name."""
-        modes = self.modes()
-        found = None
-        for idx, config in modes.items():
-            if config.name.lower() == name.lower():
-                found = (idx, config)
-                break
+    def update_profile(self, name, rename=None, **settings):
+        """Update an existing custom profile by name.
+
+        Args:
+            name: Current profile name (case-insensitive).
+            rename: Optional new name for the profile.
+            **settings: cnc_level, spatial, wind_block, anc_toggle overrides.
+        """
+        if rename is not None:
+            settings["name"] = rename
+        found = self._find_profile(name)
         if found is None:
             raise BmapError("Profile '%s' not found" % name)
         idx, config = found
         if not config.editable:
             raise BmapError("Cannot modify preset mode '%s'" % name)
+        new_name = settings.get("name")
+        if new_name is not None and new_name.strip().lower() != config.name.strip().lower():
+            self._refuse_preset_name(new_name, self.modes())
         self._write_mode_from_config(idx, config, **settings)
+
+    def _refuse_preset_name(self, name, modes):
+        """Refuse a custom profile name that matches a preset (any case).
+
+        Mode switching resolves preset names first, so a custom profile named
+        like a preset can never be selected by name.
+        """
+        wanted = name.strip().lower()
+        presets = {n.lower() for n in getattr(self._device, "PRESET_MODES", {})}
+        presets |= {cfg.name.strip().lower() for cfg in modes.values()
+                    if not cfg.editable}
+        if wanted in presets:
+            raise BmapInvalidArgError(
+                "'%s' is a preset mode name; choose a different profile name"
+                % name
+            )
+
+    def _find_profile(self, name):
+        """Look up a profile by name, preferring editable slots.
+
+        A custom profile may carry the same name as a preset. Returning the
+        preset first makes that custom profile impossible to edit or delete.
+        """
+        modes = self.modes()
+        matches = [(idx, cfg) for idx, cfg in sorted(modes.items())
+                   if cfg.name.lower() == name.lower()]
+        for idx, cfg in matches:
+            if cfg.editable:
+                return (idx, cfg)
+        return matches[0] if matches else None
 
     def delete_profile(self, name):
         """Delete a custom profile by resetting its slot."""
-        modes = self.modes()
-        found = None
-        for idx, config in modes.items():
-            if config.name.lower() == name.lower():
-                found = (idx, config)
-                break
+        found = self._find_profile(name)
         if found is None:
             raise BmapError("Profile '%s' not found" % name)
         idx, config = found
@@ -670,13 +735,18 @@ class BmapConnection:
         return modes[idx]
 
     def _find_free_slot(self, modes):
-        """Find the first unconfigured editable slot."""
+        """Find the first free editable slot.
+
+        A slot is free when its name is the "None" sentinel or blank. The
+        'configured' bit is not part of the test: firmware sets it on first
+        write and never clears it, so a deleted slot keeps it and would
+        otherwise stay unusable. Same rule as find_free_slot() in the Rust
+        and C++ libraries.
+        """
         for idx in self._device.EDITABLE_SLOTS:
-            if idx in modes:
-                config = modes[idx]
-                if not config.configured and config.name.lower() in ("none", ""):
-                    return idx
-            else:
+            if idx not in modes:
+                return idx
+            if modes[idx].name.strip().lower() in ("none", ""):
                 return idx
         return None
 

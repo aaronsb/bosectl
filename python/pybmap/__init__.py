@@ -26,6 +26,7 @@ from .catalog import (
 from .errors import (
     BmapError, BmapConnectionError, BmapAuthError,
     BmapDeviceError, BmapTimeoutError, BmapNotFoundError, BmapInvalidArgError,
+    BmapDesyncError,
 )
 from .types import (
     BatteryReading, BatteryStatus, BmapResponse, ButtonMapping, DeviceStatus,

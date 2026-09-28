@@ -242,10 +242,12 @@ fn main() {
             // Try as custom profile name
             match dev.set_mode(&cmd, false) {
                 Ok(_) => Ok(println!("OK: {}", cmd)),
-                Err(_) => {
+                Err(e) if is_unknown_mode(&e) => {
                     eprintln!("Unknown command: {}", cmd);
                     process::exit(1);
                 }
+                // A dropped or desynced link is not an unknown command.
+                Err(e) => Err(e),
             }
         }
     };
@@ -254,6 +256,12 @@ fn main() {
         eprintln!("Error: {}", e);
         process::exit(1);
     }
+}
+
+/// Whether a failed mode switch means "no such mode" rather than a link or
+/// device failure that the user needs to see.
+fn is_unknown_mode(e: &BmapError) -> bool {
+    matches!(e, BmapError::InvalidArg(_) | BmapError::Unsupported(_))
 }
 
 /// Follow-up hint for a failed connect; setup mistakes are not Bluetooth problems.
@@ -351,6 +359,15 @@ fn usage() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_mode_falls_back_only_for_lookup_errors() {
+        assert!(is_unknown_mode(&BmapError::InvalidArg("Unknown mode: x".into())));
+        assert!(is_unknown_mode(&BmapError::Unsupported("no modes".into())));
+        assert!(!is_unknown_mode(&BmapError::Desync("[0.5] vs [31.3]".into())));
+        assert!(!is_unknown_mode(&BmapError::Device { message: "x".into(), code: 0 }));
+        assert!(!is_unknown_mode(&BmapError::Connection("gone".into())));
+    }
 
     #[test]
     fn missing_device_type_skips_bluetooth_hint() {

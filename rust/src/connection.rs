@@ -2,13 +2,24 @@
 
 use crate::device::*;
 use crate::error::{BmapError, BmapResult};
-use crate::protocol::{Operator, BmapResponse, bmap_packet, parse_response, parse_all_responses};
+use crate::protocol::{Operator, BmapResponse, bmap_packet, parse_all_responses};
 
 use crate::transport::Transport;
 
 /// High-level connection to a BMAP device.
 /// The device name field is 32 bytes on every BMAP device seen so far.
 pub const MAX_NAME_BYTES: usize = 31;
+
+/// Fall back to `default` for an optional status field, except on a desync:
+/// every later read on the same socket would be wrong too, so a snapshot
+/// built from defaults would hide it.
+fn or_default<V>(result: BmapResult<V>, default: V) -> BmapResult<V> {
+    match result {
+        Ok(v) => Ok(v),
+        Err(e @ BmapError::Desync(_)) => Err(e),
+        Err(_) => Ok(default),
+    }
+}
 
 pub struct BmapConnection<T: Transport> {
     transport: T,
@@ -34,33 +45,63 @@ impl<T: Transport> BmapConnection<T> {
         ))
     }
 
-    fn get(&self, addr: Addr) -> BmapResult<Vec<u8>> {
-        let pkt = bmap_packet(addr.0, addr.1, Operator::Get, &[]);
-        let data = self.transport.send_recv(&pkt)?;
-        let resp = parse_response(&data).ok_or_else(|| BmapError::Device {
+    /// Pick the frame answering `addr` out of a received buffer.
+    ///
+    /// The buffer can hold more than the reply: an unsolicited STATUS, or a
+    /// late frame such as the STATUS prince sends after acking START [31.3]
+    /// with PROCESSING. Those are skipped. If frames arrived but none came
+    /// from the requested address, the socket is out of step with the
+    /// requests: after a reconnect it can still hold answers queued before
+    /// the drop, and every read returns the previous request's answer.
+    /// Parsing that as the right reply would surface plausible-looking wrong
+    /// data, so return Desync instead.
+    ///
+    /// Returns `Ok(None)` when the buffer holds no valid frame at all.
+    fn select_reply(&self, data: &[u8], addr: Addr) -> BmapResult<Option<BmapResponse>> {
+        let frames = parse_all_responses(data);
+        let first = frames.first().map(|f| (f.fblock, f.func));
+        if let Some(frame) = frames.into_iter().find(|f| f.fblock == addr.0 && f.func == addr.1) {
+            return Ok(Some(frame));
+        }
+        match first {
+            Some((fblock, func)) => Err(BmapError::Desync(format!(
+                "Response came from [{}.{}], expected [{}.{}]. Reopen the connection.",
+                fblock, func, addr.0, addr.1
+            ))),
+            None => Ok(None),
+        }
+    }
+
+    /// Validate a single reply: present, from the right address, not ERROR.
+    ///
+    /// Every single-reply path (GET, SETGET, START) goes through here so a
+    /// truncated frame, a desynced socket or a device error surface the same
+    /// way in all of them.
+    fn check_reply(&self, data: &[u8], addr: Addr) -> BmapResult<BmapResponse> {
+        let resp = self.select_reply(data, addr)?.ok_or_else(|| BmapError::Device {
             message: "Invalid or empty response".into(),
             code: 0,
         })?;
         self.check_error(&resp)?;
-        Ok(resp.payload)
+        Ok(resp)
+    }
+
+    fn get(&self, addr: Addr) -> BmapResult<Vec<u8>> {
+        let pkt = bmap_packet(addr.0, addr.1, Operator::Get, &[]);
+        let data = self.transport.send_recv(&pkt)?;
+        Ok(self.check_reply(&data, addr)?.payload)
     }
 
     fn setget(&self, addr: Addr, payload: &[u8]) -> BmapResult<BmapResponse> {
         let pkt = bmap_packet(addr.0, addr.1, Operator::SetGet, payload);
         let data = self.transport.send_recv(&pkt)?;
-        let resp = parse_response(&data)
-            .ok_or_else(|| BmapError::Timeout("Empty response".into()))?;
-        self.check_error(&resp)?;
-        Ok(resp)
+        self.check_reply(&data, addr)
     }
 
     fn start(&self, addr: Addr, payload: &[u8]) -> BmapResult<BmapResponse> {
         let pkt = bmap_packet(addr.0, addr.1, Operator::Start, payload);
         let data = self.transport.send_recv(&pkt)?;
-        let resp = parse_response(&data)
-            .ok_or_else(|| BmapError::Timeout("Empty response".into()))?;
-        self.check_error(&resp)?;
-        Ok(resp)
+        self.check_reply(&data, addr)
     }
 
     /// Send START and drain all async responses.
@@ -264,10 +305,12 @@ impl<T: Transport> BmapConnection<T> {
         // Single GET for mode index, derive name without extra round trip.
         let (current_idx, current_name) = match self.mode_idx() {
             Ok(idx) => (idx, self.mode_name_from_idx(idx)),
+            Err(e @ BmapError::Desync(_)) => return Err(e),
             Err(_) => (0, String::new()),
         };
-        let (cnc_level, cnc_max) = self.cnc().unwrap_or((0, 10));
-        let (prompts_enabled, prompts_language) = self.prompts().unwrap_or((false, "Unknown"));
+        let (cnc_level, cnc_max) = or_default(self.cnc(), (0, 10))?;
+        let (prompts_enabled, prompts_language) =
+            or_default(self.prompts(), (false, "Unknown"))?;
         let battery = self.battery_status()?;
 
         Ok(DeviceStatus {
@@ -277,12 +320,12 @@ impl<T: Transport> BmapConnection<T> {
             mode_idx: current_idx,
             cnc_level,
             cnc_max,
-            eq: self.eq().unwrap_or_default(),
-            name: self.name().unwrap_or_default(),
-            firmware: self.firmware().unwrap_or_default(),
-            sidetone: self.sidetone().unwrap_or("off").to_string(),
-            multipoint: self.multipoint().unwrap_or(false),
-            auto_pause: self.auto_pause().unwrap_or(false),
+            eq: or_default(self.eq(), Vec::new())?,
+            name: or_default(self.name(), String::new())?,
+            firmware: or_default(self.firmware(), String::new())?,
+            sidetone: or_default(self.sidetone(), "off")?.to_string(),
+            multipoint: or_default(self.multipoint(), false)?,
+            auto_pause: or_default(self.auto_pause(), false)?,
             prompts_enabled,
             prompts_language: prompts_language.to_string(),
         })
@@ -351,12 +394,7 @@ impl<T: Transport> BmapConnection<T> {
                 .ok_or_else(|| BmapError::InvalidArg(format!("Unknown mode: {}", name)))?
         };
 
-        let pkt = bmap_packet(addr.0, addr.1, Operator::Start,
-                              &[idx, if announce { 1 } else { 0 }]);
-        let data = self.transport.send_recv(&pkt)?;
-        let resp = parse_response(&data)
-            .ok_or_else(|| BmapError::Timeout("No response".into()))?;
-        self.check_error(&resp)?;
+        let resp = self.start(addr, &[idx, if announce { 1 } else { 0 }])?;
         // Some firmware (QC Headphones "prince") acks START [31.3] with
         // PROCESSING and applies the switch asynchronously.
         if !matches!(resp.op, Operator::Result | Operator::Processing) {
@@ -483,9 +521,7 @@ impl<T: Transport> BmapConnection<T> {
         }
         let addr = self.addr(self.config.eq)?;
         for (band_id, val) in [(0u8, bass), (1, mid), (2, treble)] {
-            let payload = [val as u8, band_id];
-            let pkt = bmap_packet(addr.0, addr.1, Operator::SetGet, &payload);
-            self.transport.send_recv(&pkt)?;
+            self.setget(addr, &[val as u8, band_id])?;
         }
         Ok(())
     }
@@ -568,6 +604,7 @@ impl<T: Transport> BmapConnection<T> {
     pub fn create_profile(&self, name: &str, cnc_level: u8, spatial: u8,
                           wind_block: bool, anc_toggle: bool) -> BmapResult<u8> {
         let modes = self.modes()?;
+        self.refuse_preset_name(name, &modes)?;
         let slot = self.find_free_slot(&modes)?;
         self.write_mode(slot, name, cnc_level, spatial, wind_block, anc_toggle, 0, 0)?;
         Ok(slot)
@@ -576,8 +613,11 @@ impl<T: Transport> BmapConnection<T> {
     /// Delete a custom profile by name.
     pub fn delete_profile(&self, name: &str) -> BmapResult<()> {
         let modes = self.modes()?;
+        // Prefer an editable slot: a custom profile may share a preset's name,
+        // and matching the preset first makes that profile undeletable.
         let mc = modes.iter()
-            .find(|m| m.name.eq_ignore_ascii_case(name))
+            .find(|m| m.editable && m.name.eq_ignore_ascii_case(name))
+            .or_else(|| modes.iter().find(|m| m.name.eq_ignore_ascii_case(name)))
             .ok_or_else(|| BmapError::InvalidArg(format!("Profile '{}' not found", name)))?;
         if !mc.editable {
             return Err(BmapError::InvalidArg(format!("Cannot delete preset '{}'", name)));
@@ -594,11 +634,32 @@ impl<T: Transport> BmapConnection<T> {
 
     // ── Internal Helpers ────────────────────────────────────────────────────
 
+    /// Refuse a custom profile name that matches a preset (any case).
+    ///
+    /// Mode switching resolves preset names first, so a custom profile named
+    /// like a preset can never be selected by name.
+    fn refuse_preset_name(&self, name: &str, modes: &[ModeConfig]) -> BmapResult<()> {
+        let wanted = name.trim();
+        let is_preset = self.config.preset_modes.iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case(wanted))
+            || modes.iter()
+                .any(|m| !m.editable && m.name.trim().eq_ignore_ascii_case(wanted));
+        if is_preset {
+            return Err(BmapError::InvalidArg(format!(
+                "'{}' is a preset mode name; choose a different profile name", name)));
+        }
+        Ok(())
+    }
+
     fn find_free_slot(&self, modes: &[ModeConfig]) -> BmapResult<u8> {
+        // A slot is free when its name is the "None" sentinel or blank. The
+        // `configured` bit is not part of the test: firmware sets it on first
+        // write and never clears it, so a deleted slot keeps it and would
+        // otherwise stay unusable. Same rule as the Python and C++ libraries.
         for &slot in self.config.editable_slots {
             match modes.iter().find(|m| m.mode_idx == slot) {
-                Some(m) if !m.configured && m.name.eq_ignore_ascii_case("none") => return Ok(slot),
-                Some(m) if !m.configured && m.name.is_empty() => return Ok(slot),
+                Some(m) if m.name.trim().is_empty() => return Ok(slot),
+                Some(m) if m.name.trim().eq_ignore_ascii_case("none") => return Ok(slot),
                 None => return Ok(slot),
                 _ => continue,
             }
@@ -1119,5 +1180,206 @@ mod tests {
         let t = MockTransport::new();
         let dev = BmapConnection::new(t, devices::qc_prince());
         assert!(dev.set_anc(false).is_err());
+    }
+
+    // ── Free slot / profile lookup / address check (mirror Python) ─────
+
+    fn mode(idx: u8, name: &str, editable: bool, configured: bool) -> ModeConfig {
+        ModeConfig {
+            mode_idx: idx, name: name.into(), cnc_level: 0, spatial: 0,
+            wind_block: false, anc_toggle: false, editable, configured,
+            prompt_b1: 0, prompt_b2: 0,
+        }
+    }
+
+    /// A [31.6] STATUS frame in the 47-byte prince/QC45 ModeConfig layout.
+    fn mode_frame(idx: u8, name: &str, editable: bool) -> Vec<u8> {
+        let mut p = vec![0u8; 47];
+        p[0] = idx;
+        p[3] = editable as u8;
+        p[4] = 1; // configured
+        p[6..6 + name.len()].copy_from_slice(name.as_bytes());
+        let mut f = vec![31, 6, 0x03, p.len() as u8];
+        f.extend_from_slice(&p);
+        f
+    }
+
+    fn qc45_with_modes(frames: &[Vec<u8>]) -> BmapConnection<MockTransport> {
+        let mut t = MockTransport::new();
+        t.responses.insert((31, 1), frames.concat());
+        t.add(31, 6, 0x03, &[0]); // ModeConfig write ack
+        BmapConnection::new(t, devices::qc45())
+    }
+
+    fn written_slots(dev: &BmapConnection<MockTransport>) -> Vec<u8> {
+        dev.transport.sent.borrow().iter()
+            .filter(|p| p[..3] == [31, 6, 0x02])
+            .map(|p| p[4])
+            .collect()
+    }
+
+    fn qc45() -> BmapConnection<MockTransport> {
+        BmapConnection::new(MockTransport::new(), devices::qc45())
+    }
+
+    #[test]
+    fn test_free_slot_cleared_slot_is_reusable() {
+        // Firmware leaves 'configured' set after a slot is cleared.
+        let modes = vec![
+            mode(0, "Quiet", false, true), mode(1, "Aware", false, true),
+            mode(2, "None", true, true), mode(3, "Gym", true, true),
+        ];
+        assert_eq!(qc45().find_free_slot(&modes).unwrap(), 2);
+    }
+
+    #[test]
+    fn test_free_slot_blank_name_is_reusable() {
+        let modes = vec![mode(2, " ", true, true), mode(3, "Gym", true, true)];
+        assert_eq!(qc45().find_free_slot(&modes).unwrap(), 2);
+    }
+
+    #[test]
+    fn test_free_slot_named_slots_are_not_free() {
+        let modes = vec![mode(2, "Gym", true, true), mode(3, "Commute", true, true)];
+        assert!(qc45().find_free_slot(&modes).is_err());
+    }
+
+    #[test]
+    fn test_free_slot_missing_slot_is_free() {
+        let modes = vec![mode(2, "Gym", true, true)];
+        assert_eq!(qc45().find_free_slot(&modes).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_profile_delete_targets_custom_not_preset() {
+        let dev = qc45_with_modes(&[
+            mode_frame(1, "Aware", false), mode_frame(3, "Aware", true),
+        ]);
+        dev.delete_profile("aware").unwrap();
+        assert_eq!(written_slots(&dev), vec![3]);
+    }
+
+    #[test]
+    fn test_profile_preset_only_match_still_refused() {
+        let dev = qc45_with_modes(&[mode_frame(1, "Aware", false)]);
+        assert!(matches!(dev.delete_profile("Aware"),
+            Err(BmapError::InvalidArg(m)) if m.contains("preset")));
+        assert!(written_slots(&dev).is_empty());
+    }
+
+    #[test]
+    fn test_profile_unknown_name_raises() {
+        let dev = qc45_with_modes(&[mode_frame(3, "Gym", true)]);
+        assert!(matches!(dev.delete_profile("Nope"),
+            Err(BmapError::InvalidArg(m)) if m.contains("not found")));
+    }
+
+    #[test]
+    fn test_create_profile_refuses_preset_name() {
+        let dev = qc45_with_modes(&[mode_frame(3, "Gym", true)]);
+        assert!(matches!(dev.create_profile(" AWARE", 0, 0, false, false),
+            Err(BmapError::InvalidArg(m)) if m.contains("preset")));
+        assert!(written_slots(&dev).is_empty());
+    }
+
+    #[test]
+    fn test_create_profile_reuses_cleared_slot() {
+        let dev = qc45_with_modes(&[
+            mode_frame(2, "None", true), mode_frame(3, "Gym", true),
+        ]);
+        assert_eq!(dev.create_profile("Commute", 0, 0, false, false).unwrap(), 2);
+        assert_eq!(written_slots(&dev), vec![2]);
+    }
+
+    #[test]
+    fn test_address_mismatch_raises_desync() {
+        // Ask for battery [2.2], answer with firmware [0.5].
+        let mut t = MockTransport::new();
+        let mut resp = vec![0, 5, 0x03, 3];
+        resp.extend_from_slice(b"4.0");
+        t.responses.insert((2, 2), resp);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.battery(),
+            Err(BmapError::Desync(m)) if m.contains("[0.5], expected [2.2]")));
+    }
+
+    #[test]
+    fn test_address_match_passes() {
+        assert_eq!(mock_qc_ultra2().battery().unwrap(), 80);
+    }
+
+    #[test]
+    fn test_set_eq_checks_address() {
+        let mut t = MockTransport::new();
+        t.responses.insert((1, 7), vec![2, 2, 0x03, 1, 42]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.set_eq(1, 2, 3), Err(BmapError::Desync(_))));
+    }
+
+    #[test]
+    fn test_set_eq_surfaces_device_error() {
+        let mut t = MockTransport::new();
+        t.add(1, 7, 0x04, &[1]); // ERROR: length
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.set_eq(1, 2, 3), Err(BmapError::Device { code: 1, .. })));
+        assert_eq!(dev.transport.sent.borrow().len(), 1);
+    }
+
+    #[test]
+    fn test_set_mode_checks_address() {
+        let mut t = MockTransport::new();
+        t.responses.insert((31, 3), vec![2, 2, 0x06, 0]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.set_mode("aware", false), Err(BmapError::Desync(_))));
+    }
+
+    #[test]
+    fn test_empty_reply_is_device_error_on_every_path() {
+        let mut t = MockTransport::new();
+        t.responses.insert((1, 10), vec![1, 10, 0x08, 0]); // unknown op
+        t.responses.insert((31, 3), vec![31, 3, 0x06, 4, 1]); // truncated
+        t.responses.insert((1, 7), vec![]); // nothing
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        let empty = |r: BmapResult<()>| matches!(r, Err(BmapError::Device { message, .. })
+            if message == "Invalid or empty response");
+        assert!(empty(dev.set_multipoint(true)));
+        assert!(empty(dev.set_mode("aware", false)));
+        assert!(empty(dev.set_eq(0, 0, 0)));
+    }
+
+    #[test]
+    fn test_late_status_ahead_of_reply_is_skipped() {
+        // prince sends STATUS [31.3] after acking START with PROCESSING.
+        let mut t = MockTransport::new();
+        t.responses.insert((2, 2), vec![31, 3, 0x03, 1, 0x01, 2, 2, 0x03, 4, 80, 0xff, 0xff, 0x00]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert_eq!(dev.battery().unwrap(), 80);
+    }
+
+    #[test]
+    fn test_only_foreign_frames_is_desync() {
+        let mut t = MockTransport::new();
+        t.responses.insert((2, 2), vec![31, 3, 0x03, 1, 0x01, 0, 5, 0x03, 1, 0x34]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.battery(),
+            Err(BmapError::Desync(m)) if m.contains("[31.3], expected [2.2]")));
+    }
+
+    #[test]
+    fn test_setget_skips_stray_frame() {
+        let mut t = MockTransport::new();
+        t.responses.insert((1, 10), vec![31, 3, 0x03, 1, 0x01, 1, 10, 0x03, 1, 0x07]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        dev.set_multipoint(true).unwrap();
+    }
+
+    #[test]
+    fn test_status_does_not_swallow_desync() {
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[80, 0xff, 0xff, 0x00]);
+        t.add(31, 3, 0x03, &[0x00]);
+        t.responses.insert((1, 7), vec![0, 5, 0x03, 1, 0x34]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.status(), Err(BmapError::Desync(_))));
     }
 }

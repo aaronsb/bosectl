@@ -13,6 +13,9 @@ use crate::error::{BmapError, BmapResult};
 const AF_BLUETOOTH: i32 = 31;
 const BTPROTO_RFCOMM: i32 = 3;
 
+/// Upper bound on chunks discarded before a send.
+const MAX_STALE_CHUNKS: usize = 64;
+
 /// RFCOMM channel for BMAP protocol.
 pub const BMAP_CHANNEL: u8 = 2;
 
@@ -97,8 +100,29 @@ impl RfcommTransport {
         }
     }
 
+    /// Drop bytes already waiting on the socket before a new request.
+    ///
+    /// Late replies and unsolicited STATUS notifications would otherwise be
+    /// read as the answer to the next request. Non-blocking and bounded, so
+    /// a device that streams notifications cannot stall the request; a dead
+    /// socket is left for the send to report.
+    fn discard_pending(&self) {
+        let fd = self.fd.as_raw_fd();
+        let mut buf = [0u8; 4096];
+        for _ in 0..MAX_STALE_CHUNKS {
+            let n = unsafe {
+                libc::recv(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(),
+                           libc::MSG_DONTWAIT)
+            };
+            if n <= 0 {
+                break;
+            }
+        }
+    }
+
     fn send_recv_inner(&self, packet: &[u8], drain: bool) -> BmapResult<Vec<u8>> {
         let fd = self.fd.as_raw_fd();
+        self.discard_pending();
 
         // Send — use libc::send directly to avoid fd ownership issues.
         let sent = unsafe {

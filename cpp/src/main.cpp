@@ -247,7 +247,12 @@ int main(int argc, char** argv) {
             try {
                 dev.set_mode(cmd);
                 std::cout << "OK: " << cmd << "\n";
-            } catch (...) {
+            } catch (const std::invalid_argument&) {
+                // No such mode. Link, device and desync errors fall through
+                // to the handler below and are reported as errors.
+                std::cerr << "Unknown command: " << cmd << "\n";
+                return 1;
+            } catch (const bmap::unsupported_error&) {
                 std::cerr << "Unknown command: " << cmd << "\n";
                 return 1;
             }

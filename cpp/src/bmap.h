@@ -2,6 +2,7 @@
 // See docs/protocol.md for the protocol specification.
 #pragma once
 
+#include "errors.h"
 #include "protocol.h"
 #include "transport.h"
 #include "device.h"

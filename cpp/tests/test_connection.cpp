@@ -392,3 +392,206 @@ TEST(prince_set_anc_rejects_missing_toggle) {
     }
     ASSERT_TRUE(threw);
 }
+
+// ── Free slot / profile lookup / address check (mirror Python) ──────────────
+
+// A [31.6] STATUS frame in the 47-byte prince/QC45 ModeConfig layout.
+static std::vector<uint8_t> mode_frame(uint8_t idx, const std::string& name, bool editable) {
+    std::vector<uint8_t> p(47, 0);
+    p[0] = idx;
+    p[3] = editable ? 1 : 0;
+    p[4] = 1;  // configured: firmware never clears it
+    std::copy(name.begin(), name.end(), p.begin() + 6);
+    std::vector<uint8_t> f = {31, 6, 0x03, static_cast<uint8_t>(p.size())};
+    f.insert(f.end(), p.begin(), p.end());
+    return f;
+}
+
+struct Qc45Modes {
+    MockTransport* raw;
+    std::unique_ptr<BmapConnection> dev;
+
+    explicit Qc45Modes(const std::vector<std::vector<uint8_t>>& frames) {
+        raw = new MockTransport();
+        std::vector<uint8_t> all;
+        for (auto& f : frames) all.insert(all.end(), f.begin(), f.end());
+        raw->responses[{31, 1}] = all;
+        raw->add(31, 6, 0x03, {0});  // ModeConfig write ack
+        dev = std::make_unique<BmapConnection>(std::unique_ptr<Transport>(raw), qc45());
+    }
+
+    std::vector<uint8_t> written_slots() const {
+        std::vector<uint8_t> out;
+        for (auto& p : raw->sent) {
+            if (p.size() > 4 && p[0] == 31 && p[1] == 6 && p[2] == 0x02) out.push_back(p[4]);
+        }
+        return out;
+    }
+};
+
+template<typename E, typename F>
+static bool throws_with(F fn, const std::string& needle = "") {
+    try { fn(); }
+    catch (const E& e) { return std::string(e.what()).find(needle) != std::string::npos; }
+    catch (...) { return false; }
+    return false;
+}
+
+TEST(free_slot_cleared_slot_is_reusable) {
+    Qc45Modes m({mode_frame(0, "Quiet", false), mode_frame(1, "Aware", false),
+                 mode_frame(2, "None", true), mode_frame(3, "Gym", true)});
+    ASSERT_EQ(m.dev->create_profile("Commute"), 2);
+    ASSERT_EQ(m.written_slots(), std::vector<uint8_t>{2});
+}
+
+TEST(free_slot_blank_name_is_reusable) {
+    Qc45Modes m({mode_frame(2, " ", true), mode_frame(3, "Gym", true)});
+    ASSERT_EQ(m.dev->create_profile("Commute"), 2);
+}
+
+TEST(free_slot_named_slots_are_not_free) {
+    Qc45Modes m({mode_frame(2, "Gym", true), mode_frame(3, "Commute", true)});
+    ASSERT_TRUE(throws_with<device_error>([&]{ m.dev->create_profile("Run"); },
+                                          "No free profile slot"));
+    ASSERT_TRUE(m.written_slots().empty());
+}
+
+TEST(free_slot_missing_slot_is_free) {
+    Qc45Modes m({mode_frame(2, "Gym", true)});
+    ASSERT_EQ(m.dev->create_profile("Commute"), 3);
+}
+
+TEST(create_profile_refuses_preset_name) {
+    Qc45Modes m({mode_frame(3, "Gym", true)});
+    ASSERT_TRUE(throws_with<std::invalid_argument>(
+        [&]{ m.dev->create_profile(" AWARE"); }, "preset"));
+    ASSERT_TRUE(m.written_slots().empty());
+}
+
+TEST(profile_delete_targets_custom_not_preset) {
+    Qc45Modes m({mode_frame(1, "Aware", false), mode_frame(3, "Aware", true)});
+    m.dev->delete_profile("aware");
+    ASSERT_EQ(m.written_slots(), std::vector<uint8_t>{3});
+}
+
+TEST(profile_preset_only_match_still_refused) {
+    Qc45Modes m({mode_frame(1, "Aware", false)});
+    ASSERT_TRUE(throws_with<std::invalid_argument>(
+        [&]{ m.dev->delete_profile("Aware"); }, "preset"));
+    ASSERT_TRUE(m.written_slots().empty());
+}
+
+TEST(profile_unknown_name_raises) {
+    Qc45Modes m({mode_frame(3, "Gym", true)});
+    ASSERT_TRUE(throws_with<std::invalid_argument>(
+        [&]{ m.dev->delete_profile("Nope"); }, "not found"));
+}
+
+TEST(address_mismatch_raises_desync) {
+    // Ask for battery [2.2], answer with firmware [0.5].
+    auto raw = new MockTransport();
+    raw->responses[{2, 2}] = {0, 5, 0x03, 3, '4', '.', '0'};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_TRUE(throws_with<desync_error>([&]{ dev.battery(); }, "[0.5], expected [2.2]"));
+}
+
+TEST(address_match_passes) { ASSERT_EQ(mock_qc_ultra2()->battery(), 80); }
+
+TEST(desync_is_a_runtime_error) {
+    // Callers that catch std::runtime_error keep catching it.
+    ASSERT_TRUE(throws_with<std::runtime_error>([]{ throw desync_error("x"); }));
+}
+
+TEST(set_eq_checks_address) {
+    auto raw = new MockTransport();
+    raw->responses[{1, 7}] = {2, 2, 0x03, 1, 42};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_TRUE(throws_with<desync_error>([&]{ dev.set_eq(1, 2, 3); }));
+}
+
+TEST(set_eq_surfaces_device_error) {
+    auto raw = new MockTransport();
+    raw->add(1, 7, 0x04, {1});  // ERROR: length
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    bool ok = false;
+    try { dev.set_eq(1, 2, 3); } catch (const device_error& e) { ok = e.code() == 1; }
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(raw->sent.size(), size_t{1});
+}
+
+TEST(set_mode_checks_address) {
+    auto raw = new MockTransport();
+    raw->responses[{31, 3}] = {2, 2, 0x06, 0};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_TRUE(throws_with<desync_error>([&]{ dev.set_mode("aware"); }));
+}
+
+TEST(empty_reply_is_device_error_on_every_path) {
+    auto raw = new MockTransport();
+    raw->responses[{1, 10}] = {1, 10, 0x08, 0};     // unknown op (SETGET)
+    raw->responses[{31, 3}] = {31, 3, 0x06, 4, 1};  // truncated (START)
+    raw->responses[{1, 7}] = {};                     // nothing (SETGET)
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    const std::string msg = "Invalid or empty response";
+    ASSERT_TRUE(throws_with<device_error>([&]{ dev.set_multipoint(true); }, msg));
+    ASSERT_TRUE(throws_with<device_error>([&]{ dev.set_mode("aware"); }, msg));
+    ASSERT_TRUE(throws_with<device_error>([&]{ dev.set_eq(0, 0, 0); }, msg));
+}
+
+TEST(late_status_ahead_of_reply_is_skipped) {
+    // prince sends STATUS [31.3] after acking START with PROCESSING.
+    auto raw = new MockTransport();
+    raw->responses[{2, 2}] = {31, 3, 0x03, 1, 0x01, 2, 2, 0x03, 4, 80, 0xff, 0xff, 0x00};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_EQ(dev.battery(), 80);
+}
+
+TEST(only_foreign_frames_is_desync) {
+    auto raw = new MockTransport();
+    raw->responses[{2, 2}] = {31, 3, 0x03, 1, 0x01, 0, 5, 0x03, 1, 0x34};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_TRUE(throws_with<desync_error>([&]{ dev.battery(); }, "[31.3], expected [2.2]"));
+}
+
+TEST(setget_skips_stray_frame) {
+    auto raw = new MockTransport();
+    raw->responses[{1, 10}] = {31, 3, 0x03, 1, 0x01, 1, 10, 0x03, 1, 0x07};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    dev.set_multipoint(true);
+}
+
+TEST(status_does_not_swallow_desync) {
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, {80, 0xff, 0xff, 0x00});
+    raw->add(31, 3, 0x03, {0x00});
+    raw->responses[{1, 7}] = {0, 5, 0x03, 1, 0x34};
+    BmapConnection d(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_TRUE(throws_with<desync_error>([&]{ d.status(); }));
+}
+
+TEST(set_mode_accepts_processing_ack) {
+    auto raw = new MockTransport();
+    raw->add(31, 3, 0x07, {});  // PROCESSING: async ack (prince)
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_prince());
+    dev.set_mode("quiet");
+}
+
+TEST(set_mode_accepts_result) {
+    auto raw = new MockTransport();
+    raw->add(31, 3, 0x06, {0x01});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    dev.set_mode("aware");
+}
+
+TEST(set_mode_rejects_unexpected_op) {
+    auto raw = new MockTransport();
+    raw->add(31, 3, 0x03, {0});  // STATUS where RESULT/PROCESSING expected
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_prince());
+    ASSERT_TRUE(throws_with<device_error>([&]{ dev.set_mode("quiet"); }, "Mode switch failed"));
+}
+
+TEST(unsupported_feature_is_unsupported_error) {
+    auto raw = new MockTransport();
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc35());
+    ASSERT_TRUE(throws_with<unsupported_error>([&]{ dev.eq(); }, "not supported"));
+}
