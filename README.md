@@ -17,6 +17,11 @@ over Bluetooth RFCOMM. Full control over noise cancellation, EQ, spatial
 audio, button mapping, profiles, and device settings through a direct
 connection to the headphones.
 
+**Want a desktop app?** [bosectl-qt](https://github.com/aaronsb/bosectl-qt)
+is a Qt6 system tray app built on the C++ library, and a working reference
+for embedding it: noise cancellation, modes, EQ, and battery reporting to
+the desktop through BlueZ. On Arch it's in the AUR as `bosectl-qt`.
+
 > **This is not an exploit.** We use the BMAP protocol's standard SETGET
 > operator, which the headphones accept without authentication. No keys
 > are extracted, no encryption is broken, no traffic is replayed.
@@ -150,6 +155,15 @@ cd bosectl
 ./linux_install.sh    # or ./macOS_install.sh
 ```
 
+### With pipx (Linux, macOS)
+
+Installs `bosectl` into its own environment and puts it on your `PATH`. On macOS this also pulls in PyObjC.
+
+```bash
+git clone https://github.com/aaronsb/bosectl.git
+pipx install ./bosectl/python
+```
+
 ### From Release Binaries (Linux)
 
 ```bash
@@ -169,6 +183,14 @@ cargo add bose-bmap       # use as a library; the import is still `use bmap::`
 ```
 
 ### From Source
+
+The C++ build and `make test` need the BlueZ development headers, plus CMake and a Rust toolchain:
+
+| Distribution | Package |
+|---|---|
+| Debian / Ubuntu | `libbluetooth-dev` |
+| Fedora | `bluez-libs-devel` |
+| Arch | `bluez-libs` |
 
 ```bash
 git clone https://github.com/aaronsb/bosectl.git
@@ -251,9 +273,9 @@ Full protocol reference: **[NOTES.md](NOTES.md)** and
 ## Building & Releasing
 
 ```bash
-make test                       # All tests (121 Python, 63 Rust, 54 C++)
+make test                       # All tests (Python, Rust, C++)
 make artifacts                  # Build + strip + SHA256SUMS in dist/
-make release VERSION=v0.2.0     # Test → build → gh release create
+make release VERSION=vX.Y.Z     # Test → build → gh release create
 make clean                      # Remove all build artifacts
 ```
 
