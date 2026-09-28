@@ -2,7 +2,7 @@
 
 .PHONY: help all test lint clean \
         python-setup python-test python-lint python-build python-publish \
-        rust-test rust-build rust-publish \
+        rust-test rust-build rust-publish rust-secret \
         cpp-test cpp-build \
         integration \
         artifacts release
@@ -61,6 +61,13 @@ rust-build: ## Build Rust library
 
 rust-publish: rust-test ## Publish to crates.io
 	cd $(RUST_DIR) && cargo publish
+
+# ENV_CRATES holds one line, CARGO_REGISTRY_TOKEN=...; .env* is gitignored.
+ENV_CRATES ?= .env.crates
+rust-secret: ## Push CARGO_REGISTRY_TOKEN from .env.crates (or ENV_CRATES=path) to GitHub Actions secrets
+	@test -f "$(ENV_CRATES)" || { echo "$(ENV_CRATES) not found"; exit 1; }
+	@. "$(abspath $(ENV_CRATES))" && test -n "$$CARGO_REGISTRY_TOKEN" && \
+		printf '%s' "$$CARGO_REGISTRY_TOKEN" | gh secret set CARGO_REGISTRY_TOKEN
 
 # ── C++ ──────────────────────────────────────────────────────────────────────
 

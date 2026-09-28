@@ -8,3 +8,6 @@ cpp/build*/
 .venv/
 .pytest_cache/
 target/
+
+# Local secrets (e.g. .env.crates holds CARGO_REGISTRY_TOKEN)
+.env*
