@@ -247,6 +247,10 @@ int main(int argc, char** argv) {
             try {
                 dev.set_mode(cmd);
                 std::cout << "OK: " << cmd << "\n";
+            } catch (const bmap::desync_error&) {
+                throw;  // A desynced link is not an unknown command.
+            } catch (const bmap::device_error&) {
+                throw;
             } catch (...) {
                 std::cerr << "Unknown command: " << cmd << "\n";
                 return 1;
