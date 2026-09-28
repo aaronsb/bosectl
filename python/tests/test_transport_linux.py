@@ -1,6 +1,6 @@
 """Tests for Linux RFCOMM Bluetooth socket transport.
 
-This module tests the LinuxRfcommTransport class which uses Python's
+This module tests the Linux RfcommTransport class which uses Python's
 socket module with AF_BLUETOOTH for raw RFCOMM communication.
 
 These tests are designed to run on Linux systems with BlueZ support.
@@ -14,7 +14,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 
 # Only run on Linux
-pytestmark = pytest.mark.skipif(sys.platform == "linux", reason="Only runs on Linux")
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Only runs on Linux")
 
 from pybmap.errors import BmapConnectionError, BmapTimeoutError
 from pybmap.transport import RfcommTransport
