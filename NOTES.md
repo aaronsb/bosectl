@@ -45,7 +45,8 @@ EDITH returns multiple four-byte battery records from `[2.2]`. Each record is
 | `0x04` | Combined buds | `3cffff04` = 60%, used for generic Battery |
 
 Records must be identified by component ID, not payload position. The generic
-`Battery` value uses ID `0x04`; the CLI separately displays IDs `0x01`, `0x02`,
+`Battery` value uses ID `0x04` (falling back to the lower of `0x01`/`0x02`
+when `0x04` is absent or `0xFF`); the CLI separately displays IDs `0x01`, `0x02`,
 and `0x03`. BMAP `[2.5]` tracks whether both earbuds are seated and did not
 change across observed charger transitions, so case charging is not inferred.
 

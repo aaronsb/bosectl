@@ -1,5 +1,6 @@
 """Tests for BmapConnection using a mock transport."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,12 @@ from pybmap.protocol import bmap_packet
 from pybmap.constants import OP_GET, OP_SETGET, OP_STATUS, OP_RESULT, OP_ERROR
 from pybmap.errors import BmapError, BmapAuthError, BmapDeviceError
 from pybmap.devices import qc_ultra2, qc_ultra2_earbuds, qc_prince
+
+
+EARBUDS_BATTERY_FIXTURE = bytes.fromhex(
+    (Path(__file__).parents[2]
+     / "fixtures/packets/qc-ultra2-earbuds/battery-status.hex").read_text().strip()
+)
 
 
 class MockTransport:
@@ -109,13 +116,55 @@ class TestReadOperations:
         dev = BmapConnection(transport, qc_ultra2_earbuds)
         assert dev.battery() == 70
 
-    def test_battery_rejects_missing_aggregate_component(self):
+    def test_battery_falls_back_to_lowest_bud_without_aggregate(self):
         transport = MockTransport()
         transport.add_response(2, 2, OP_STATUS,
-                               bytes.fromhex("3cffff0150ffff0240ffff03"))
+                               bytes.fromhex("3cffff0150ffff0228ffff03"))
+        dev = BmapConnection(transport, qc_ultra2_earbuds)
+        # Case (3) is lower but is not a bud; right bud (1) is the lowest.
+        assert dev.battery() == 60
+
+    def test_battery_rejects_response_without_valid_buds(self):
+        transport = MockTransport()
+        transport.add_response(2, 2, OP_STATUS,
+                               bytes.fromhex("ffffff01ffffff02ffffff0428ffff03"))
         dev = BmapConnection(transport, qc_ultra2_earbuds)
         with pytest.raises(BmapDeviceError, match="aggregate component 4"):
             dev.battery()
+
+    def test_status_falls_back_when_fixture_aggregate_is_invalid(self):
+        records = [EARBUDS_BATTERY_FIXTURE[i:i + 4]
+                   for i in range(0, len(EARBUDS_BATTERY_FIXTURE), 4)]
+        invalid = b"".join(b"\xff" + r[1:] if r[3] == 4 else r for r in records)
+        transport = MockTransport()
+        transport.add_response(2, 2, OP_STATUS, invalid)
+        status = BmapConnection(transport, qc_ultra2_earbuds).status()
+        assert status.battery == 60
+        assert [(r.component_id, r.level) for r in status.battery_readings] == [
+            (1, 60), (2, 60), (3, 80)
+        ]
+
+    def test_status_falls_back_when_fixture_aggregate_is_absent(self):
+        records = [EARBUDS_BATTERY_FIXTURE[i:i + 4]
+                   for i in range(0, len(EARBUDS_BATTERY_FIXTURE), 4)]
+        absent = b"".join(r for r in records if r[3] != 4)
+        transport = MockTransport()
+        transport.add_response(2, 2, OP_STATUS, absent)
+        status = BmapConnection(transport, qc_ultra2_earbuds).status()
+        assert status.battery == 60
+        assert [(r.component_id, r.level) for r in status.battery_readings] == [
+            (1, 60), (2, 60), (3, 80)
+        ]
+
+    def test_status_tolerates_battery_without_valid_readings(self):
+        transport = MockTransport()
+        transport.add_response(2, 2, OP_STATUS,
+                               bytes.fromhex("ffffff01ffffff02ffffff04ffffff03"))
+        transport.add_response(31, 3, OP_STATUS, bytes([0x01]))
+        status = BmapConnection(transport, qc_ultra2_earbuds).status()
+        assert status.battery == 0
+        assert status.battery_readings == []
+        assert status.mode == "aware"
 
     def test_status_uses_one_battery_response(self):
         transport = MockTransport()

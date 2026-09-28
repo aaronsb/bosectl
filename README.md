@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/aaronsb/bosectl)](https://github.com/aaronsb/bosectl/releases/latest)
-[![Devices](https://img.shields.io/badge/Devices-8_supported_·_38_known-green)](docs/architecture.md#device-catalog)
+[![Devices](https://img.shields.io/badge/Devices-3_supported_·_38_known-green)](docs/architecture.md#device-catalog)
 [![Python 3](https://img.shields.io/badge/Python-3-3572A5.svg)](python/)
 [![Rust](https://img.shields.io/badge/Rust-1.70+-DEA584.svg)](rust/)
 [![C++17](https://img.shields.io/badge/C++-17-f34b7d.svg)](cpp/)
@@ -119,8 +119,8 @@ pybmap.modalias(0x4082)   # "bluetooth:v05A7p4082d0000"
 # Check support status
 pybmap.is_supported(0x4082)  # True — has tested config
 pybmap.is_supported(0x4075)  # True — QuietComfort Headphones (prince)
-pybmap.is_supported(0x4039)  # True — QC45 uses an inferred config
-pybmap.supported_devices()   # eight devices; see docs/architecture.md
+pybmap.is_supported(0x4039)  # False — QC45, recognized but untested
+pybmap.supported_devices()   # [wolfcastle, baywolf, edith, prince, wolverine]
 pybmap.known_devices()       # full catalog
 ```
 
@@ -253,7 +253,7 @@ Full protocol reference: **[NOTES.md](NOTES.md)** and
 ```bash
 make test                       # All tests (121 Python, 63 Rust, 54 C++)
 make artifacts                  # Build + strip + SHA256SUMS in dist/
-make release VERSION=v0.4.0     # Test → build → gh release create
+make release VERSION=v0.2.0     # Test → build → gh release create
 make clean                      # Remove all build artifacts
 ```
 

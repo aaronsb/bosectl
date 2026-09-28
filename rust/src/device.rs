@@ -113,6 +113,8 @@ pub struct DeviceConfig {
     pub battery_components: &'static [(u8, &'static str)],
     /// Component ID used for the generic aggregate battery value.
     pub battery_aggregate_id: Option<u8>,
+    /// Component IDs whose lowest level stands in for a missing aggregate.
+    pub battery_aggregate_sources: &'static [u8],
     pub firmware: Option<Addr>,
     pub product_name: Option<Addr>,
     pub voice_prompts: Option<Addr>,
@@ -155,16 +157,16 @@ pub fn parse_battery(payload: &[u8]) -> Option<u8> {
 }
 
 /// Parse four-byte component battery records from [2.2].
-pub fn parse_battery_readings(payload: &[u8]) -> Result<Vec<BatteryReading>, &'static str> {
+pub fn parse_battery_readings(payload: &[u8]) -> Result<Vec<BatteryReading>, String> {
     if payload.len() % 4 != 0 {
-        return Err("Malformed battery response");
+        return Err("Malformed battery response".into());
     }
     let mut readings = Vec::new();
     let mut seen_components = Vec::new();
     for record in payload.chunks_exact(4) {
         let component_id = record[3];
         if seen_components.contains(&component_id) {
-            return Err("Duplicate battery component");
+            return Err(format!("Duplicate battery component {}", component_id));
         }
         seen_components.push(component_id);
         if record[0] <= 100 {
@@ -683,13 +685,13 @@ mod tests {
         );
         assert_eq!(
             parse_battery_readings(&[0x50, 0xff]),
-            Err("Malformed battery response"),
+            Err("Malformed battery response".to_string()),
         );
         assert_eq!(
             parse_battery_readings(&[
                 0x3c, 0xff, 0xff, 0x01, 0x50, 0xff, 0xff, 0x01,
             ]),
-            Err("Duplicate battery component"),
+            Err("Duplicate battery component 1".to_string()),
         );
     }
 

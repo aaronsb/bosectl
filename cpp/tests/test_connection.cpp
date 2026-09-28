@@ -95,11 +95,22 @@ TEST(battery_readings) {
     ASSERT_EQ(raw->sent.size(), 1u);
 }
 
-TEST(battery_missing_aggregate_component) {
+TEST(battery_falls_back_to_lowest_bud_without_aggregate) {
     auto raw = new MockTransport();
     raw->add(2, 2, 0x03, {
-        0x3c,0xff,0xff,0x01, 0x3c,0xff,0xff,0x02,
-        0x50,0xff,0xff,0x03,
+        0x3c,0xff,0xff,0x01, 0x50,0xff,0xff,0x02,
+        0x28,0xff,0xff,0x03,
+    });
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2_earbuds());
+    // Case (3) is lower but is not a bud; right bud (1) is the lowest.
+    ASSERT_EQ(dev.battery(), 60);
+}
+
+TEST(battery_rejects_response_without_valid_buds) {
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, {
+        0xff,0xff,0xff,0x01, 0xff,0xff,0xff,0x02,
+        0xff,0xff,0xff,0x04, 0x28,0xff,0xff,0x03,
     });
     BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2_earbuds());
     bool threw = false;
@@ -108,6 +119,61 @@ TEST(battery_missing_aggregate_component) {
         threw = std::string(error.what()).find("aggregate component 4") != std::string::npos;
     }
     ASSERT_TRUE(threw);
+}
+
+static std::vector<uint8_t> earbuds_battery_fixture() {
+    return decode_hex_fixture("../../fixtures/packets/qc-ultra2-earbuds/battery-status.hex");
+}
+
+static void assert_fixture_bud_readings(const std::vector<BatteryReading>& readings) {
+    ASSERT_EQ(readings.size(), 3u);
+    ASSERT_EQ(readings[0].component_id, 1);
+    ASSERT_EQ(readings[0].level, 60);
+    ASSERT_EQ(readings[1].component_id, 2);
+    ASSERT_EQ(readings[1].level, 60);
+    ASSERT_EQ(readings[2].component_id, 3);
+    ASSERT_EQ(readings[2].level, 80);
+}
+
+TEST(status_falls_back_when_fixture_aggregate_is_invalid) {
+    auto payload = earbuds_battery_fixture();
+    for (size_t i = 0; i + 3 < payload.size(); i += 4) {
+        if (payload[i + 3] == 4) payload[i] = 0xff;
+    }
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, payload);
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2_earbuds());
+    auto status = dev.status();
+    ASSERT_EQ(status.battery, 60);
+    assert_fixture_bud_readings(status.battery_readings);
+}
+
+TEST(status_falls_back_when_fixture_aggregate_is_absent) {
+    auto fixture = earbuds_battery_fixture();
+    std::vector<uint8_t> payload;
+    for (size_t i = 0; i + 3 < fixture.size(); i += 4) {
+        if (fixture[i + 3] != 4) payload.insert(payload.end(), &fixture[i], &fixture[i] + 4);
+    }
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, payload);
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2_earbuds());
+    auto status = dev.status();
+    ASSERT_EQ(status.battery, 60);
+    assert_fixture_bud_readings(status.battery_readings);
+}
+
+TEST(status_tolerates_battery_without_valid_readings) {
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, {
+        0xff,0xff,0xff,0x01, 0xff,0xff,0xff,0x02,
+        0xff,0xff,0xff,0x04, 0xff,0xff,0xff,0x03,
+    });
+    raw->add(31, 3, 0x03, {0x01});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2_earbuds());
+    auto status = dev.status();
+    ASSERT_EQ(status.battery, 0);
+    ASSERT_TRUE(status.battery_readings.empty());
+    ASSERT_EQ(status.mode, "aware");
 }
 
 TEST(status_uses_one_battery_response) {
@@ -136,6 +202,7 @@ TEST(qc_ultra2_earbuds_config) {
     ASSERT_EQ(config.battery_components[1].second, "Left");
     ASSERT_EQ(config.battery_components[2].second, "Case");
     ASSERT_EQ(*config.battery_aggregate_id, 4);
+    ASSERT_EQ(config.battery_aggregate_sources, (std::vector<uint8_t>{1, 2}));
     ASSERT_EQ(config.preset_modes.size(), 4u);
 }
 TEST(firmware) { ASSERT_EQ(mock_qc_ultra2()->firmware(), "8.2.20+g34cf029"); }

@@ -37,6 +37,16 @@ public:
                 if (reading.component_id == *config_.battery_aggregate_id)
                     return {reading.level, std::move(readings)};
             }
+            // Aggregate missing or 0xFF: fall back to the lowest bud reading.
+            std::optional<uint8_t> lowest;
+            for (const auto& reading : readings) {
+                const auto& sources = config_.battery_aggregate_sources;
+                if (std::find(sources.begin(), sources.end(), reading.component_id) ==
+                    sources.end())
+                    continue;
+                if (!lowest || reading.level < *lowest) lowest = reading.level;
+            }
+            if (lowest) return {*lowest, std::move(readings)};
             throw std::runtime_error(
                 "Battery response missing aggregate component " +
                 std::to_string(*config_.battery_aggregate_id));
@@ -112,7 +122,8 @@ public:
             [&]{ return cnc(); }, {0, 10});
         auto [prom_on, prom_lang] = safe_call<std::pair<bool,std::string>>(
             [&]{ return prompts(); }, {false, ""});
-        auto battery_state = battery_status();
+        auto battery_state = safe_call<BatteryStatus>(
+            [&]{ return battery_status(); }, {0, {}});
 
         DeviceStatus s;
         s.battery = battery_state.aggregate;

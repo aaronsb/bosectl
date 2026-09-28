@@ -48,6 +48,7 @@ inline DeviceConfig qc_ultra2_earbuds() {
     c.info = {"Bose QuietComfort Ultra Earbuds (2nd Gen)", "edith", "OTG-QCC-384"};
     c.battery_components = {{1, "Right"}, {2, "Left"}, {3, "Case"}};
     c.battery_aggregate_id = 4;
+    c.battery_aggregate_sources = {1, 2};
     return c;
 }
 

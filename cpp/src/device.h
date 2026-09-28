@@ -108,6 +108,8 @@ struct DeviceConfig {
     std::vector<std::pair<uint8_t, std::string>> battery_components;
     /// Component ID used for the generic aggregate battery value.
     std::optional<uint8_t> battery_aggregate_id;
+    /// Component IDs whose lowest level stands in for a missing aggregate.
+    std::vector<uint8_t> battery_aggregate_sources;
     std::optional<Addr> firmware;
     std::optional<Addr> product_name;
     std::optional<Addr> voice_prompts;

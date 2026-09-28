@@ -19,6 +19,7 @@ pub fn qc_ultra2() -> DeviceConfig {
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -64,6 +65,7 @@ pub fn qc_ultra2_earbuds() -> DeviceConfig {
     };
     c.battery_components = &[(1, "Right"), (2, "Left"), (3, "Case")];
     c.battery_aggregate_id = Some(4);
+    c.battery_aggregate_sources = &[1, 2];
     c
 }
 
@@ -82,6 +84,7 @@ pub fn qc_prince() -> DeviceConfig {
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -130,6 +133,7 @@ pub fn qc35() -> DeviceConfig {
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -179,6 +183,7 @@ pub fn qc_earbuds() -> DeviceConfig {
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -226,6 +231,7 @@ pub fn qc45() -> DeviceConfig {
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -274,6 +280,7 @@ pub fn ultra_open() -> DeviceConfig {
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -369,6 +376,7 @@ mod tests {
         assert_eq!(dev.info.codename, "edith");
         assert_eq!(dev.battery_components, &[(1, "Right"), (2, "Left"), (3, "Case")]);
         assert_eq!(dev.battery_aggregate_id, Some(4));
+        assert_eq!(dev.battery_aggregate_sources, &[1, 2]);
         assert_eq!(dev.preset_modes.len(), 4);
         assert!(dev.audio_settings.is_some());
     }

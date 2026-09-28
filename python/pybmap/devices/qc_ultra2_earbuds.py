@@ -32,3 +32,5 @@ FEATURES = dict(_HEADPHONE_FEATURES)
 # ID 4 is the combined earbud reading and is intentionally not displayed.
 BATTERY_COMPONENTS = {1: "Right", 2: "Left", 3: "Case"}
 BATTERY_AGGREGATE_ID = 4
+# When ID 4 is absent or 0xFF, report the lowest bud level instead.
+BATTERY_AGGREGATE_SOURCES = (1, 2)

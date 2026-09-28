@@ -158,6 +158,14 @@ class BmapConnection:
             None,
         )
         if aggregate is None:
+            # Aggregate missing or 0xFF: fall back to the lowest bud reading.
+            sources = self.battery_aggregate_sources
+            aggregate = min(
+                (reading.level for reading in readings
+                 if reading.component_id in sources),
+                default=None,
+            )
+        if aggregate is None:
             raise BmapDeviceError(
                 "Battery response missing aggregate component %d" % aggregate_id)
         return BatteryStatus(aggregate=aggregate, readings=readings)
@@ -299,7 +307,7 @@ class BmapConnection:
         current_name = self._mode_name_from_idx(current_idx) if current_idx is not None else ""
         cnc_cur, cnc_max = self._safe_read(self.cnc, (0, 10))
         prompts_on, prompts_lang = self._safe_read(self.prompts, (False, ""))
-        battery = self.battery_status()
+        battery = self._safe_read(self.battery_status, BatteryStatus(0, []))
 
         return DeviceStatus(
             battery=battery.aggregate,
@@ -601,6 +609,11 @@ class BmapConnection:
     def battery_aggregate_id(self):
         """Component ID used for the generic battery level, when applicable."""
         return getattr(self._device, "BATTERY_AGGREGATE_ID", None)
+
+    @property
+    def battery_aggregate_sources(self):
+        """Component IDs whose lowest level stands in for a missing aggregate."""
+        return getattr(self._device, "BATTERY_AGGREGATE_SOURCES", ())
 
     @property
     def preset_modes(self):

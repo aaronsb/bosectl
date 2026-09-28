@@ -147,8 +147,10 @@ Each feature entry maps a name to its protocol address and codec functions:
 
 Multi-component battery devices declare display labels and an aggregate
 component ID in config. For `edith`, IDs 1/2/3 are Right/Left/Case and ID 4
-is the combined earbud level. Unknown IDs are preserved in the snapshot but
-only configured components are rendered.
+is the combined earbud level. If ID 4 is absent or reports 0xFF, the lowest
+valid reading from the configured aggregate sources (the buds, IDs 1/2) is
+used instead. Unknown IDs are preserved in the snapshot but only configured
+components are rendered.
 
 | Property | QC Ultra 2 | QuietComfort Headphones (`prince`) | QC35 |
 |----------|-----------|-------------------------------------|------|
@@ -198,6 +200,9 @@ battery() / status()  →  reuse the parsed battery status
 `BatteryStatus` keeps the aggregate and all component readings from that one
 response. `DeviceStatus.battery_readings` carries the same snapshot to CLIs,
 which render known components in config order rather than packet order.
+`status()` treats battery like its other optional fields: a failed or
+unusable battery read yields `battery = 0` with no readings instead of
+failing the whole snapshot.
 
 **Write pattern** (SETGET):
 ```
