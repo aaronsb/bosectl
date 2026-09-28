@@ -404,7 +404,7 @@ implemented.
 To add support for a new Bose device:
 
 1. **Add to the catalog** — add its PID, codename, and name with `config=None`
-2. **Discover the RFCOMM channel** — `connect()` tries the config's channel, then probes 2, 8, 9 with a firmware GET (`FALLBACK_CHANNELS`); set `RFCOMM_CHANNEL` to whichever answers on your unit
+2. **Discover the RFCOMM channel** — `connect()` tries the config's channel, then probes 2, 8, 9 with a firmware GET (`FALLBACK_CHANNELS`). On Linux, a channel that answers EBUSY (the headset is still closing a previous connection) is retried after 0.5, 1 and 2 s before the probe moves on; ECONNREFUSED gets the same retries on the configured channel only. If the configured channel is still busy after its retries, `connect()` fails at once with a "headphones busy" error instead of probing further; a fallback still busy at the end gets the same error instead of "No BMAP channel found". The retry is Linux-only: macOS IOBluetooth errors carry no errno, so they are never retried. Set `RFCOMM_CHANNEL` to whichever answers on your unit
 3. **Check if an init packet is needed** — send GET [0.1] and see if subsequent commands work
 4. **Probe features** — GET on known function addresses to see what responds
 5. **Create a device config** with the discovered addresses and parsers
@@ -456,7 +456,9 @@ This makes feature dispatch a simple dict lookup at runtime.
 **Error handling** uses a typed exception hierarchy:
 ```
 BmapError
-├── BmapConnectionError   — socket/transport failures
+├── BmapConnectionError   — socket/transport failures (.errno when the
+│   │                       socket connect failed)
+│   ├── BmapBusyError     — channel still EBUSY after the connect backoff
 │   └── BmapDesyncError   — no frame in the reply came from the
 │                           requested [fblock.func]
 ├── BmapAuthError         — device returned error code 5
@@ -519,6 +521,7 @@ use `BmapConnection<MockTransport>` with canned responses.
 
 **Error handling** uses `Result<T, BmapError>` with an enum:
 ```rust
+#[non_exhaustive]
 pub enum BmapError {
     Connection(String),
     Auth(String),
@@ -528,6 +531,7 @@ pub enum BmapError {
     Unsupported(String),
     InvalidArg(String),
     Desync(String),   // no reply frame came from the requested [fblock.func]
+    Busy(String),     // channel still EBUSY after the connect backoff
 }
 ```
 
@@ -571,8 +575,10 @@ Tests use a `MockTransport` subclass.
 `errors.h`, all derived from `std::runtime_error`: `bmap::device_error`
 (device ERROR reply, with `code()`, or an invalid/empty reply to GET, SETGET
 or START), `bmap::desync_error` (no frame in the reply came from the
-requested `[fblock.func]`) and `bmap::unsupported_error` (feature missing on
-this device). Bad caller input throws `std::invalid_argument`. Auth errors
+requested `[fblock.func]`), `bmap::unsupported_error` (feature missing on
+this device), `bmap::connect_error` (socket connect failed, with
+`error_number()` = errno) and its subclass `bmap::busy_error` (channel still
+EBUSY after the connect backoff). Bad caller input throws `std::invalid_argument`. Auth errors
 (code 5) are a `device_error` with `code() == 5`. The `require()` helper
 converts `std::nullopt` to an exception for unsupported features:
 ```cpp

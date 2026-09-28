@@ -1,15 +1,26 @@
 """Tests for RFCOMM channel fallback in pybmap.connect()."""
 
+import errno
+import os
+
 import pytest
 
 import pybmap
 from pybmap.constants import OP_STATUS, OP_PROCESSING, OP_ERROR
 from pybmap.errors import (
     BmapConnectionError, BmapTimeoutError, BmapDeviceError,
-    BmapInvalidArgError,
+    BmapInvalidArgError, BmapBusyError,
 )
 from pybmap.devices import qc_prince
 from tests.test_connection import MockTransport
+
+
+# Scripted connect failures that carry an errno, as the Linux transport does.
+OS_ERRORS = {
+    "ebusy": errno.EBUSY,
+    "refused": errno.ECONNREFUSED,
+    "hostdown": errno.EHOSTDOWN,
+}
 
 
 class FakeTransportFactory:
@@ -24,6 +35,9 @@ class FakeTransportFactory:
     def __call__(self, mac, channel=2, timeout=3.0):
         factory = self
         kind = self.behaviour.get(channel, "busy")
+        if isinstance(kind, list):
+            # One entry per connect attempt; the last one repeats.
+            kind = kind.pop(0) if len(kind) > 1 else kind[0]
 
         class T(MockTransport):
             def __init__(t):
@@ -36,6 +50,13 @@ class FakeTransportFactory:
                 factory.attempts.append(channel)
                 if kind == "busy":
                     raise BmapConnectionError("[Errno 16] Device or resource busy")
+                if kind in OS_ERRORS:
+                    code = OS_ERRORS[kind]
+                    # Same shape as LinuxRfcommTransport.connect's message.
+                    raise BmapConnectionError(
+                        "Failed to connect to %s: %s" % (mac, OSError(code, os.strerror(code))),
+                        errno=code,
+                    )
 
             def send_recv(t, packet, drain=False):
                 if kind == "silent":
@@ -52,7 +73,15 @@ class FakeTransportFactory:
 
 
 @pytest.fixture
-def patch_transport(monkeypatch):
+def sleeps(monkeypatch):
+    """Record backoff delays instead of sleeping."""
+    calls = []
+    monkeypatch.setattr(pybmap, "_sleep", calls.append)
+    return calls
+
+
+@pytest.fixture
+def patch_transport(monkeypatch, sleeps):
     def apply(behaviour):
         factory = FakeTransportFactory(behaviour)
         monkeypatch.setattr(pybmap, "RfcommTransport", factory)
@@ -115,6 +144,91 @@ def test_empty_mac_uses_discovery(patch_transport, monkeypatch):
     dev = pybmap.connect(mac="")
     dev.close()
     assert f.attempts == [2]
+
+
+# ── EBUSY / ECONNREFUSED backoff (issue #39) ────────────────────────────────
+
+def test_ebusy_twice_then_success_stays_on_channel(patch_transport, sleeps):
+    f = patch_transport({2: ["ebusy", "ebusy", "bmap"]})
+    dev = pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    assert f.attempts == [2, 2, 2]
+    assert sleeps == [0.5, 1.0]
+    assert dev._transport.channel == 2
+
+
+def test_ebusy_forever_reports_busy(patch_transport, sleeps):
+    f = patch_transport({2: ["ebusy"], 8: ["ebusy"], 9: ["ebusy"]})
+    with pytest.raises(BmapBusyError) as ei:
+        pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    # One try plus three retries on the configured channel, then stop.
+    assert f.attempts == [2] * 4
+    assert sleeps == [0.5, 1.0, 2.0]
+    msg = str(ei.value)
+    assert "Headphones busy" in msg
+    assert "No BMAP channel found" not in msg
+    assert ei.value.errno == errno.EBUSY
+    # Underlying strerror kept for callers that match on it (bosectl-qt).
+    assert os.strerror(errno.EBUSY) in msg
+
+
+def test_busy_configured_channel_stops_probe(patch_transport, sleeps):
+    f = patch_transport({2: ["ebusy"], 8: ["bmap"], 9: ["bmap"]})
+    with pytest.raises(BmapBusyError) as ei:
+        pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    # The headset is there; probing 8/9 would only add delay.
+    assert f.attempts == [2] * 4
+    assert sleeps == [0.5, 1.0, 2.0]
+    assert "tried 2)" in str(ei.value)
+
+
+def test_busy_fallback_reported_as_busy(patch_transport, sleeps):
+    f = patch_transport({2: ["hostdown"], 8: ["ebusy"], 9: ["hostdown"]})
+    with pytest.raises(BmapBusyError):
+        pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    assert f.attempts == [2] + [8] * 4 + [9]
+    assert sleeps == [0.5, 1.0, 2.0]
+
+
+def test_econnrefused_then_success(patch_transport, sleeps):
+    f = patch_transport({2: ["refused", "bmap"]})
+    dev = pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    assert f.attempts == [2, 2]
+    assert sleeps == [0.5]
+    assert dev._transport.channel == 2
+
+
+def test_econnrefused_forever_is_not_reported_as_busy(patch_transport, sleeps):
+    patch_transport({2: ["refused"], 8: ["refused"], 9: ["refused"]})
+    with pytest.raises(BmapConnectionError) as ei:
+        pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    assert not isinstance(ei.value, BmapBusyError)
+    assert "No BMAP channel found" in str(ei.value)
+    assert sleeps == [0.5, 1.0, 2.0]  # configured channel only
+
+
+def test_econnrefused_on_fallback_moves_on_without_sleep(patch_transport, sleeps):
+    f = patch_transport({2: ["hostdown"], 8: ["refused", "bmap"], 9: ["bmap"]})
+    dev = pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    assert f.attempts == [2, 8, 9]
+    assert sleeps == []
+    assert dev._transport.channel == 9
+
+
+def test_non_retryable_error_moves_on_without_sleep(patch_transport, sleeps):
+    f = patch_transport({2: ["hostdown"], 8: ["bmap"]})
+    dev = pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    assert f.attempts == [2, 8]
+    assert sleeps == []
+    assert dev._transport.channel == 8
+
+
+def test_error_without_errno_is_not_retried(patch_transport, sleeps):
+    f = patch_transport({2: "busy", 8: "busy", 9: "busy"})
+    with pytest.raises(BmapConnectionError) as ei:
+        pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
+    assert not isinstance(ei.value, BmapBusyError)
+    assert f.attempts == [2, 8, 9]
+    assert sleeps == []
 
 
 class TestModeSwitchAck:

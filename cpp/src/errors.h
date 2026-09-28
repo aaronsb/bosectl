@@ -40,4 +40,26 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+/// Opening the RFCOMM socket failed. error_number() is the OS errno
+/// (e.g. EBUSY, ECONNREFUSED), or 0 when there is none. Mirrors
+/// BmapConnectionError.errno (Python).
+class connect_error : public std::runtime_error {
+public:
+    explicit connect_error(const std::string& message, int error_number = 0)
+        : std::runtime_error(message), error_number_(error_number) {}
+    int error_number() const noexcept { return error_number_; }
+
+private:
+    int error_number_;
+};
+
+/// The device kept refusing the channel as busy (EBUSY) after retries,
+/// typically because the previous connection is still closing. Mirrors
+/// BmapBusyError (Python) and BmapError::Busy (Rust).
+class busy_error : public connect_error {
+public:
+    busy_error(const std::string& message, int error_number)
+        : connect_error(message, error_number) {}
+};
+
 } // namespace bmap

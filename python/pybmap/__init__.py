@@ -14,6 +14,9 @@ Usage:
         ...
 """
 
+import errno
+import time
+
 from .connection import BmapConnection
 from .transport import RfcommTransport
 from .discovery import find_bmap_device
@@ -26,7 +29,7 @@ from .catalog import (
 from .errors import (
     BmapError, BmapConnectionError, BmapAuthError,
     BmapDeviceError, BmapTimeoutError, BmapNotFoundError, BmapInvalidArgError,
-    BmapDesyncError,
+    BmapDesyncError, BmapBusyError,
 )
 from .types import (
     BatteryReading, BatteryStatus, BmapResponse, ButtonMapping, DeviceStatus,
@@ -81,22 +84,69 @@ def connect(mac=None, device_type=None):
 FALLBACK_CHANNELS = (2, 8, 9)
 
 
+# Connect errors that mean "not right now" rather than "not here": the
+# headset is still tearing down the previous RFCOMM link (EBUSY) or has not
+# yet re-listened on the channel (ECONNREFUSED). The same channel is retried
+# after each delay before the probe moves on. ECONNREFUSED is retried only on
+# the configured channel: a fallback that refuses is usually just not a BMAP
+# channel. Linux only; the macOS transport's errors carry no errno.
+RETRYABLE_ERRNOS = frozenset({errno.EBUSY, errno.ECONNREFUSED})
+FALLBACK_RETRYABLE_ERRNOS = frozenset({errno.EBUSY})
+RETRY_DELAYS = (0.5, 1.0, 2.0)
+
+# Indirection so tests can replace the backoff without actually sleeping.
+_sleep = time.sleep
+
+BUSY_MESSAGE = ("Headphones busy (another connection is still closing); "
+                "try again in a few seconds")
+
+
+def _connect_with_retry(mac, ch, retryable):
+    """Open ``ch``, retrying errnos in ``retryable`` with backoff.
+
+    Returns the connected transport; raises the last BmapConnectionError.
+    """
+    for delay in RETRY_DELAYS + (None,):
+        transport = RfcommTransport(mac, channel=ch)
+        try:
+            transport.connect()
+            return transport
+        except BmapConnectionError as e:
+            if delay is None or getattr(e, "errno", None) not in retryable:
+                raise
+        _sleep(delay)
+
+
 def _open_transport(mac, channel, device):
     """Connect on the configured channel, then probe fallbacks.
 
     A socket that accepts the connection is not proof of BMAP — several
     channels accept and stay silent — so each candidate is confirmed with a
     firmware GET [0.5] before it is returned.
+
+    Each channel is retried on EBUSY (the configured one also on
+    ECONNREFUSED, see RETRY_DELAYS) before the probe moves on. A configured
+    channel still busy after its retries raises BmapBusyError at once: the
+    headset is there, so probing other channels would only add delay. A
+    fallback still busy at the end is reported the same way rather than
+    "no channel found".
     """
     init = getattr(device, "INIT_PACKET", None)
     candidates = [channel] + [c for c in FALLBACK_CHANNELS if c != channel]
     first_error = None
+    busy_error = None
+    tried = []
     for i, ch in enumerate(candidates):
-        transport = RfcommTransport(mac, channel=ch)
+        tried.append(str(ch))
         try:
-            transport.connect()
+            transport = _connect_with_retry(
+                mac, ch, RETRYABLE_ERRNOS if i == 0 else FALLBACK_RETRYABLE_ERRNOS)
         except BmapConnectionError as e:
             first_error = first_error or e
+            if busy_error is None and getattr(e, "errno", None) == errno.EBUSY:
+                busy_error = e
+                if i == 0:
+                    break
             continue
         if i == 0:
             # Configured channel connected: trust it, send init if needed.
@@ -107,9 +157,15 @@ def _open_transport(mac, channel, device):
         if _speaks_bmap(transport, init):
             return transport
         transport.close()
+    tried = ", ".join(tried)
+    if busy_error is not None:
+        raise BmapBusyError(
+            "%s (%s, tried %s): %s" % (BUSY_MESSAGE, mac, tried, busy_error),
+            errno=errno.EBUSY,
+        )
     raise BmapConnectionError(
         "No BMAP channel found on %s (tried %s): %s"
-        % (mac, ", ".join(str(c) for c in candidates), first_error)
+        % (mac, tried, first_error)
     )
 
 

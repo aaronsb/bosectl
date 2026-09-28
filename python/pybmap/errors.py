@@ -6,7 +6,24 @@ class BmapError(Exception):
 
 
 class BmapConnectionError(BmapError):
-    """Failed to connect to the device."""
+    """Failed to connect to the device.
+
+    ``errno`` carries the OS error code when the failure came from the
+    socket connect (e.g. EBUSY, ECONNREFUSED), otherwise None.
+    """
+
+    def __init__(self, message, errno=None):
+        super().__init__(message)
+        self.errno = errno
+
+
+class BmapBusyError(BmapConnectionError):
+    """The device refused the channel as busy (EBUSY) even after retries.
+
+    Seen when a new connection follows closely on the previous one: the
+    headset is still tearing down the old RFCOMM link. Waiting a few
+    seconds clears it; it is not a pairing or Bluetooth-off problem.
+    """
 
 
 class BmapAuthError(BmapError):

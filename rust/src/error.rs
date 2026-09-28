@@ -6,7 +6,10 @@ use std::fmt;
 pub type BmapResult<T> = Result<T, BmapError>;
 
 /// BMAP error types.
+///
+/// Non-exhaustive: match with a wildcard arm, since new variants may be added.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BmapError {
     /// Failed to connect to device.
     Connection(String),
@@ -24,6 +27,9 @@ pub enum BmapError {
     InvalidArg(String),
     /// A response carried a different address than the request.
     Desync(String),
+    /// The device kept refusing the channel as busy (EBUSY) after retries,
+    /// typically because the previous connection is still closing.
+    Busy(String),
 }
 
 impl fmt::Display for BmapError {
@@ -31,6 +37,7 @@ impl fmt::Display for BmapError {
         match self {
             Self::Connection(msg) => write!(f, "Connection error: {}", msg),
             Self::Desync(msg) => write!(f, "Out of sync: {}", msg),
+            Self::Busy(msg) => write!(f, "{}", msg),
             Self::Auth(msg) => write!(f, "Authentication required: {}", msg),
             Self::Device { message, code } => write!(f, "Device error {}: {}", code, message),
             Self::Timeout(msg) => write!(f, "Timeout: {}", msg),
