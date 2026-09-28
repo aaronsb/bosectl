@@ -6,7 +6,7 @@ import sys
 
 import pybmap
 from pybmap.constants import SPATIAL_NAMES, SIDETONE_NAMES, VOICE_LANGUAGES
-from pybmap.errors import BmapError, BmapConnectionError
+from pybmap.errors import BmapError, BmapConnectionError, BmapInvalidArgError
 from pybmap.protocol import fmt_response
 
 # ── ANSI Colors ──────────────────────────────────────────────────────────────
@@ -63,6 +63,13 @@ def cmd_status(dev):
     row("Model", dev.device_info.get("name", "Unknown"), C_MAGENTA)
     batt_color = C_GREEN if s.battery > 30 else C_YELLOW if s.battery > 10 else C_RED
     row("Battery", "%d%%" % s.battery, batt_color)
+    component_names = dev.battery_components
+    readings = {reading.component_id: reading.level for reading in s.battery_readings}
+    for component_id, label in component_names.items():
+        if component_id in readings:
+            level = readings[component_id]
+            color = C_GREEN if level > 30 else C_YELLOW if level > 10 else C_RED
+            row(label, "%d%%" % level, color)
     if s.mode:
         row("Mode", s.mode, C_CYAN)
 
@@ -323,7 +330,9 @@ def main():
         dev = pybmap.connect(mac=mac, device_type=device_type)
     except BmapError as e:
         print("%sConnection failed:%s %s" % (C_RED, C_RESET, e), file=sys.stderr)
-        print("%sIs Bluetooth on? Are the headphones paired and connected?%s" % (C_DIM, C_RESET), file=sys.stderr)
+        # A setup mistake is not a Bluetooth problem; skip the pairing hint.
+        if not isinstance(e, BmapInvalidArgError):
+            print("%sIs Bluetooth on? Are the headphones paired and connected?%s" % (C_DIM, C_RESET), file=sys.stderr)
         sys.exit(1)
 
     preset_names = set(dev.preset_modes.keys())

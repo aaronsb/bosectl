@@ -23,6 +23,30 @@ def parse_battery(payload):
     return None
 
 
+def parse_battery_readings(payload):
+    """Parse four-byte component battery records.
+
+    Earbud responses observed on BMAP [2.2] use the layout
+    ``[level, reserved, reserved, component_id]``.
+    """
+    from ..types import BatteryReading
+
+    if len(payload) % 4:
+        raise ValueError("Malformed battery response")
+
+    readings = []
+    seen_components = set()
+    for i in range(0, len(payload) - 3, 4):
+        level = payload[i]
+        component_id = payload[i + 3]
+        if component_id in seen_components:
+            raise ValueError("Duplicate battery component %d" % component_id)
+        seen_components.add(component_id)
+        if level <= 100:
+            readings.append(BatteryReading(component_id, level))
+    return readings
+
+
 def parse_firmware(payload):
     """Parse firmware version string."""
     return payload.decode("ascii", errors="replace")

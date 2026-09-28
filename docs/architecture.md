@@ -129,6 +129,7 @@ graph LR
         FEAT[Feature Map<br/>name → addr + parser + builder]
         MODES[Preset Modes<br/>name → index]
         SLOTS[Editable Slots<br/>profile indices]
+        CELLS[Battery Metadata<br/>component ID → label<br/>aggregate component ID]
     end
 ```
 
@@ -144,12 +145,19 @@ Each feature entry maps a name to its protocol address and codec functions:
 
 **Device quirks are expressed as config differences, not code branches:**
 
+Multi-component battery devices declare display labels and an aggregate
+component ID in config. For `edith`, IDs 1/2/3 are Right/Left/Case and ID 4
+is the combined earbud level. If ID 4 is absent or reports 0xFF, the lowest
+valid reading from the configured aggregate sources (the buds, IDs 1/2) is
+used instead. Unknown IDs are preserved in the snapshot but only configured
+components are rendered.
+
 | Property | QC Ultra 2 | QuietComfort Headphones (`prince`) | QC35 |
 |----------|-----------|-------------------------------------|------|
 | RFCOMM channel | 2 | 8 | 8 |
 | Init packet | None | None | GET [0.1] required |
 | Noise control | CNC [1.5] / live [31.10] | CNC/wind via [31.6] ModeConfig | ANR [1.6] (off/high/wind/low) |
-| EQ | 3-band [1.7] | Not verified | Not supported |
+| EQ | 3-band [1.7] | 3-band [1.7] | Not supported |
 | Spatial audio | [31.6] ModeConfig | Field observed in [31.6] | Not supported |
 | Mode profiles | 7 editable slots (4-10) | 2 editable slots observed (2-3) | None |
 | Sidetone | [1.11] | Not verified | [1.11] |
@@ -185,8 +193,13 @@ sequenceDiagram
 
 **Read pattern** (GET):
 ```
-battery()  →  _get("battery")  →  lookup addr  →  send GET  →  parse response  →  apply parser
+battery_status()  →  one GET  →  aggregate level + component ID/level pairs
+battery() / status()  →  reuse the parsed battery status
 ```
+
+`BatteryStatus` keeps the aggregate and all component readings from that one
+response. `DeviceStatus.battery_readings` carries the same snapshot to CLIs,
+which render known components in config order rather than packet order.
 
 **Write pattern** (SETGET):
 ```
@@ -207,6 +220,7 @@ feature map, not inherited.
 **Parsers** decode response payloads:
 ```
 parse_battery([0x50, 0xff, 0xff, 0x00])  →  80
+parse_battery_readings([0x3c,0xff,0xff,0x01, ...])  →  [(component=1, level=60), ...]
 parse_cnc([0x0b, 0x07, 0x03])            →  (current=7, max=10)
 parse_anr([0x01, 0x0b])                  →  "high"
 parse_buttons([0x10, 0x04, 0x01, 0x07])  →  ButtonMapping{Action, single_press, VPA}
@@ -258,6 +272,8 @@ sequenceDiagram
 3. Modalias product ID maps to a known device type
 
 Connected devices are preferred over paired-but-disconnected.
+When a caller supplies a MAC explicitly, it must also supply the device config
+key; the type can only be detected while discovering the MAC.
 
 ## Error Handling
 
@@ -317,7 +333,7 @@ graph TD
     CAT[Device Catalog<br/>known BMAP devices] --> SUP[Supported<br/>config ≠ None]
     CAT --> UNSUP[Recognized but Unsupported<br/>config = None]
     SUP --> DISC[Discovery<br/>PID → config lookup]
-    SUP --> CFG[Device Configs<br/>qc_ultra2, qc_prince, qc35]
+    SUP --> CFG[Device Configs<br/>qc_ultra2, qc_ultra2_earbuds, qc_prince, qc35]
     DISC --> CONN[connect&#40;&#41;]
     CFG --> CONN
 
@@ -343,9 +359,10 @@ Each catalog entry carries:
 
 ```
 lookup_device(0x4082)    → BoseDevice{wolverine, "QuietComfort Ultra Headphones (2nd Gen)", config="qc_ultra2"}
+lookup_device(0x4062)    → BoseDevice{edith, "QuietComfort Ultra Earbuds (2nd Gen)", config="qc_ultra2_earbuds"}
 lookup_device(0x4075)    → BoseDevice{prince, "QuietComfort Headphones", config="qc_prince"}
 is_supported(0x4024)     → False (NCH 700: recognized, no config yet)
-supported_devices()      → [wolfcastle, baywolf, edith, prince, wolverine]
+supported_devices()      → [wolfcastle, baywolf, duran, prince, wolverine, lando, edith, serena]
 known_devices()          → full catalog
 usb_ids(0x4082)          → (0x05A7, 0x4082)
 modalias(0x4082)         → "bluetooth:v05A7p4082d0000"
@@ -368,12 +385,13 @@ a default config since they don't have a tested implementation yet.
 |-----|----------|---------|--------|
 | `0x400C` | wolfcastle | QuietComfort 35 | `qc35` |
 | `0x4020` | baywolf | QuietComfort 35 II | `qc35` |
-| `0x4062` | edith | QuietComfort Ultra Earbuds (2nd Gen) | `qc_ultra2` |
+| `0x4062` | edith | QuietComfort Ultra Earbuds (2nd Gen) | `qc_ultra2_earbuds` |
 | `0x4075` | prince | QuietComfort Headphones | `qc_prince` |
 | `0x402F` | lando | QuietComfort Earbuds | `qc_earbuds` |
 | `0x4039` | duran | QuietComfort 45 | `qc45` (inferred, untested) |
 | `0x4068` | serena | Ultra Open Earbuds | `ultra_open` (partial) |
 | `0x4082` | wolverine | QuietComfort Ultra Headphones (2nd Gen) | `qc_ultra2` |
+| `0x4083` | unconfirmed | QuietComfort Headphones (2nd Gen) | `qc_ultra2` |
 
 ### Known Unsupported (Future Targets)
 
@@ -414,6 +432,7 @@ pybmap/
 ├── protocol.py          # Packet codec (bmap_packet, parse_response)
 ├── transport.py         # RfcommTransport (AF_BLUETOOTH socket)
 ├── connection.py        # BmapConnection class
+├── cli.py               # bosectl command-line interface
 ├── discovery.py         # find_bmap_device() via bluetoothctl
 ├── constants.py         # Operators, error codes, button/action/language tables
 ├── types.py             # NamedTuples (BmapResponse, ModeConfig, ButtonMapping, etc.)
@@ -422,7 +441,11 @@ pybmap/
     ├── __init__.py      # Device registry (DEVICES dict, get_device())
     ├── parsers.py       # Shared parser/builder functions
     ├── qc_ultra2.py     # QC Ultra 2 config (module-level constants)
+    ├── qc_ultra2_earbuds.py # QC Ultra 2 Earbuds config (shared layout)
     ├── qc_prince.py     # QuietComfort Headphones / prince config
+    ├── qc45.py          # QC45 config
+    ├── qc_earbuds.py    # QuietComfort Earbuds config
+    ├── ultra_open.py    # Ultra Open Earbuds partial config
     └── qc35.py          # QC35 config (module-level constants)
 ```
 
@@ -459,7 +482,7 @@ rust/src/
 ├── connection.rs        # BmapConnection<T: Transport> generic struct
 ├── discovery.rs         # find_bmap_device() via bluetoothctl
 ├── device.rs            # DeviceConfig struct, all parsers/builders
-├── devices.rs           # qc_ultra2() / qc35() factory functions
+├── devices.rs           # qc_ultra2() / qc_ultra2_earbuds() / qc35()
 ├── error.rs             # BmapError enum, BmapResult type alias
 └── main.rs              # CLI binary (bmapctl)
 ```
@@ -514,7 +537,7 @@ cpp/src/
 ├── transport.cpp        # RfcommTransport (BlueZ sockets)
 ├── connection.h         # BmapConnection class (header-only)
 ├── device.h             # DeviceConfig, all parsers/builders (header-only)
-├── devices.h            # qc_ultra2() / qc35() inline functions
+├── devices.h            # qc_ultra2() / qc_ultra2_earbuds() / qc35()
 ├── discovery.h          # find_bmap_device() declaration
 ├── discovery.cpp        # Discovery implementation
 └── main.cpp             # CLI binary (bmapctl)

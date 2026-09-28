@@ -42,6 +42,10 @@ pub const CATALOG: &[BoseDevice] = &[
     BoseDevice { product_id: 0x4066, codename: "lonestarr",  name: "QuietComfort Ultra Headphones",          category: Category::Headphones, config: None },
     BoseDevice { product_id: 0x4075, codename: "prince",     name: "QuietComfort Headphones",                category: Category::Headphones, config: Some("qc_prince") },
     BoseDevice { product_id: 0x4082, codename: "wolverine",  name: "QuietComfort Ultra Headphones (2nd Gen)", category: Category::Headphones, config: Some("qc_ultra2") },
+    // Codename unconfirmed. Firmware 8.x, MAC prefix 68:F2:1F (wolverine family),
+    // RFCOMM channel 2, 48-byte STATUS / 40-byte SETGET ModeConfig — same BMAP
+    // layout as QC Ultra 2, including the Immersion preset mode.
+    BoseDevice { product_id: 0x4083, codename: "unconfirmed", name: "QuietComfort Headphones (2nd Gen)",     category: Category::Headphones, config: Some("qc_ultra2") },
     // Earbuds
     BoseDevice { product_id: 0x4012, codename: "ice",        name: "SoundSport",                             category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4013, codename: "flurry",     name: "SoundSport Pulse",                       category: Category::Earbuds, config: None },
@@ -54,7 +58,7 @@ pub const CATALOG: &[BoseDevice] = &[
     BoseDevice { product_id: 0x404C, codename: "celine_ii",  name: "Frames (2nd Gen)",                       category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4060, codename: "olivia",     name: "Frames Tempo",                           category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4061, codename: "vedder",     name: "Frames",                                 category: Category::Earbuds, config: None },
-    BoseDevice { product_id: 0x4062, codename: "edith",      name: "QuietComfort Ultra Earbuds (2nd Gen)",   category: Category::Earbuds, config: Some("qc_ultra2") },
+    BoseDevice { product_id: 0x4062, codename: "edith",      name: "QuietComfort Ultra Earbuds (2nd Gen)",   category: Category::Earbuds, config: Some("qc_ultra2_earbuds") },
     BoseDevice { product_id: 0x4064, codename: "smalls",     name: "QuietComfort Earbuds II",                category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4068, codename: "serena",     name: "Ultra Open Earbuds",                     category: Category::Earbuds, config: Some("ultra_open") },
     BoseDevice { product_id: 0x4072, codename: "scotty",     name: "QuietComfort Ultra Earbuds",             category: Category::Earbuds, config: None },
@@ -130,6 +134,13 @@ mod tests {
     fn test_lookup_qc_ultra2_earbuds() {
         let dev = lookup_device(0x4062).unwrap();
         assert_eq!(dev.codename, "edith");
+        assert_eq!(dev.config, Some("qc_ultra2_earbuds"));
+    }
+
+    #[test]
+    fn test_lookup_qc_headphones_gen2() {
+        let dev = lookup_device(0x4083).unwrap();
+        assert_eq!(dev.name, "QuietComfort Headphones (2nd Gen)");
         assert_eq!(dev.config, Some("qc_ultra2"));
     }
 
@@ -149,6 +160,7 @@ mod tests {
     fn test_is_supported() {
         assert!(is_supported(0x4082)); // wolverine
         assert!(is_supported(0x4062)); // edith
+        assert!(is_supported(0x4083)); // QC Headphones (2nd Gen)
         assert!(is_supported(0x4075)); // prince
         assert!(is_supported(0x402F)); // lando
         assert!(is_supported(0x4039)); // duran

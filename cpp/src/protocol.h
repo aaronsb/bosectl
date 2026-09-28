@@ -90,13 +90,15 @@ inline std::vector<uint8_t> bmap_packet(uint8_t fblock, uint8_t func,
 
 inline std::optional<BmapResponse> parse_response(const std::vector<uint8_t>& data) {
     if (data.size() < 4) return std::nullopt;
+    auto raw_op = data[2] & 0x0F;
+    if (raw_op > static_cast<uint8_t>(Operator::Processing)) return std::nullopt;
     BmapResponse resp;
     resp.fblock = data[0];
     resp.func = data[1];
-    resp.op = static_cast<Operator>(data[2] & 0x0F);
+    resp.op = static_cast<Operator>(raw_op);
     uint8_t length = data[3];
-    size_t end = std::min<size_t>(4 + length, data.size());
-    resp.payload.assign(data.begin() + 4, data.begin() + end);
+    if (data.size() < 4 + length) return std::nullopt;
+    resp.payload.assign(data.begin() + 4, data.begin() + 4 + length);
     return resp;
 }
 
@@ -107,7 +109,9 @@ inline std::vector<BmapResponse> parse_all_responses(const std::vector<uint8_t>&
         BmapResponse resp;
         resp.fblock = data[pos];
         resp.func = data[pos + 1];
-        resp.op = static_cast<Operator>(data[pos + 2] & 0x0F);
+        auto raw_op = data[pos + 2] & 0x0F;
+        if (raw_op > static_cast<uint8_t>(Operator::Processing)) break;
+        resp.op = static_cast<Operator>(raw_op);
         uint8_t length = data[pos + 3];
         if (pos + 4 + length > data.size()) break;
         resp.payload.assign(data.begin() + pos + 4, data.begin() + pos + 4 + length);

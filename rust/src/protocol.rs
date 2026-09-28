@@ -113,8 +113,10 @@ pub fn parse_response(data: &[u8]) -> Option<BmapResponse> {
     let func = data[1];
     let op = Operator::from_u8(data[2])?;
     let length = data[3] as usize;
-    let end = std::cmp::min(4 + length, data.len());
-    let payload = data[4..end].to_vec();
+    if data.len() < 4 + length {
+        return None;
+    }
+    let payload = data[4..4 + length].to_vec();
     Some(BmapResponse { fblock, func, op, payload })
 }
 
@@ -178,6 +180,8 @@ mod tests {
     #[test]
     fn test_parse_response_too_short() {
         assert!(parse_response(&[1, 2]).is_none());
+        assert!(parse_response(&[2, 2, 0x03, 4, 80, 0xff]).is_none());
+        assert!(parse_response(&[2, 2, 0x08, 0]).is_none());
     }
 
     #[test]
@@ -188,6 +192,16 @@ mod tests {
         assert_eq!(responses.len(), 2);
         assert_eq!(responses[0].func, 6);
         assert_eq!(responses[1].func, 3);
+    }
+
+    #[test]
+    fn test_parse_all_stops_at_unknown_operator() {
+        let mut data = vec![31, 6, 0x03, 2, 0xAA, 0xBB];
+        data.extend_from_slice(&[31, 3, 0x08, 1, 0x00]);
+        data.extend_from_slice(&[31, 3, 0x06, 1, 0x00]);
+        let responses = parse_all_responses(&data);
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].func, 6);
     }
 
     #[test]

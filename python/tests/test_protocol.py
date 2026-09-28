@@ -60,6 +60,12 @@ class TestParseResponse:
         assert parse_response(bytes([1, 2, 3])) is None
         assert parse_response(bytes()) is None
 
+    def test_truncated_payload(self):
+        assert parse_response(bytes([2, 2, OP_STATUS, 4, 80, 0xff])) is None
+
+    def test_invalid_operator(self):
+        assert parse_response(bytes([2, 2, 0x08, 0])) is None
+
     def test_status_with_payload(self):
         payload = bytes([0x50, 0xff, 0xff, 0x00])  # Battery STATUS
         data = bytes([2, 2, 0x03, len(payload)]) + payload
@@ -92,6 +98,14 @@ class TestParseAllResponses:
         assert responses[0].payload == bytes([0xAA, 0xBB])
         assert responses[1].func == 3
         assert responses[1].payload == bytes([0x00])
+
+    def test_stops_at_unknown_operator(self):
+        pkt1 = bytes([31, 6, 0x03, 2, 0xAA, 0xBB])
+        unknown = bytes([31, 3, 0x08, 1, 0x00])
+        pkt3 = bytes([31, 3, 0x06, 1, 0x00])
+        responses = parse_all_responses(pkt1 + unknown + pkt3)
+        assert len(responses) == 1
+        assert responses[0].func == 6
 
     def test_empty_data(self):
         assert parse_all_responses(bytes()) == []

@@ -1,11 +1,14 @@
 """Tests for QC Ultra 2 device configuration."""
 
-from pybmap.devices import qc_ultra2, qc_prince, DEVICES, get_device
+from pybmap.devices import qc_ultra2, qc_ultra2_earbuds, qc_prince, DEVICES, get_device
 
 
 class TestDeviceRegistry:
     def test_qc_ultra2_registered(self):
         assert "qc_ultra2" in DEVICES
+
+    def test_qc_ultra2_earbuds_registered(self):
+        assert "qc_ultra2_earbuds" in DEVICES
 
     def test_qc35_registered(self):
         assert "qc35" in DEVICES
@@ -30,6 +33,10 @@ class TestQCUltra2Config:
     def test_has_device_info(self):
         assert qc_ultra2.DEVICE_INFO["name"] == "Bose QC Ultra Headphones 2"
         assert qc_ultra2.DEVICE_INFO["product_id"] == 0x4082
+
+    def test_qc_ultra2_earbuds_config(self):
+        assert qc_ultra2_earbuds.DEVICE_INFO["name"] == "Bose QuietComfort Ultra Earbuds (2nd Gen)"
+        assert qc_ultra2_earbuds.BATTERY_COMPONENTS == {1: "Right", 2: "Left", 3: "Case"}
 
     def test_has_all_features(self):
         expected = [

@@ -17,6 +17,9 @@ pub fn qc_ultra2() -> DeviceConfig {
         rfcomm_channel: 2,
         init_packet: None,
         battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -51,6 +54,21 @@ pub fn qc_ultra2() -> DeviceConfig {
     }
 }
 
+/// Bose QuietComfort Ultra Earbuds 2 configuration -- edith, product ID 0x4062.
+/// Shares the QC Ultra 2 protocol layout and reports separate battery cells.
+pub fn qc_ultra2_earbuds() -> DeviceConfig {
+    let mut c = qc_ultra2();
+    c.info = DeviceInfo {
+        name: "Bose QuietComfort Ultra Earbuds (2nd Gen)",
+        codename: "edith",
+        platform: "OTG-QCC-384",
+    };
+    c.battery_components = &[(1, "Right"), (2, "Left"), (3, "Case")];
+    c.battery_aggregate_id = Some(4);
+    c.battery_aggregate_sources = &[1, 2];
+    c
+}
+
 /// Bose QuietComfort Headphones configuration -- prince, product ID 0x4075.
 /// Verified against firmware 1.0.6-80+f5f219b.
 /// BMAP over RFCOMM channel 8 with 47-byte ModeConfig STATUS responses.
@@ -64,11 +82,14 @@ pub fn qc_prince() -> DeviceConfig {
         rfcomm_channel: 8,
         init_packet: None,
         battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
         cnc: Some(Addr(1, 5)),
-        eq: None,
+        eq: Some(Addr(1, 7)),
         buttons: None,
         multipoint: None,
         sidetone: None,
@@ -110,6 +131,9 @@ pub fn qc35() -> DeviceConfig {
         rfcomm_channel: 8,
         init_packet: Some(Addr(0, 1)),  // GET [0.1] required before QC35 responds
         battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -157,6 +181,9 @@ pub fn qc_earbuds() -> DeviceConfig {
         rfcomm_channel: 8,
         init_packet: None,
         battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -202,6 +229,9 @@ pub fn qc45() -> DeviceConfig {
         rfcomm_channel: 8,
         init_packet: Some(Addr(0, 1)),
         battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -248,6 +278,9 @@ pub fn ultra_open() -> DeviceConfig {
         rfcomm_channel: 2,
         init_packet: None,
         battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
         firmware: Some(Addr(0, 5)),
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
@@ -280,6 +313,7 @@ pub fn ultra_open() -> DeviceConfig {
 pub fn get_device(name: &str) -> Option<DeviceConfig> {
     match name {
         "qc_ultra2" => Some(qc_ultra2()),
+        "qc_ultra2_earbuds" => Some(qc_ultra2_earbuds()),
         "qc35" => Some(qc35()),
         "qc_prince" => Some(qc_prince()),
         "qc_earbuds" => Some(qc_earbuds()),
@@ -310,6 +344,7 @@ mod tests {
         assert_eq!(dev.info.codename, "prince");
         assert_eq!(dev.rfcomm_channel, 8);
         assert!(dev.mode_config.is_some());
+        assert!(dev.eq.is_some());
         assert!(dev.audio_settings.is_none());
         assert!(!dev.supports_anc_toggle);
         assert_eq!(dev.editable_slots, &[2, 3]);
@@ -326,12 +361,24 @@ mod tests {
     #[test]
     fn test_get_device() {
         assert!(get_device("qc_ultra2").is_some());
+        assert!(get_device("qc_ultra2_earbuds").is_some());
         assert!(get_device("qc35").is_some());
         assert!(get_device("qc_prince").is_some());
         assert!(get_device("qc_earbuds").is_some());
         assert!(get_device("qc45").is_some());
         assert!(get_device("ultra_open").is_some());
         assert!(get_device("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_qc_ultra2_earbuds_identity_and_battery_components() {
+        let dev = qc_ultra2_earbuds();
+        assert_eq!(dev.info.codename, "edith");
+        assert_eq!(dev.battery_components, &[(1, "Right"), (2, "Left"), (3, "Case")]);
+        assert_eq!(dev.battery_aggregate_id, Some(4));
+        assert_eq!(dev.battery_aggregate_sources, &[1, 2]);
+        assert_eq!(dev.preset_modes.len(), 4);
+        assert!(dev.audio_settings.is_some());
     }
 
     #[test]

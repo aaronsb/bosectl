@@ -28,6 +28,12 @@ class TestLookup:
     def test_qc_ultra2_earbuds(self):
         dev = lookup_device(0x4062)
         assert dev.codename == "edith"
+        assert dev.config == "qc_ultra2_earbuds"
+
+    def test_qc_headphones_gen2(self):
+        dev = lookup_device(0x4083)
+        assert dev is not None
+        assert dev.name == "QuietComfort Headphones (2nd Gen)"
         assert dev.config == "qc_ultra2"
 
     def test_quietcomfort_headphones_prince(self):
@@ -56,6 +62,7 @@ class TestSupport:
     def test_is_supported(self):
         assert is_supported(0x4082)  # wolverine
         assert is_supported(0x4062)  # edith
+        assert is_supported(0x4083)  # QC Headphones (2nd Gen)
         assert is_supported(0x4075)  # prince
         assert is_supported(0x4020)  # baywolf
         assert is_supported(0x400C)  # wolfcastle

@@ -53,8 +53,10 @@ impl<T: Transport> BmapConnection<T> {
     fn get(&self, addr: Addr) -> BmapResult<Vec<u8>> {
         let pkt = bmap_packet(addr.0, addr.1, Operator::Get, &[]);
         let data = self.transport.send_recv(&pkt)?;
-        let resp = parse_response(&data)
-            .ok_or_else(|| BmapError::Timeout("Empty response".into()))?;
+        let resp = parse_response(&data).ok_or_else(|| BmapError::Device {
+            message: "Invalid or empty response".into(),
+            code: 0,
+        })?;
         self.check_address(&resp, addr)?;
         self.check_error(&resp)?;
         Ok(resp.payload)
@@ -105,11 +107,58 @@ impl<T: Transport> BmapConnection<T> {
 
     /// Battery percentage.
     pub fn battery(&self) -> BmapResult<u8> {
+        Ok(self.battery_status()?.aggregate)
+    }
+
+    /// Aggregate and component levels from one battery response.
+    pub fn battery_status(&self) -> BmapResult<BatteryStatus> {
         let addr = self.addr(self.config.battery)?;
         let payload = self.get(addr)?;
-        parse_battery(&payload).ok_or_else(|| BmapError::Device {
-            message: "Empty battery response".into(), code: 0,
-        })
+        if let Some(component_id) = self.config.battery_aggregate_id {
+            let readings =
+                parse_battery_readings(&payload).map_err(|message| BmapError::Device {
+                    message: message.into(),
+                    code: 0,
+                })?;
+            let sources = self.config.battery_aggregate_sources;
+            let aggregate = readings
+                .iter()
+                .find(|reading| reading.component_id == component_id)
+                .map(|reading| reading.level)
+                // Aggregate missing or 0xFF: fall back to the lowest bud reading.
+                .or_else(|| {
+                    readings
+                        .iter()
+                        .filter(|reading| sources.contains(&reading.component_id))
+                        .map(|reading| reading.level)
+                        .min()
+                })
+                .ok_or_else(|| BmapError::Device {
+                    message: format!(
+                        "Battery response missing aggregate component {}",
+                        component_id
+                    ),
+                    code: 0,
+                })?;
+            Ok(BatteryStatus {
+                aggregate,
+                readings,
+            })
+        } else {
+            let aggregate = parse_battery(&payload).ok_or_else(|| BmapError::Device {
+                message: "Empty battery response".into(),
+                code: 0,
+            })?;
+            Ok(BatteryStatus {
+                aggregate,
+                readings: Vec::new(),
+            })
+        }
+    }
+
+    /// Component battery readings, when the device reports multiple cells.
+    pub fn battery_readings(&self) -> BmapResult<Vec<BatteryReading>> {
+        Ok(self.battery_status()?.readings)
     }
 
     /// Firmware version string.
@@ -238,9 +287,11 @@ impl<T: Transport> BmapConnection<T> {
         };
         let (cnc_level, cnc_max) = self.cnc().unwrap_or((0, 10));
         let (prompts_enabled, prompts_language) = self.prompts().unwrap_or((false, "Unknown"));
+        let battery = self.battery_status()?;
 
         Ok(DeviceStatus {
-            battery: self.battery()?,
+            battery: battery.aggregate,
+            battery_readings: battery.readings,
             mode: current_name,
             mode_idx: current_idx,
             cnc_level,
@@ -701,6 +752,151 @@ mod tests {
     }
 
     #[test]
+    fn test_battery_rejects_empty_response() {
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.battery(), Err(BmapError::Device { message, .. })
+            if message.contains("Empty battery response")));
+    }
+
+    #[test]
+    fn test_battery_rejects_invalid_frame() {
+        let mut t = MockTransport::new();
+        t.responses.insert((2, 2), vec![2, 2, 0x08, 0]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.battery(), Err(BmapError::Device { message, .. })
+            if message.contains("Invalid or empty response")));
+    }
+
+    #[test]
+    fn test_battery_readings() {
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[
+            0x50,0xff,0xff,0x03, 0x3c,0xff,0xff,0x01,
+            0x3c,0xff,0xff,0x02, 0x46,0xff,0xff,0x04,
+        ]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2_earbuds());
+        let battery = dev.battery_status().unwrap();
+        assert_eq!(battery.readings, vec![
+            BatteryReading { component_id: 3, level: 80 },
+            BatteryReading { component_id: 1, level: 60 },
+            BatteryReading { component_id: 2, level: 60 },
+            BatteryReading { component_id: 4, level: 70 },
+        ]);
+        assert_eq!(battery.aggregate, 70);
+        assert_eq!(dev.transport.sent.borrow().len(), 1);
+    }
+
+    fn earbuds_battery_fixture() -> Vec<u8> {
+        let text = include_str!(
+            "../../fixtures/packets/qc-ultra2-earbuds/battery-status.hex"
+        )
+        .trim();
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn fixture_bud_readings() -> Vec<BatteryReading> {
+        vec![
+            BatteryReading { component_id: 1, level: 60 },
+            BatteryReading { component_id: 2, level: 60 },
+            BatteryReading { component_id: 3, level: 80 },
+        ]
+    }
+
+    #[test]
+    fn test_battery_falls_back_to_lowest_bud_without_aggregate() {
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[
+            0x3c,0xff,0xff,0x01, 0x50,0xff,0xff,0x02,
+            0x28,0xff,0xff,0x03,
+        ]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2_earbuds());
+        // Case (3) is lower but is not a bud; right bud (1) is the lowest.
+        assert_eq!(dev.battery().unwrap(), 60);
+    }
+
+    #[test]
+    fn test_battery_rejects_response_without_valid_buds() {
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[
+            0xff,0xff,0xff,0x01, 0xff,0xff,0xff,0x02,
+            0xff,0xff,0xff,0x04, 0x28,0xff,0xff,0x03,
+        ]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2_earbuds());
+        assert!(matches!(dev.battery(), Err(BmapError::Device { message, .. })
+            if message.contains("aggregate component 4")));
+    }
+
+    #[test]
+    fn test_status_falls_back_when_fixture_aggregate_is_invalid() {
+        let mut payload = earbuds_battery_fixture();
+        for record in payload.chunks_exact_mut(4) {
+            if record[3] == 4 {
+                record[0] = 0xff;
+            }
+        }
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &payload);
+        let status = BmapConnection::new(t, devices::qc_ultra2_earbuds()).status().unwrap();
+        assert_eq!(status.battery, 60);
+        assert_eq!(status.battery_readings, fixture_bud_readings());
+    }
+
+    #[test]
+    fn test_status_falls_back_when_fixture_aggregate_is_absent() {
+        let payload: Vec<u8> = earbuds_battery_fixture()
+            .chunks_exact(4)
+            .filter(|record| record[3] != 4)
+            .flatten()
+            .copied()
+            .collect();
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &payload);
+        let status = BmapConnection::new(t, devices::qc_ultra2_earbuds()).status().unwrap();
+        assert_eq!(status.battery, 60);
+        assert_eq!(status.battery_readings, fixture_bud_readings());
+    }
+
+    #[test]
+    fn test_status_rejects_battery_without_valid_readings() {
+        // A failed read must not surface as a measured 0%.
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[
+            0xff,0xff,0xff,0x01, 0xff,0xff,0xff,0x02,
+            0xff,0xff,0xff,0x04, 0xff,0xff,0xff,0x03,
+        ]);
+        t.add(31, 3, 0x03, &[0x01]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2_earbuds());
+        assert!(matches!(dev.status(), Err(BmapError::Device { message, .. })
+            if message.contains("aggregate component 4")));
+    }
+
+    #[test]
+    fn test_status_uses_one_battery_response() {
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[
+            0x50,0xff,0xff,0x03, 0x3c,0xff,0xff,0x01,
+            0x46,0xff,0xff,0x04, 0x3c,0xff,0xff,0x02,
+        ]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2_earbuds());
+        let status = dev.status().unwrap();
+        assert_eq!(status.battery, 70);
+        assert_eq!(status.battery_readings.len(), 4);
+        let battery_requests = dev
+            .transport
+            .sent
+            .borrow()
+            .iter()
+            .filter(|packet| packet.starts_with(&[2, 2]))
+            .count();
+        assert_eq!(battery_requests, 1);
+    }
+
+    #[test]
     fn test_firmware() {
         assert_eq!(mock_qc_ultra2().firmware().unwrap(), "8.2.20+g34cf029");
     }
@@ -764,6 +960,7 @@ mod tests {
     fn test_status() {
         let s = mock_qc_ultra2().status().unwrap();
         assert_eq!(s.battery, 80);
+        assert!(s.battery_readings.is_empty());
         assert_eq!(s.mode, "quiet");
         assert_eq!(s.cnc_level, 7);
         assert_eq!(s.cnc_max, 10);

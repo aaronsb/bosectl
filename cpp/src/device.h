@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "protocol.h"
@@ -59,6 +61,16 @@ struct ButtonMapping {
     std::string action_name;
 };
 
+struct BatteryReading {
+    uint8_t component_id;
+    uint8_t level;
+};
+
+struct BatteryStatus {
+    uint8_t aggregate;
+    std::vector<BatteryReading> readings;
+};
+
 struct AudioSource {
     std::string source_type;
     std::string source_mac; // empty if not bluetooth
@@ -66,6 +78,7 @@ struct AudioSource {
 
 struct DeviceStatus {
     uint8_t battery;
+    std::vector<BatteryReading> battery_readings;
     std::string mode;
     uint8_t mode_idx;
     uint8_t cnc_level;
@@ -91,6 +104,12 @@ struct DeviceConfig {
     /// Init packet required before device responds (QC35 needs GET [0.1]).
     std::optional<Addr> init_packet;
     std::optional<Addr> battery;
+    /// Component IDs and display labels for multi-cell battery responses.
+    std::vector<std::pair<uint8_t, std::string>> battery_components;
+    /// Component ID used for the generic aggregate battery value.
+    std::optional<uint8_t> battery_aggregate_id;
+    /// Component IDs whose lowest level stands in for a missing aggregate.
+    std::vector<uint8_t> battery_aggregate_sources;
     std::optional<Addr> firmware;
     std::optional<Addr> product_name;
     std::optional<Addr> voice_prompts;
@@ -126,6 +145,26 @@ struct DeviceConfig {
 
 inline uint8_t parse_battery(const std::vector<uint8_t>& p) {
     return p.empty() ? 0 : p[0];
+}
+
+/// Parse four-byte component battery records from [2.2].
+inline std::vector<BatteryReading> parse_battery_readings(const std::vector<uint8_t>& p) {
+    if (p.size() % 4 != 0) {
+        throw std::invalid_argument("Malformed battery response");
+    }
+    std::vector<BatteryReading> readings;
+    std::vector<uint8_t> seen_components;
+    for (size_t i = 0; i + 3 < p.size(); i += 4) {
+        for (auto component_id : seen_components) {
+            if (component_id == p[i + 3]) {
+                throw std::invalid_argument(
+                    "Duplicate battery component " + std::to_string(p[i + 3]));
+            }
+        }
+        seen_components.push_back(p[i + 3]);
+        if (p[i] <= 100) readings.push_back({p[i + 3], p[i]});
+    }
+    return readings;
 }
 
 inline std::string parse_firmware(const std::vector<uint8_t>& p) {

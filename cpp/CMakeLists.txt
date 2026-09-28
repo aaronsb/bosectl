@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(bmap VERSION 0.4.0 LANGUAGES CXX)
+project(bmap VERSION 0.4.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,5 +43,10 @@ add_executable(bmap_tests
     tests/test_catalog.cpp
     tests/test_transport.cpp
 )
-target_link_libraries(bmap_tests PRIVATE bmap)
+# Linked like bmapctl so tests can call the real connect(); no BT at runtime.
+if(APPLE)
+    target_link_libraries(bmap_tests PRIVATE bmap)
+else()
+    target_link_libraries(bmap_tests PRIVATE bmap bluetooth)
+endif()
 add_test(NAME bmap_tests COMMAND bmap_tests)

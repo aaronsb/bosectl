@@ -60,6 +60,20 @@ pub struct ButtonMapping {
     pub action_name: &'static str,
 }
 
+/// A component battery reading from a device with multiple cells.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatteryReading {
+    pub component_id: u8,
+    pub level: u8,
+}
+
+/// Aggregate and component levels parsed from one battery response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatteryStatus {
+    pub aggregate: u8,
+    pub readings: Vec<BatteryReading>,
+}
+
 /// Audio source information.
 #[derive(Debug, Clone)]
 pub struct AudioSource {
@@ -71,6 +85,7 @@ pub struct AudioSource {
 #[derive(Debug, Clone)]
 pub struct DeviceStatus {
     pub battery: u8,
+    pub battery_readings: Vec<BatteryReading>,
     pub mode: String,
     pub mode_idx: u8,
     pub cnc_level: u8,
@@ -94,6 +109,12 @@ pub struct DeviceConfig {
     /// Init packet required before device responds (Some((fblock, func)) for QC35).
     pub init_packet: Option<Addr>,
     pub battery: Option<Addr>,
+    /// Component IDs and display labels for multi-cell battery responses.
+    pub battery_components: &'static [(u8, &'static str)],
+    /// Component ID used for the generic aggregate battery value.
+    pub battery_aggregate_id: Option<u8>,
+    /// Component IDs whose lowest level stands in for a missing aggregate.
+    pub battery_aggregate_sources: &'static [u8],
     pub firmware: Option<Addr>,
     pub product_name: Option<Addr>,
     pub voice_prompts: Option<Addr>,
@@ -133,6 +154,29 @@ pub struct DeviceConfig {
 
 pub fn parse_battery(payload: &[u8]) -> Option<u8> {
     payload.first().copied()
+}
+
+/// Parse four-byte component battery records from [2.2].
+pub fn parse_battery_readings(payload: &[u8]) -> Result<Vec<BatteryReading>, String> {
+    if payload.len() % 4 != 0 {
+        return Err("Malformed battery response".into());
+    }
+    let mut readings = Vec::new();
+    let mut seen_components = Vec::new();
+    for record in payload.chunks_exact(4) {
+        let component_id = record[3];
+        if seen_components.contains(&component_id) {
+            return Err(format!("Duplicate battery component {}", component_id));
+        }
+        seen_components.push(component_id);
+        if record[0] <= 100 {
+            readings.push(BatteryReading {
+                component_id,
+                level: record[0],
+            });
+        }
+    }
+    Ok(readings)
 }
 
 pub fn parse_firmware(payload: &[u8]) -> String {
@@ -587,10 +631,68 @@ pub fn build_mode_config_39(
 mod tests {
     use super::*;
 
+    fn decode_hex(text: &str) -> Vec<u8> {
+        let text = text.trim();
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
     #[test]
     fn test_parse_battery() {
         assert_eq!(parse_battery(&[0x50, 0xff, 0xff, 0x00]), Some(0x50));
         assert_eq!(parse_battery(&[]), None);
+    }
+
+    #[test]
+    fn test_parse_battery_readings() {
+        let payload = decode_hex(include_str!(
+            "../../fixtures/packets/qc-ultra2-earbuds/battery-status.hex"
+        ));
+        assert_eq!(
+            parse_battery_readings(&payload).unwrap(),
+            vec![
+                BatteryReading {
+                    component_id: 1,
+                    level: 60
+                },
+                BatteryReading {
+                    component_id: 2,
+                    level: 60
+                },
+                BatteryReading {
+                    component_id: 4,
+                    level: 60
+                },
+                BatteryReading {
+                    component_id: 3,
+                    level: 80
+                },
+            ]
+        );
+        assert_eq!(
+            parse_battery_readings(&[
+                0x50,0xff,0xff,0x03, 0x46,0xff,0xff,0x04,
+                0x32,0xff,0xff,0x09, 0x3c,0xff,0xff,0x01,
+                0x3c,0xff,0xff,0x02,
+            ])
+            .unwrap()
+            .iter()
+            .map(|reading| reading.component_id)
+            .collect::<Vec<_>>(),
+            vec![3, 4, 9, 1, 2],
+        );
+        assert_eq!(
+            parse_battery_readings(&[0x50, 0xff]),
+            Err("Malformed battery response".to_string()),
+        );
+        assert_eq!(
+            parse_battery_readings(&[
+                0x3c, 0xff, 0xff, 0x01, 0x50, 0xff, 0xff, 0x01,
+            ]),
+            Err("Duplicate battery component 1".to_string()),
+        );
     }
 
     #[test]

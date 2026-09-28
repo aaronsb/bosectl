@@ -4,7 +4,10 @@ import pytest
 
 import pybmap
 from pybmap.constants import OP_STATUS, OP_PROCESSING, OP_ERROR
-from pybmap.errors import BmapConnectionError, BmapTimeoutError, BmapDeviceError
+from pybmap.errors import (
+    BmapConnectionError, BmapTimeoutError, BmapDeviceError,
+    BmapInvalidArgError,
+)
 from pybmap.devices import qc_prince
 from tests.test_connection import MockTransport
 
@@ -93,6 +96,25 @@ def test_fallback_order_skips_duplicate_of_configured(patch_transport):
     with pytest.raises(BmapConnectionError):
         pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_ultra2")
     assert f.attempts == [2, 8, 9]
+
+
+@pytest.mark.parametrize("device_type", [None, ""])
+def test_explicit_mac_requires_device_type(patch_transport, device_type):
+    f = patch_transport({2: "bmap"})
+    with pytest.raises(BmapInvalidArgError, match="device_type is required"):
+        pybmap.connect(mac="00:11:22:33:44:55", device_type=device_type)
+    assert f.attempts == []
+
+
+def test_empty_mac_uses_discovery(patch_transport, monkeypatch):
+    f = patch_transport({2: "bmap"})
+    monkeypatch.setattr(
+        pybmap, "find_bmap_device",
+        lambda: ("00:11:22:33:44:55", "qc_ultra2"),
+    )
+    dev = pybmap.connect(mac="")
+    dev.close()
+    assert f.attempts == [2]
 
 
 class TestModeSwitchAck:
