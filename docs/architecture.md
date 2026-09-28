@@ -155,7 +155,7 @@ only configured components are rendered.
 | RFCOMM channel | 2 | 8 | 8 |
 | Init packet | None | None | GET [0.1] required |
 | Noise control | CNC [1.5] / live [31.10] | CNC/wind via [31.6] ModeConfig | ANR [1.6] (off/high/wind/low) |
-| EQ | 3-band [1.7] | Not verified | Not supported |
+| EQ | 3-band [1.7] | 3-band [1.7] | Not supported |
 | Spatial audio | [31.6] ModeConfig | Field observed in [31.6] | Not supported |
 | Mode profiles | 7 editable slots (4-10) | 2 editable slots observed (2-3) | None |
 | Sidetone | [1.11] | Not verified | [1.11] |

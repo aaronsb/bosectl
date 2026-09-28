@@ -195,6 +195,12 @@ TEST(qc35_no_eq) {
     ASSERT_FALSE(dev.has_feature("mode_config"));
 }
 
+TEST(prince_has_eq) {
+    auto t = std::make_unique<MockTransport>();
+    BmapConnection dev(std::move(t), qc_prince());
+    ASSERT_TRUE(dev.has_feature("eq"));
+}
+
 TEST(set_name_rejects_long_name) {
     bool threw = false;
     try { mock_qc_ultra2()->set_name(std::string(32, 'x')); }
