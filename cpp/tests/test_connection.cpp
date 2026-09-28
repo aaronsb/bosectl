@@ -537,3 +537,61 @@ TEST(empty_reply_is_device_error_on_every_path) {
     ASSERT_TRUE(throws_with<device_error>([&]{ dev.set_mode("aware"); }, msg));
     ASSERT_TRUE(throws_with<device_error>([&]{ dev.set_eq(0, 0, 0); }, msg));
 }
+
+TEST(late_status_ahead_of_reply_is_skipped) {
+    // prince sends STATUS [31.3] after acking START with PROCESSING.
+    auto raw = new MockTransport();
+    raw->responses[{2, 2}] = {31, 3, 0x03, 1, 0x01, 2, 2, 0x03, 4, 80, 0xff, 0xff, 0x00};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_EQ(dev.battery(), 80);
+}
+
+TEST(only_foreign_frames_is_desync) {
+    auto raw = new MockTransport();
+    raw->responses[{2, 2}] = {31, 3, 0x03, 1, 0x01, 0, 5, 0x03, 1, 0x34};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_TRUE(throws_with<desync_error>([&]{ dev.battery(); }, "[31.3], expected [2.2]"));
+}
+
+TEST(setget_skips_stray_frame) {
+    auto raw = new MockTransport();
+    raw->responses[{1, 10}] = {31, 3, 0x03, 1, 0x01, 1, 10, 0x03, 1, 0x07};
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    dev.set_multipoint(true);
+}
+
+TEST(status_does_not_swallow_desync) {
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, {80, 0xff, 0xff, 0x00});
+    raw->add(31, 3, 0x03, {0x00});
+    raw->responses[{1, 7}] = {0, 5, 0x03, 1, 0x34};
+    BmapConnection d(std::unique_ptr<Transport>(raw), qc_ultra2());
+    ASSERT_TRUE(throws_with<desync_error>([&]{ d.status(); }));
+}
+
+TEST(set_mode_accepts_processing_ack) {
+    auto raw = new MockTransport();
+    raw->add(31, 3, 0x07, {});  // PROCESSING: async ack (prince)
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_prince());
+    dev.set_mode("quiet");
+}
+
+TEST(set_mode_accepts_result) {
+    auto raw = new MockTransport();
+    raw->add(31, 3, 0x06, {0x01});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    dev.set_mode("aware");
+}
+
+TEST(set_mode_rejects_unexpected_op) {
+    auto raw = new MockTransport();
+    raw->add(31, 3, 0x03, {0});  // STATUS where RESULT/PROCESSING expected
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_prince());
+    ASSERT_TRUE(throws_with<device_error>([&]{ dev.set_mode("quiet"); }, "Mode switch failed"));
+}
+
+TEST(unsupported_feature_is_unsupported_error) {
+    auto raw = new MockTransport();
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc35());
+    ASSERT_TRUE(throws_with<unsupported_error>([&]{ dev.eq(); }, "not supported"));
+}

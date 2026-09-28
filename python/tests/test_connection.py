@@ -605,3 +605,31 @@ class TestPresetNameRefused:
                             lambda slot, name, **kw: written.append((slot, name)))
         assert qc45_conn.create_profile("Commute") == 2
         assert written == [(2, "Commute")]
+
+
+class TestStrayFrames:
+    """Late or unsolicited frames ahead of the reply are skipped, not fatal."""
+
+    def test_late_status_ahead_of_reply_is_skipped(self, mock_dev):
+        # prince sends STATUS [31.3] after acking START with PROCESSING.
+        mock_dev._transport.responses[(2, 2)] = (
+            bytes([31, 3, OP_STATUS, 1, 0x01])
+            + bytes([2, 2, OP_STATUS, 4, 80, 0xff, 0xff, 0x00]))
+        assert mock_dev.battery() == 80
+
+    def test_only_foreign_frames_is_desync(self, mock_dev):
+        mock_dev._transport.responses[(2, 2)] = (
+            bytes([31, 3, OP_STATUS, 1, 0x01]) + bytes([0, 5, OP_STATUS, 1, 0x34]))
+        with pytest.raises(BmapDesyncError, match=r"\[31\.3\], expected \[2\.2\]"):
+            mock_dev.battery()
+
+    def test_setget_skips_stray_frame(self, mock_dev):
+        mock_dev._transport.responses[(1, 10)] = (
+            bytes([31, 3, OP_STATUS, 1, 0x01]) + bytes([1, 10, OP_STATUS, 1, 0x07]))
+        mock_dev.set_multipoint(True)
+
+    def test_status_does_not_swallow_desync(self, mock_dev):
+        # A desync on any optional field must fail the snapshot, not default it.
+        mock_dev._transport.responses[(1, 7)] = bytes([0, 5, OP_STATUS, 1, 0x34])
+        with pytest.raises(BmapDesyncError):
+            mock_dev.status()

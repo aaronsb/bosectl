@@ -61,7 +61,22 @@ std::vector<uint8_t> RfcommTransport::send_recv_drain(const std::vector<uint8_t>
     return send_recv_inner(packet, true);
 }
 
+// Drop bytes already waiting on the socket before a new request. Late replies
+// and unsolicited STATUS notifications would otherwise be read as the answer
+// to the next request. Non-blocking and bounded, so a device that streams
+// notifications cannot stall the request; a dead socket is left for the send
+// to report.
+static void discard_pending(int fd) {
+    constexpr int kMaxStaleChunks = 64;
+    uint8_t buf[4096];
+    for (int i = 0; i < kMaxStaleChunks; i++) {
+        if (::recv(fd, buf, sizeof(buf), MSG_DONTWAIT) <= 0) break;
+    }
+}
+
 std::vector<uint8_t> RfcommTransport::send_recv_inner(const std::vector<uint8_t>& packet, bool drain) {
+    discard_pending(fd_);
+
     // Send
     ssize_t sent = ::send(fd_, packet.data(), packet.size(), 0);
     if (sent < 0) {

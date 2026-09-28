@@ -2,13 +2,24 @@
 
 use crate::device::*;
 use crate::error::{BmapError, BmapResult};
-use crate::protocol::{Operator, BmapResponse, bmap_packet, parse_response, parse_all_responses};
+use crate::protocol::{Operator, BmapResponse, bmap_packet, parse_all_responses};
 
 use crate::transport::Transport;
 
 /// High-level connection to a BMAP device.
 /// The device name field is 32 bytes on every BMAP device seen so far.
 pub const MAX_NAME_BYTES: usize = 31;
+
+/// Fall back to `default` for an optional status field, except on a desync:
+/// every later read on the same socket would be wrong too, so a snapshot
+/// built from defaults would hide it.
+fn or_default<V>(result: BmapResult<V>, default: V) -> BmapResult<V> {
+    match result {
+        Ok(v) => Ok(v),
+        Err(e @ BmapError::Desync(_)) => Err(e),
+        Err(_) => Ok(default),
+    }
+}
 
 pub struct BmapConnection<T: Transport> {
     transport: T,
@@ -34,20 +45,31 @@ impl<T: Transport> BmapConnection<T> {
         ))
     }
 
-    /// Reject a response that came from a different address.
+    /// Pick the frame answering `addr` out of a received buffer.
     ///
-    /// The firmware answers in order, so after a reconnect the socket can
-    /// still hold responses queued before the drop and every read returns
-    /// the previous request's answer. Without this check the payload is
-    /// handed to the wrong parser and surfaces as plausible-looking data.
-    fn check_address(&self, resp: &BmapResponse, addr: Addr) -> BmapResult<()> {
-        if resp.fblock != addr.0 || resp.func != addr.1 {
-            return Err(BmapError::Desync(format!(
-                "Response came from [{}.{}], expected [{}.{}]. Reopen the connection.",
-                resp.fblock, resp.func, addr.0, addr.1
-            )));
+    /// The buffer can hold more than the reply: an unsolicited STATUS, or a
+    /// late frame such as the STATUS prince sends after acking START [31.3]
+    /// with PROCESSING. Those are skipped. If frames arrived but none came
+    /// from the requested address, the socket is out of step with the
+    /// requests: after a reconnect it can still hold answers queued before
+    /// the drop, and every read returns the previous request's answer.
+    /// Parsing that as the right reply would surface plausible-looking wrong
+    /// data, so return Desync instead.
+    ///
+    /// Returns `Ok(None)` when the buffer holds no valid frame at all.
+    fn select_reply(&self, data: &[u8], addr: Addr) -> BmapResult<Option<BmapResponse>> {
+        let frames = parse_all_responses(data);
+        let first = frames.first().map(|f| (f.fblock, f.func));
+        if let Some(frame) = frames.into_iter().find(|f| f.fblock == addr.0 && f.func == addr.1) {
+            return Ok(Some(frame));
         }
-        Ok(())
+        match first {
+            Some((fblock, func)) => Err(BmapError::Desync(format!(
+                "Response came from [{}.{}], expected [{}.{}]. Reopen the connection.",
+                fblock, func, addr.0, addr.1
+            ))),
+            None => Ok(None),
+        }
     }
 
     /// Validate a single reply: present, from the right address, not ERROR.
@@ -56,11 +78,10 @@ impl<T: Transport> BmapConnection<T> {
     /// truncated frame, a desynced socket or a device error surface the same
     /// way in all of them.
     fn check_reply(&self, data: &[u8], addr: Addr) -> BmapResult<BmapResponse> {
-        let resp = parse_response(data).ok_or_else(|| BmapError::Device {
+        let resp = self.select_reply(data, addr)?.ok_or_else(|| BmapError::Device {
             message: "Invalid or empty response".into(),
             code: 0,
         })?;
-        self.check_address(&resp, addr)?;
         self.check_error(&resp)?;
         Ok(resp)
     }
@@ -284,10 +305,12 @@ impl<T: Transport> BmapConnection<T> {
         // Single GET for mode index, derive name without extra round trip.
         let (current_idx, current_name) = match self.mode_idx() {
             Ok(idx) => (idx, self.mode_name_from_idx(idx)),
+            Err(e @ BmapError::Desync(_)) => return Err(e),
             Err(_) => (0, String::new()),
         };
-        let (cnc_level, cnc_max) = self.cnc().unwrap_or((0, 10));
-        let (prompts_enabled, prompts_language) = self.prompts().unwrap_or((false, "Unknown"));
+        let (cnc_level, cnc_max) = or_default(self.cnc(), (0, 10))?;
+        let (prompts_enabled, prompts_language) =
+            or_default(self.prompts(), (false, "Unknown"))?;
         let battery = self.battery_status()?;
 
         Ok(DeviceStatus {
@@ -297,12 +320,12 @@ impl<T: Transport> BmapConnection<T> {
             mode_idx: current_idx,
             cnc_level,
             cnc_max,
-            eq: self.eq().unwrap_or_default(),
-            name: self.name().unwrap_or_default(),
-            firmware: self.firmware().unwrap_or_default(),
-            sidetone: self.sidetone().unwrap_or("off").to_string(),
-            multipoint: self.multipoint().unwrap_or(false),
-            auto_pause: self.auto_pause().unwrap_or(false),
+            eq: or_default(self.eq(), Vec::new())?,
+            name: or_default(self.name(), String::new())?,
+            firmware: or_default(self.firmware(), String::new())?,
+            sidetone: or_default(self.sidetone(), "off")?.to_string(),
+            multipoint: or_default(self.multipoint(), false)?,
+            auto_pause: or_default(self.auto_pause(), false)?,
             prompts_enabled,
             prompts_language: prompts_language.to_string(),
         })
@@ -1322,5 +1345,41 @@ mod tests {
         assert!(empty(dev.set_multipoint(true)));
         assert!(empty(dev.set_mode("aware", false)));
         assert!(empty(dev.set_eq(0, 0, 0)));
+    }
+
+    #[test]
+    fn test_late_status_ahead_of_reply_is_skipped() {
+        // prince sends STATUS [31.3] after acking START with PROCESSING.
+        let mut t = MockTransport::new();
+        t.responses.insert((2, 2), vec![31, 3, 0x03, 1, 0x01, 2, 2, 0x03, 4, 80, 0xff, 0xff, 0x00]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert_eq!(dev.battery().unwrap(), 80);
+    }
+
+    #[test]
+    fn test_only_foreign_frames_is_desync() {
+        let mut t = MockTransport::new();
+        t.responses.insert((2, 2), vec![31, 3, 0x03, 1, 0x01, 0, 5, 0x03, 1, 0x34]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.battery(),
+            Err(BmapError::Desync(m)) if m.contains("[31.3], expected [2.2]")));
+    }
+
+    #[test]
+    fn test_setget_skips_stray_frame() {
+        let mut t = MockTransport::new();
+        t.responses.insert((1, 10), vec![31, 3, 0x03, 1, 0x01, 1, 10, 0x03, 1, 0x07]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        dev.set_multipoint(true).unwrap();
+    }
+
+    #[test]
+    fn test_status_does_not_swallow_desync() {
+        let mut t = MockTransport::new();
+        t.add(2, 2, 0x03, &[80, 0xff, 0xff, 0x00]);
+        t.add(31, 3, 0x03, &[0x00]);
+        t.responses.insert((1, 7), vec![0, 5, 0x03, 1, 0x34]);
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        assert!(matches!(dev.status(), Err(BmapError::Desync(_))));
     }
 }

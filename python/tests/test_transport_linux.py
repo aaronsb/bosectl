@@ -20,6 +20,17 @@ from pybmap.errors import BmapConnectionError, BmapTimeoutError
 from pybmap.transport import RfcommTransport
 
 
+@pytest.fixture(autouse=True)
+def _no_stale_discard(request, monkeypatch):
+    """Keep the pre-send discard out of tests that script recv() calls.
+
+    TestLinuxTransportDiscardPending exercises it directly.
+    """
+    if request.cls is not None and request.cls.__name__ == "TestLinuxTransportDiscardPending":
+        return
+    monkeypatch.setattr(RfcommTransport, "_discard_pending", lambda self: None)
+
+
 class TestLinuxTransportInitialization:
     """Test transport initialization and basic setup."""
 
@@ -501,3 +512,36 @@ class TestLinuxTransportIntegration:
 
         # Should have created 3 sockets
         assert mock_socket_class.call_count == 3
+
+
+class TestLinuxTransportDiscardPending:
+    """Bytes left on the socket must not be read as the next reply."""
+
+    @patch("socket.socket")
+    @patch("time.sleep")
+    def test_stale_bytes_dropped_before_send(self, mock_sleep, mock_socket_class):
+        mock_sock = MagicMock()
+        mock_socket_class.return_value = mock_sock
+        stale = b"\x1f\x03\x03\x01\x00"  # late [31.3] STATUS
+        reply = b"\x02\x02\x03\x01\x50"
+        mock_sock.recv.side_effect = [stale, BlockingIOError(), reply]
+
+        transport = RfcommTransport("68:F2:1F:00:00:00")
+        transport.connect()
+        assert transport.send_recv(b"\x02\x02\x01\x00") == reply
+
+        # Non-blocking during the discard, timeout restored before the send.
+        timeouts = [c[0][0] for c in mock_sock.settimeout.call_args_list]
+        assert timeouts == [3.0, 0, 3.0]
+
+    @patch("socket.socket")
+    @patch("time.sleep")
+    def test_discard_is_bounded(self, mock_sleep, mock_socket_class):
+        mock_sock = MagicMock()
+        mock_socket_class.return_value = mock_sock
+        mock_sock.recv.return_value = b"\x1f\x03\x03\x01\x00"
+
+        transport = RfcommTransport("68:F2:1F:00:00:00")
+        transport.connect()
+        transport._discard_pending()
+        assert mock_sock.recv.call_count == RfcommTransport._MAX_STALE_CHUNKS

@@ -181,7 +181,12 @@ public:
             }
         }
         if (idx == 255) throw std::invalid_argument("Unknown mode: " + name);
-        start(addr, {idx, static_cast<uint8_t>(announce ? 1 : 0)});
+        auto resp = start(addr, {idx, static_cast<uint8_t>(announce ? 1 : 0)});
+        // Some firmware (QC Headphones "prince") acks START [31.3] with
+        // PROCESSING and applies the switch asynchronously.
+        if (resp.op != Operator::Result && resp.op != Operator::Processing) {
+            throw device_error("Mode switch failed: " + resp.fmt());
+        }
     }
 
     void set_cnc(uint8_t level) {
@@ -343,24 +348,33 @@ private:
     DeviceConfig config_;
 
     static Addr require(const std::optional<Addr>& opt, const char* name) {
-        if (!opt) throw std::runtime_error(std::string(name) + " not supported on this device");
+        if (!opt) throw unsupported_error(std::string(name) + " not supported on this device");
         return *opt;
     }
 
-    // Reject a response that came from a different address.
+    // Pick the frame answering `addr` out of a received buffer.
     //
-    // The firmware answers in order, so after a reconnect the socket can still
-    // hold responses queued before the drop and every read returns the previous
-    // request's answer. Without this check the payload is handed to the wrong
-    // parser and surfaces as plausible-looking data.
-    void check_address(const BmapResponse& resp, Addr addr) {
-        if (resp.fblock != addr.fblock || resp.func != addr.func) {
-            throw desync_error(
-                "Response came from [" + std::to_string(resp.fblock) + "." +
-                std::to_string(resp.func) + "], expected [" +
-                std::to_string(addr.fblock) + "." + std::to_string(addr.func) +
-                "]. Reopen the connection.");
+    // The buffer can hold more than the reply: an unsolicited STATUS, or a
+    // late frame such as the STATUS prince sends after acking START [31.3]
+    // with PROCESSING. Those are skipped. If frames arrived but none came
+    // from the requested address, the socket is out of step with the
+    // requests: after a reconnect it can still hold answers queued before
+    // the drop, and every read returns the previous request's answer.
+    // Parsing that as the right reply would surface plausible-looking wrong
+    // data, so throw desync_error instead.
+    //
+    // Returns nullopt when the buffer holds no valid frame at all.
+    std::optional<BmapResponse> select_reply(const std::vector<uint8_t>& data, Addr addr) {
+        auto frames = parse_all_responses(data);
+        for (auto& f : frames) {
+            if (f.fblock == addr.fblock && f.func == addr.func) return f;
         }
+        if (frames.empty()) return std::nullopt;
+        throw desync_error(
+            "Response came from [" + std::to_string(frames[0].fblock) + "." +
+            std::to_string(frames[0].func) + "], expected [" +
+            std::to_string(addr.fblock) + "." + std::to_string(addr.func) +
+            "]. Reopen the connection.");
     }
 
     // Validate a single reply: present, from the right address, not ERROR.
@@ -368,9 +382,8 @@ private:
     // truncated frame, a desynced socket or a device error surface the same
     // way in all of them.
     BmapResponse check_reply(const std::vector<uint8_t>& data, Addr addr) {
-        auto resp = parse_response(data);
+        auto resp = select_reply(data, addr);
         if (!resp) throw device_error("Invalid or empty response");
-        check_address(*resp, addr);
         check_error(*resp);
         return *resp;
     }
@@ -415,9 +428,14 @@ private:
         return "custom(" + std::to_string(idx) + ")";
     }
 
+    // Fall back to default_val for an optional status field, except on a
+    // desync: every later read on the same socket would be wrong too, so a
+    // snapshot built from defaults would hide it.
     template<typename T, typename F>
     T safe_call(F fn, T default_val) {
-        try { return fn(); } catch (...) { return default_val; }
+        try { return fn(); }
+        catch (const desync_error&) { throw; }
+        catch (...) { return default_val; }
     }
 
     // Write audio settings via [31.10] preserving non-overridden fields.

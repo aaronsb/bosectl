@@ -457,7 +457,8 @@ This makes feature dispatch a simple dict lookup at runtime.
 ```
 BmapError
 ├── BmapConnectionError   — socket/transport failures
-│   └── BmapDesyncError   — reply came from a different [fblock.func]
+│   └── BmapDesyncError   — no frame in the reply came from the
+│                           requested [fblock.func]
 ├── BmapAuthError         — device returned error code 5
 ├── BmapDeviceError       — device returned other error codes, or an
 │                           invalid/empty reply to GET, SETGET or START
@@ -526,7 +527,7 @@ pub enum BmapError {
     NotFound(String),
     Unsupported(String),
     InvalidArg(String),
-    Desync(String),   // reply came from a different [fblock.func]
+    Desync(String),   // no reply frame came from the requested [fblock.func]
 }
 ```
 
@@ -566,16 +567,17 @@ public:
 
 Tests use a `MockTransport` subclass.
 
-**Error handling** uses standard exceptions plus two typed ones from
-`errors.h`, both derived from `std::runtime_error`: `bmap::device_error`
+**Error handling** uses standard exceptions plus typed ones from
+`errors.h`, all derived from `std::runtime_error`: `bmap::device_error`
 (device ERROR reply, with `code()`, or an invalid/empty reply to GET, SETGET
-or START) and `bmap::desync_error` (reply came from a different
-`[fblock.func]`). Bad caller input throws `std::invalid_argument`. Auth
-errors (code 5) are a `device_error` with `code() == 5`. The `require()` helper
+or START), `bmap::desync_error` (no frame in the reply came from the
+requested `[fblock.func]`) and `bmap::unsupported_error` (feature missing on
+this device). Bad caller input throws `std::invalid_argument`. Auth errors
+(code 5) are a `device_error` with `code() == 5`. The `require()` helper
 converts `std::nullopt` to an exception for unsupported features:
 ```cpp
 static Addr require(const std::optional<Addr>& opt, const char* name) {
-    if (!opt) throw std::runtime_error(std::string(name) + " not supported");
+    if (!opt) throw unsupported_error(std::string(name) + " not supported on this device");
     return *opt;
 }
 ```

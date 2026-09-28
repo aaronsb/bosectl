@@ -1,6 +1,6 @@
 // Exception types for BMAP protocol errors.
 //
-// Both derive from std::runtime_error, so callers that catch
+// All derive from std::runtime_error, so callers that catch
 // std::runtime_error or std::exception keep working.
 #pragma once
 
@@ -20,6 +20,13 @@ public:
 
 private:
     uint8_t code_;
+};
+
+/// The connected device does not have the requested feature.
+/// Mirrors BmapError::Unsupported (Rust).
+class unsupported_error : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
 };
 
 /// A response carried a different address than the request.

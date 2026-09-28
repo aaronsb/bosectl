@@ -254,9 +254,33 @@ else:
                     pass
                 self._sock = None
 
+        # Upper bound on chunks discarded before a send, so a device that
+        # streams notifications cannot stall the request.
+        _MAX_STALE_CHUNKS = 64
+
+        def _discard_pending(self):
+            """Drop bytes already waiting on the socket before a new request.
+
+            Late replies and unsolicited STATUS notifications would otherwise
+            be read as the answer to the next request. Mirrors the queue
+            clear in the macOS transport.
+            """
+            try:
+                self._sock.settimeout(0)
+                for _ in range(self._MAX_STALE_CHUNKS):
+                    if not self._sock.recv(4096):
+                        break  # peer closed; the send will report it
+            except (BlockingIOError, InterruptedError, socket.timeout):
+                pass
+            except OSError:
+                pass  # a dead socket fails the send with a clear error
+            finally:
+                self._sock.settimeout(self.timeout)
+
         def send_recv(self, packet, drain=False):
             if not self._sock:
                 raise BmapConnectionError("Not connected")
+            self._discard_pending()
             try:
                 self._sock.send(packet)
                 time.sleep(0.2)

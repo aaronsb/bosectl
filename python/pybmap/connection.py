@@ -16,7 +16,7 @@ from .constants import (
     OP_PROCESSING, SIDETONE_NAMES, SIDETONE_VALUES, SPATIAL_VALUES,
     VOICE_LANGUAGES,
 )
-from .protocol import bmap_packet, parse_response, parse_all_responses, fmt_response
+from .protocol import bmap_packet, parse_all_responses, fmt_response
 from .errors import (
     BmapError, BmapAuthError, BmapDeviceError, BmapDesyncError,
     BmapInvalidArgError,
@@ -57,32 +57,40 @@ class BmapConnection:
             )
         return features[name]
 
-    def _check_address(self, parsed, fblock, func):
-        """Reject a response that came from a different address.
+    def _select_reply(self, data, fblock, func):
+        """Pick the frame answering [fblock.func] out of a received buffer.
 
-        The firmware answers in order, so after a reconnect the socket can
-        still hold responses queued before the drop and every read returns
-        the previous request's answer. Without this check the payload is
-        handed to the wrong parser and surfaces as plausible-looking data.
+        The buffer can hold more than the reply: an unsolicited STATUS, or a
+        late frame such as the STATUS prince sends after acking START [31.3]
+        with PROCESSING. Those are skipped. If frames arrived but none came
+        from the requested address, the socket is out of step with the
+        requests: after a reconnect it can still hold answers queued before
+        the drop, and every read returns the previous request's answer.
+        Parsing that as the right reply would surface plausible-looking wrong
+        data, so raise instead.
+
+        Returns None when the buffer holds no valid frame at all.
         """
-        if parsed is None:
-            return None
-        if (parsed.fblock, parsed.func) != (fblock, func):
+        frames = parse_all_responses(data)
+        for frame in frames:
+            if (frame.fblock, frame.func) == (fblock, func):
+                return frame
+        if frames:
             raise BmapDesyncError(
                 "Response came from [%d.%d], expected [%d.%d]. "
                 "Reopen the connection."
-                % (parsed.fblock, parsed.func, fblock, func)
+                % (frames[0].fblock, frames[0].func, fblock, func)
             )
-        return parsed
+        return None
 
-    def _check_reply(self, parsed, fblock, func):
+    def _check_reply(self, data, fblock, func):
         """Validate a single reply: present, from the right address, not ERROR.
 
         Every single-reply path (GET, SETGET, START) goes through here so a
         truncated frame, a desynced socket or a device error surface the same
         way in all of them.
         """
-        parsed = self._check_address(parsed, fblock, func)
+        parsed = self._select_reply(data, fblock, func)
         if parsed is None:
             raise BmapDeviceError("Invalid or empty response")
         if parsed.op == OP_ERROR:
@@ -94,7 +102,7 @@ class BmapConnection:
         feat = self._feature(feature_name)
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
-        return self._check_reply(parse_response(resp), fblock, func).payload
+        return self._check_reply(resp, fblock, func).payload
 
     def _get(self, feature_name):
         """Send a GET request and return its parsed payload."""
@@ -112,7 +120,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_SETGET, payload)
         )
-        return self._check_reply(parse_response(resp), fblock, func)
+        return self._check_reply(resp, fblock, func)
 
     def _start(self, feature_name, payload=b""):
         """Send a START request and return the parsed response."""
@@ -121,7 +129,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_START, payload)
         )
-        return self._check_reply(parse_response(resp), fblock, func)
+        return self._check_reply(resp, fblock, func)
 
     def _start_drain(self, feature_name, payload=b""):
         """Send a START request and drain all responses."""
@@ -133,9 +141,15 @@ class BmapConnection:
         return parse_all_responses(data)
 
     def _safe_read(self, method, default):
-        """Call a read method, returning default on BmapError."""
+        """Call a read method, returning default on BmapError.
+
+        A desync is re-raised: every later read on the same socket would be
+        wrong too, so a status snapshot built from defaults would hide it.
+        """
         try:
             return method()
+        except BmapDesyncError:
+            raise
         except BmapError:
             return default
 
@@ -221,7 +235,7 @@ class BmapConnection:
         feat = self._feature("current_mode")
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
-        parsed = self._check_address(parse_response(resp), fblock, func)
+        parsed = self._select_reply(resp, fblock, func)
         if parsed and parsed.payload:
             return parsed.payload[0]
         return None
