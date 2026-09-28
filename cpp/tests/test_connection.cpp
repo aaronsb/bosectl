@@ -1,6 +1,9 @@
 // Tests for BmapConnection with a mock transport.
 #include "test_common.h"
 
+#include <cerrno>
+#include <chrono>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <utility>
@@ -594,4 +597,141 @@ TEST(unsupported_feature_is_unsupported_error) {
     auto raw = new MockTransport();
     BmapConnection dev(std::unique_ptr<Transport>(raw), qc35());
     ASSERT_TRUE(throws_with<unsupported_error>([&]{ dev.eq(); }, "not supported"));
+}
+
+// ── EBUSY / ECONNREFUSED backoff in the channel probe (issue #39) ──────────
+
+namespace {
+
+/// Scripted connect results per channel: 0 = connects, otherwise the errno
+/// thrown. One entry per attempt; the last one repeats.
+struct ProbeHarness {
+    std::map<uint8_t, std::vector<int>> script;
+    std::vector<uint8_t> attempts;
+    std::vector<int> sleeps_ms;
+    uint8_t connected = 0;
+
+    std::unique_ptr<Transport> run() {
+        auto config = qc_ultra2();
+        config.init_packet.reset();
+        return bmap::detail::probe_channels(
+            "00:11:22:33:44:55", config,
+            [this](uint8_t ch) -> std::unique_ptr<Transport> {
+                attempts.push_back(ch);
+                auto& outcomes = script[ch];
+                if (outcomes.empty()) outcomes.push_back(EHOSTDOWN);
+                int code = outcomes.front();
+                if (outcomes.size() > 1) outcomes.erase(outcomes.begin());
+                if (code != 0) {
+                    throw connect_error(std::string("Failed to connect: ") + strerror(code), code);
+                }
+                connected = ch;
+                auto t = std::make_unique<MockTransport>();
+                t->add(0, 5, 0x03, {'1'});
+                return t;
+            },
+            [this](std::chrono::milliseconds d) {
+                sleeps_ms.push_back(static_cast<int>(d.count()));
+            });
+    }
+};
+
+} // namespace
+
+TEST(probe_ebusy_twice_then_success_stays_on_channel) {
+    ProbeHarness h;
+    h.script[2] = {EBUSY, EBUSY, 0};
+    ASSERT_TRUE(h.run() != nullptr);
+    ASSERT_EQ(h.connected, 2);
+    ASSERT_TRUE((h.attempts == std::vector<uint8_t>{2, 2, 2}));
+    ASSERT_TRUE((h.sleeps_ms == std::vector<int>{500, 1000}));
+}
+
+TEST(probe_ebusy_forever_reports_busy) {
+    ProbeHarness h;
+    h.script[2] = {EBUSY};
+    h.script[8] = {EBUSY};
+    h.script[9] = {EBUSY};
+    std::string msg;
+    try { h.run(); }
+    catch (const busy_error& e) {
+        msg = e.what();
+        ASSERT_EQ(e.error_number(), EBUSY);
+        ASSERT_TRUE(bmap::connection_hint(e) == nullptr);
+    }
+    ASSERT_TRUE(msg.find("Headphones busy") != std::string::npos);
+    ASSERT_TRUE(msg.find("No BMAP channel found") == std::string::npos);
+    ASSERT_TRUE(msg.find(strerror(EBUSY)) != std::string::npos);
+    // One try plus three retries per channel, three sleeps per channel.
+    ASSERT_TRUE((h.attempts == std::vector<uint8_t>{2, 2, 2, 2, 8, 8, 8, 8, 9, 9, 9, 9}));
+    ASSERT_TRUE((h.sleeps_ms ==
+                 std::vector<int>{500, 1000, 2000, 500, 1000, 2000, 500, 1000, 2000}));
+}
+
+TEST(probe_busy_on_configured_channel_wins_over_other_errors) {
+    ProbeHarness h;
+    h.script[2] = {EBUSY};
+    h.script[8] = {EHOSTDOWN};
+    h.script[9] = {ECONNREFUSED};
+    bool busy = false;
+    try { h.run(); } catch (const busy_error&) { busy = true; }
+    ASSERT_TRUE(busy);
+    ASSERT_TRUE((h.sleeps_ms == std::vector<int>{500, 1000, 2000, 500, 1000, 2000}));
+}
+
+TEST(probe_econnrefused_then_success) {
+    ProbeHarness h;
+    h.script[2] = {ECONNREFUSED, 0};
+    ASSERT_TRUE(h.run() != nullptr);
+    ASSERT_EQ(h.connected, 2);
+    ASSERT_TRUE((h.attempts == std::vector<uint8_t>{2, 2}));
+    ASSERT_TRUE((h.sleeps_ms == std::vector<int>{500}));
+}
+
+TEST(probe_econnrefused_forever_is_not_reported_as_busy) {
+    ProbeHarness h;
+    h.script[2] = {ECONNREFUSED};
+    h.script[8] = {ECONNREFUSED};
+    h.script[9] = {ECONNREFUSED};
+    std::string msg;
+    bool busy = false;
+    try { h.run(); }
+    catch (const busy_error&) { busy = true; }
+    catch (const std::runtime_error& e) {
+        msg = e.what();
+        ASSERT_TRUE(bmap::connection_hint(e) != nullptr);
+    }
+    ASSERT_FALSE(busy);
+    ASSERT_TRUE(msg.find("No BMAP channel found") != std::string::npos);
+    ASSERT_EQ(h.sleeps_ms.size(), size_t(9));
+}
+
+TEST(probe_non_retryable_error_moves_on_without_sleep) {
+    ProbeHarness h;
+    h.script[2] = {EHOSTDOWN};
+    h.script[8] = {0};
+    ASSERT_TRUE(h.run() != nullptr);
+    ASSERT_EQ(h.connected, 8);
+    ASSERT_TRUE((h.attempts == std::vector<uint8_t>{2, 8}));
+    ASSERT_TRUE(h.sleeps_ms.empty());
+}
+
+TEST(probe_error_without_errno_is_not_retried) {
+    std::vector<uint8_t> attempts;
+    int sleeps = 0;
+    bool threw = false;
+    auto config = qc_ultra2();
+    try {
+        bmap::detail::probe_channels(
+            "00:11:22:33:44:55", config,
+            [&](uint8_t ch) -> std::unique_ptr<Transport> {
+                attempts.push_back(ch);
+                throw std::runtime_error("Invalid MAC address");
+            },
+            [&](std::chrono::milliseconds) { ++sleeps; });
+    } catch (const busy_error&) {
+    } catch (const std::runtime_error&) { threw = true; }
+    ASSERT_TRUE(threw);
+    ASSERT_TRUE((attempts == std::vector<uint8_t>{2, 8, 9}));
+    ASSERT_EQ(sleeps, 0);
 }

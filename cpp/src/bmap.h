@@ -11,12 +11,31 @@
 #include "discovery.h"
 #include "catalog.h"
 
+#include <cerrno>
+#include <chrono>
+#include <functional>
+#include <iterator>
+#include <thread>
+
 namespace bmap {
 
 /// RFCOMM channels BMAP has been observed on. The channel a unit exposes can
 /// vary with firmware and with which profiles bluetoothd has already claimed,
 /// so the device's configured channel is a first guess rather than a fact.
 inline constexpr uint8_t FALLBACK_CHANNELS[] = {2, 8, 9};
+
+/// Backoff before each retry of a channel that answered EBUSY or
+/// ECONNREFUSED: the headset is still tearing down the previous RFCOMM link,
+/// or has not re-listened on the channel yet. The same channel is retried
+/// after each delay before the probe moves on.
+inline constexpr std::chrono::milliseconds RETRY_DELAYS[] = {
+    std::chrono::milliseconds(500),
+    std::chrono::milliseconds(1000),
+    std::chrono::milliseconds(2000),
+};
+
+inline constexpr const char* BUSY_MESSAGE =
+    "Headphones busy (another connection is still closing); try again in a few seconds";
 
 namespace detail {
 
@@ -51,23 +70,56 @@ inline bool speaks_bmap(Transport& transport, const DeviceConfig& config) {
     }
 }
 
+using OpenChannel = std::function<std::unique_ptr<Transport>(uint8_t)>;
+using SleepFor = std::function<void(std::chrono::milliseconds)>;
+
+inline bool is_retryable(int error_number) {
+    return error_number == EBUSY || error_number == ECONNREFUSED;
+}
+
+/// Open `channel`, retrying EBUSY/ECONNREFUSED after each of RETRY_DELAYS.
+/// Rethrows the last failure.
+inline std::unique_ptr<Transport> connect_with_retry(uint8_t channel,
+                                                     const OpenChannel& open,
+                                                     const SleepFor& sleep) {
+    for (size_t retry = 0;; ++retry) {
+        try {
+            return open(channel);
+        } catch (const connect_error& e) {
+            if (!is_retryable(e.error_number()) || retry >= std::size(RETRY_DELAYS)) throw;
+        }
+        sleep(RETRY_DELAYS[retry]);
+    }
+}
+
 /// Connect on the configured channel, then probe fallbacks.
 ///
 /// A socket that accepts the connection is not proof of BMAP — several
 /// channels accept and stay silent — so each fallback is confirmed with a
 /// firmware GET [0.5] before it is returned.
-inline std::unique_ptr<RfcommTransport> open_transport(const std::string& mac,
-                                                       const DeviceConfig& config) {
+///
+/// Each channel is retried on EBUSY/ECONNREFUSED before the probe moves on.
+/// If any channel was still busy at the end, throws busy_error rather than
+/// "no channel found". `open` and `sleep` are injectable for tests.
+inline std::unique_ptr<Transport> probe_channels(const std::string& mac,
+                                                 const DeviceConfig& config,
+                                                 const OpenChannel& open,
+                                                 const SleepFor& sleep) {
     std::vector<uint8_t> candidates{config.rfcomm_channel};
     for (uint8_t c : FALLBACK_CHANNELS) {
         if (c != config.rfcomm_channel) candidates.push_back(c);
     }
     std::string first_error;
+    std::string busy;
 
     for (size_t i = 0; i < candidates.size(); ++i) {
-        std::unique_ptr<RfcommTransport> transport;
+        std::unique_ptr<Transport> transport;
         try {
-            transport = std::make_unique<RfcommTransport>(mac, candidates[i]);
+            transport = connect_with_retry(candidates[i], open, sleep);
+        } catch (const connect_error& e) {
+            if (first_error.empty()) first_error = e.what();
+            if (busy.empty() && e.error_number() == EBUSY) busy = e.what();
+            continue;
         } catch (const std::exception& e) {
             if (first_error.empty()) first_error = e.what();
             continue;
@@ -86,16 +138,31 @@ inline std::unique_ptr<RfcommTransport> open_transport(const std::string& mac,
         if (i) tried += ", ";
         tried += std::to_string(candidates[i]);
     }
+    if (!busy.empty()) {
+        throw busy_error(std::string(BUSY_MESSAGE) + " (" + mac + ", tried " +
+                             tried + "): " + busy,
+                         EBUSY);
+    }
     throw std::runtime_error("No BMAP channel found on " + mac +
                              " (tried " + tried + "): " + first_error);
+}
+
+inline std::unique_ptr<Transport> open_transport(const std::string& mac,
+                                                 const DeviceConfig& config) {
+    return probe_channels(
+        mac, config,
+        [&mac](uint8_t ch) { return std::make_unique<RfcommTransport>(mac, ch); },
+        [](std::chrono::milliseconds d) { std::this_thread::sleep_for(d); });
 }
 
 } // namespace detail
 
 /// Follow-up hint for a failed connect(), or nullptr when the failure is a
-/// caller setup mistake (std::invalid_argument) rather than a Bluetooth issue.
+/// caller setup mistake (std::invalid_argument) or a busy headset
+/// (busy_error) rather than a Bluetooth issue.
 inline const char* connection_hint(const std::exception& error) {
     if (dynamic_cast<const std::invalid_argument*>(&error)) return nullptr;
+    if (dynamic_cast<const busy_error*>(&error)) return nullptr;
     return "Is Bluetooth on? Are the headphones paired and connected?";
 }
 

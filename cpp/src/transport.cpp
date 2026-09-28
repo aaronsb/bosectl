@@ -1,5 +1,6 @@
 // RFCOMM transport implementation using raw Linux Bluetooth sockets.
 #include "transport.h"
+#include "errors.h"
 
 #ifndef __APPLE__
 #include <bluetooth/bluetooth.h>
@@ -30,7 +31,8 @@ static void set_timeout(int fd, int opt, int ms) {
 RfcommTransport::RfcommTransport(const std::string& mac, uint8_t channel) {
     fd_ = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
     if (fd_ < 0) {
-        throw std::runtime_error(std::string("Failed to create socket: ") + strerror(errno));
+        int err = errno;
+        throw connect_error(std::string("Failed to create socket: ") + strerror(err), err);
     }
 
     set_timeout(fd_, SO_SNDTIMEO, 3000);
@@ -41,9 +43,10 @@ RfcommTransport::RfcommTransport(const std::string& mac, uint8_t channel) {
     addr.rc_channel = channel;
 
     if (connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+        int err = errno;  // before close(), which may overwrite it
         ::close(fd_);
         fd_ = -1;
-        throw std::runtime_error("Failed to connect to " + mac + ": " + strerror(errno));
+        throw connect_error("Failed to connect to " + mac + ": " + strerror(err), err);
     }
 
     set_timeout(fd_, SO_RCVTIMEO, 3000);

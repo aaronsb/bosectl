@@ -7,7 +7,7 @@ import sys
 import pybmap
 from pybmap.constants import SPATIAL_NAMES, SIDETONE_NAMES, VOICE_LANGUAGES
 from pybmap.errors import (
-    BmapError, BmapConnectionError, BmapInvalidArgError,
+    BmapError, BmapConnectionError, BmapInvalidArgError, BmapBusyError,
     BmapAuthError, BmapDeviceError, BmapTimeoutError,
 )
 from pybmap.protocol import fmt_response
@@ -344,8 +344,9 @@ def main():
         dev = pybmap.connect(mac=mac, device_type=device_type)
     except BmapError as e:
         print("%sConnection failed:%s %s" % (C_RED, C_RESET, e), file=sys.stderr)
-        # A setup mistake is not a Bluetooth problem; skip the pairing hint.
-        if not isinstance(e, BmapInvalidArgError):
+        # A setup mistake or a busy headset is not a Bluetooth problem;
+        # skip the pairing hint.
+        if not isinstance(e, (BmapInvalidArgError, BmapBusyError)):
             print("%sIs Bluetooth on? Are the headphones paired and connected?%s" % (C_DIM, C_RESET), file=sys.stderr)
         sys.exit(1)
 

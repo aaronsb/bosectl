@@ -181,3 +181,19 @@ def test_profile_set_rename_reaches_update():
     dev = ProfileDevice([_profile(3, "Gym")])
     cli.cmd_profile_set(dev, ["Gym", "name=Run"])
     assert dev.calls == [("update", "Gym", "Run")]
+
+
+def test_busy_connect_skips_bluetooth_hint(monkeypatch, capsys):
+    from pybmap.errors import BmapBusyError
+    monkeypatch.setattr(cli.sys, "argv", ["bosectl", "status"])
+
+    def busy(**_kwargs):
+        raise BmapBusyError("Headphones busy (another connection is still closing); "
+                            "try again in a few seconds")
+    monkeypatch.setattr(cli.pybmap, "connect", busy)
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "Headphones busy" in err
+    assert "Is Bluetooth on?" not in err

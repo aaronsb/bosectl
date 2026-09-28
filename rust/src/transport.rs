@@ -59,17 +59,46 @@ pub struct RfcommTransport {
     fd: OwnedFd,
 }
 
+/// A failed connect together with the OS error code, when there is one.
+///
+/// The channel probe retries EBUSY/ECONNREFUSED, so it needs the errno
+/// rather than just the formatted message.
+#[derive(Debug)]
+pub(crate) struct ConnectError {
+    pub error: BmapError,
+    pub errno: Option<i32>,
+}
+
+impl ConnectError {
+    fn os(context: String) -> Self {
+        let err = io::Error::last_os_error();
+        Self {
+            error: BmapError::Connection(format!("{}: {}", context, err)),
+            errno: err.raw_os_error(),
+        }
+    }
+}
+
+impl From<BmapError> for ConnectError {
+    fn from(error: BmapError) -> Self {
+        Self { error, errno: None }
+    }
+}
+
 impl RfcommTransport {
     /// Connect to a BMAP device by MAC address and channel.
     pub fn connect(mac: &str, channel: u8) -> BmapResult<Self> {
+        Self::try_connect(mac, channel).map_err(|e| e.error)
+    }
+
+    /// Like [`connect`](Self::connect), keeping the errno of a failed connect.
+    pub(crate) fn try_connect(mac: &str, channel: u8) -> Result<Self, ConnectError> {
         let bdaddr = parse_mac(mac)?;
 
         unsafe {
             let fd = libc::socket(AF_BLUETOOTH, libc::SOCK_STREAM, BTPROTO_RFCOMM);
             if fd < 0 {
-                return Err(BmapError::Connection(format!(
-                    "Failed to create socket: {}", io::Error::last_os_error()
-                )));
+                return Err(ConnectError::os("Failed to create socket".into()));
             }
             let owned = OwnedFd::from_raw_fd(fd);
 
@@ -88,9 +117,8 @@ impl RfcommTransport {
                 std::mem::size_of::<SockaddrRc>() as u32,
             );
             if ret < 0 {
-                return Err(BmapError::Connection(format!(
-                    "Failed to connect to {}: {}", mac, io::Error::last_os_error()
-                )));
+                // Read errno before `owned` drops and close() can clobber it.
+                return Err(ConnectError::os(format!("Failed to connect to {}", mac)));
             }
 
             // Set recv timeout

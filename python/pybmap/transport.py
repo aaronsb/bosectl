@@ -242,7 +242,8 @@ else:
             except (OSError, socket.error) as e:
                 self._sock = None
                 raise BmapConnectionError(
-                    "Failed to connect to %s: %s" % (self.mac, e)
+                    "Failed to connect to %s: %s" % (self.mac, e),
+                    errno=getattr(e, "errno", None),
                 ) from e
 
         def close(self):

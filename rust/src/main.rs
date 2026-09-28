@@ -264,10 +264,11 @@ fn is_unknown_mode(e: &BmapError) -> bool {
     matches!(e, BmapError::InvalidArg(_) | BmapError::Unsupported(_))
 }
 
-/// Follow-up hint for a failed connect; setup mistakes are not Bluetooth problems.
+/// Follow-up hint for a failed connect; setup mistakes and a busy headset
+/// are not Bluetooth problems.
 fn connection_hint(e: &BmapError) -> Option<&'static str> {
     match e {
-        BmapError::InvalidArg(_) => None,
+        BmapError::InvalidArg(_) | BmapError::Busy(_) => None,
         _ => Some("Is Bluetooth on? Are the headphones paired and connected?"),
     }
 }
@@ -375,5 +376,11 @@ mod tests {
         assert!(matches!(err, BmapError::InvalidArg(_)));
         assert_eq!(connection_hint(&err), None);
         assert!(connection_hint(&BmapError::NotFound("none".into())).is_some());
+    }
+
+    #[test]
+    fn busy_connect_skips_bluetooth_hint() {
+        assert_eq!(connection_hint(&BmapError::Busy("Headphones busy".into())), None);
+        assert!(connection_hint(&BmapError::Connection("No BMAP channel found".into())).is_some());
     }
 }

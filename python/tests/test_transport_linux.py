@@ -80,6 +80,20 @@ class TestLinuxTransportConnection:
         assert transport._sock is mock_sock
 
     @patch("socket.socket")
+    def test_connect_error_carries_errno(self, mock_socket_class):
+        """The probe's EBUSY/ECONNREFUSED backoff keys off this errno."""
+        import errno
+        mock_sock = MagicMock()
+        mock_socket_class.return_value = mock_sock
+        mock_sock.connect.side_effect = OSError(errno.EBUSY, "Device or resource busy")
+
+        transport = RfcommTransport("00:11:22:33:44:55")
+        with pytest.raises(BmapConnectionError) as exc_info:
+            transport.connect()
+        assert exc_info.value.errno == errno.EBUSY
+        assert "Device or resource busy" in str(exc_info.value)
+
+    @patch("socket.socket")
     def test_connect_invalid_mac_format(self, mock_socket_class):
         """Test connection with invalid MAC address format."""
         mock_sock = MagicMock()

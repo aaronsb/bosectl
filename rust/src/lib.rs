@@ -29,6 +29,9 @@ pub use device::{
 pub use error::{BmapError, BmapResult};
 pub use protocol::{Operator, BmapResponse};
 
+use std::time::Duration;
+use transport::ConnectError;
+
 /// Connect to a BMAP device over Bluetooth RFCOMM.
 ///
 /// - `mac`: Bluetooth MAC address. Auto-detected if None.
@@ -79,6 +82,23 @@ mod tests {
 /// so the device's configured channel is a first guess rather than a fact.
 pub const FALLBACK_CHANNELS: [u8; 3] = [2, 8, 9];
 
+/// Backoff before each retry of a channel that answered EBUSY or
+/// ECONNREFUSED: the headset is still tearing down the previous RFCOMM link,
+/// or has not re-listened on the channel yet. The same channel is retried
+/// after each delay before the probe moves on.
+pub const RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(500),
+    Duration::from_millis(1000),
+    Duration::from_millis(2000),
+];
+
+const BUSY_MESSAGE: &str =
+    "Headphones busy (another connection is still closing); try again in a few seconds";
+
+fn is_retryable(errno: Option<i32>) -> bool {
+    matches!(errno, Some(libc::EBUSY) | Some(libc::ECONNREFUSED))
+}
+
 /// Connect on the configured channel, then probe fallbacks.
 ///
 /// A socket that accepts the connection is not proof of BMAP — several
@@ -89,16 +109,61 @@ fn open_transport(
     channel: u8,
     init_packet: Option<device::Addr>,
 ) -> BmapResult<transport::RfcommTransport> {
+    probe_channels(
+        mac,
+        channel,
+        init_packet,
+        |ch| transport::RfcommTransport::try_connect(mac, ch),
+        std::thread::sleep,
+    )
+}
+
+/// Open `ch`, retrying EBUSY/ECONNREFUSED after each of [`RETRY_DELAYS`].
+fn connect_with_retry<T>(
+    ch: u8,
+    connect: &mut impl FnMut(u8) -> Result<T, ConnectError>,
+    sleep: &mut impl FnMut(Duration),
+) -> Result<T, ConnectError> {
+    let mut delays = RETRY_DELAYS.iter();
+    loop {
+        match connect(ch) {
+            Ok(t) => return Ok(t),
+            Err(e) if is_retryable(e.errno) => match delays.next() {
+                Some(&d) => sleep(d),
+                None => return Err(e),
+            },
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Channel probe behind [`open_transport`], with connect and sleep injected
+/// so tests run without sockets or real delays.
+///
+/// If any channel was still busy after its retries, the failure is
+/// [`BmapError::Busy`] rather than "no channel found".
+fn probe_channels<T: Transport>(
+    mac: &str,
+    channel: u8,
+    init_packet: Option<device::Addr>,
+    mut connect: impl FnMut(u8) -> Result<T, ConnectError>,
+    mut sleep: impl FnMut(Duration),
+) -> BmapResult<T> {
     let candidates: Vec<u8> = std::iter::once(channel)
         .chain(FALLBACK_CHANNELS.iter().copied().filter(|&c| c != channel))
         .collect();
     let mut first_error: Option<BmapError> = None;
+    let mut busy_error: Option<BmapError> = None;
 
     for (i, &ch) in candidates.iter().enumerate() {
-        let transport = match transport::RfcommTransport::connect(mac, ch) {
+        let transport = match connect_with_retry(ch, &mut connect, &mut sleep) {
             Ok(t) => t,
             Err(e) => {
-                first_error.get_or_insert(e);
+                if e.errno == Some(libc::EBUSY) && busy_error.is_none() {
+                    busy_error = Some(e.error);
+                } else {
+                    first_error.get_or_insert(e.error);
+                }
                 continue;
             }
         };
@@ -114,6 +179,12 @@ fn open_transport(
     }
 
     let tried: Vec<String> = candidates.iter().map(|c| c.to_string()).collect();
+    if let Some(e) = busy_error {
+        return Err(BmapError::Busy(format!(
+            "{} ({}, tried {}): {}",
+            BUSY_MESSAGE, mac, tried.join(", "), e
+        )));
+    }
     Err(BmapError::Connection(format!(
         "No BMAP channel found on {} (tried {}): {}",
         mac,
@@ -122,7 +193,7 @@ fn open_transport(
     )))
 }
 
-fn send_init(transport: &transport::RfcommTransport, init_packet: Option<device::Addr>) -> BmapResult<()> {
+fn send_init(transport: &impl Transport, init_packet: Option<device::Addr>) -> BmapResult<()> {
     if let Some(init) = init_packet {
         let pkt = protocol::bmap_packet(init.0, init.1, protocol::Operator::Get, &[]);
         transport.send_recv(&pkt)?;
@@ -131,7 +202,7 @@ fn send_init(transport: &transport::RfcommTransport, init_packet: Option<device:
 }
 
 /// Send a firmware GET and return true on any parseable BMAP reply.
-fn speaks_bmap(transport: &transport::RfcommTransport, init_packet: Option<device::Addr>) -> bool {
+fn speaks_bmap(transport: &impl Transport, init_packet: Option<device::Addr>) -> bool {
     if send_init(transport, init_packet).is_err() {
         return false;
     }
@@ -143,5 +214,154 @@ fn speaks_bmap(transport: &transport::RfcommTransport, init_packet: Option<devic
             Some(r) if r.fblock == 0 && r.func == 5 && r.op == protocol::Operator::Status
         ),
         Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod probe_tests {
+    //! EBUSY / ECONNREFUSED backoff in the channel probe (issue #39).
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    /// Answers the firmware GET like a real BMAP peer.
+    struct FakeTransport {
+        channel: u8,
+    }
+
+    impl Transport for FakeTransport {
+        fn send_recv(&self, packet: &[u8]) -> BmapResult<Vec<u8>> {
+            Ok(vec![packet[0], packet[1], 0x03, 1, b'1'])
+        }
+        fn send_recv_drain(&self, packet: &[u8]) -> BmapResult<Vec<u8>> {
+            self.send_recv(packet)
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum Outcome {
+        Up,
+        Errno(i32),
+    }
+    use Outcome::*;
+
+    struct Harness {
+        attempts: RefCell<Vec<u8>>,
+        sleeps: RefCell<Vec<Duration>>,
+    }
+
+    /// Run the probe for a device configured on channel 2. Each channel's
+    /// script is consumed one entry per connect attempt; the last repeats.
+    fn run(script: &[(u8, &[Outcome])]) -> (BmapResult<FakeTransport>, Harness) {
+        let mut script: HashMap<u8, Vec<Outcome>> =
+            script.iter().map(|(c, o)| (*c, o.to_vec())).collect();
+        let h = Harness { attempts: RefCell::new(vec![]), sleeps: RefCell::new(vec![]) };
+        let result = probe_channels(
+            "00:11:22:33:44:55",
+            2,
+            None,
+            |ch| {
+                h.attempts.borrow_mut().push(ch);
+                let outcomes = script.entry(ch).or_insert_with(|| vec![Errno(libc::EHOSTDOWN)]);
+                let outcome = if outcomes.len() > 1 { outcomes.remove(0) } else { outcomes[0] };
+                match outcome {
+                    Up => Ok(FakeTransport { channel: ch }),
+                    Errno(code) => Err(ConnectError {
+                        error: BmapError::Connection(format!(
+                            "Failed to connect: {}", std::io::Error::from_raw_os_error(code)
+                        )),
+                        errno: Some(code),
+                    }),
+                }
+            },
+            |d| h.sleeps.borrow_mut().push(d),
+        );
+        (result, h)
+    }
+
+    fn secs(v: &[f64]) -> Vec<Duration> {
+        v.iter().map(|&s| Duration::from_secs_f64(s)).collect()
+    }
+
+    #[test]
+    fn ebusy_twice_then_success_stays_on_channel() {
+        let (res, h) = run(&[(2, &[Errno(libc::EBUSY), Errno(libc::EBUSY), Up])]);
+        assert_eq!(res.unwrap().channel, 2);
+        assert_eq!(*h.attempts.borrow(), vec![2, 2, 2]);
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0]));
+    }
+
+    #[test]
+    fn ebusy_forever_reports_busy() {
+        let busy: &[Outcome] = &[Errno(libc::EBUSY)];
+        let (res, h) = run(&[(2, busy), (8, busy), (9, busy)]);
+        // One try plus three retries per channel, three sleeps per channel.
+        assert_eq!(*h.attempts.borrow(), [[2; 4], [8; 4], [9; 4]].concat());
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0, 0.5, 1.0, 2.0, 0.5, 1.0, 2.0]));
+        match res {
+            Err(BmapError::Busy(msg)) => {
+                assert!(msg.contains("Headphones busy"));
+                assert!(!msg.contains("No BMAP channel found"));
+                assert!(msg.contains("busy (os error 16)"));
+            }
+            other => panic!("expected Busy, got {:?}", other.err()),
+        }
+    }
+
+    #[test]
+    fn busy_on_configured_channel_wins_over_other_errors() {
+        let (res, h) = run(&[
+            (2, &[Errno(libc::EBUSY)]),
+            (8, &[Errno(libc::EHOSTDOWN)]),
+            (9, &[Errno(libc::ECONNREFUSED)]),
+        ]);
+        assert!(matches!(res, Err(BmapError::Busy(_))));
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0, 0.5, 1.0, 2.0]));
+    }
+
+    #[test]
+    fn econnrefused_then_success() {
+        let (res, h) = run(&[(2, &[Errno(libc::ECONNREFUSED), Up])]);
+        assert_eq!(res.unwrap().channel, 2);
+        assert_eq!(*h.attempts.borrow(), vec![2, 2]);
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5]));
+    }
+
+    #[test]
+    fn econnrefused_forever_is_not_reported_as_busy() {
+        let refused: &[Outcome] = &[Errno(libc::ECONNREFUSED)];
+        let (res, h) = run(&[(2, refused), (8, refused), (9, refused)]);
+        match res {
+            Err(BmapError::Connection(msg)) => assert!(msg.contains("No BMAP channel found")),
+            other => panic!("expected Connection, got {:?}", other.err()),
+        }
+        assert_eq!(h.sleeps.borrow().len(), 9);
+    }
+
+    #[test]
+    fn non_retryable_error_moves_on_without_sleep() {
+        let (res, h) = run(&[(2, &[Errno(libc::EHOSTDOWN)]), (8, &[Up])]);
+        assert_eq!(res.unwrap().channel, 8);
+        assert_eq!(*h.attempts.borrow(), vec![2, 8]);
+        assert!(h.sleeps.borrow().is_empty());
+    }
+
+    #[test]
+    fn error_without_errno_is_not_retried() {
+        let attempts = RefCell::new(vec![]);
+        let sleeps = RefCell::new(0);
+        let res: BmapResult<FakeTransport> = probe_channels(
+            "00:11:22:33:44:55",
+            2,
+            None,
+            |ch| {
+                attempts.borrow_mut().push(ch);
+                Err(BmapError::Connection("Invalid MAC address".into()).into())
+            },
+            |_| *sleeps.borrow_mut() += 1,
+        );
+        assert!(matches!(res, Err(BmapError::Connection(_))));
+        assert_eq!(*attempts.borrow(), vec![2, 8, 9]);
+        assert_eq!(*sleeps.borrow(), 0);
     }
 }
