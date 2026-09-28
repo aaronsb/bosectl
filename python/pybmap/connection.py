@@ -17,7 +17,10 @@ from .constants import (
     VOICE_LANGUAGES,
 )
 from .protocol import bmap_packet, parse_response, parse_all_responses, fmt_response
-from .errors import BmapError, BmapAuthError, BmapDeviceError, BmapDesyncError
+from .errors import (
+    BmapError, BmapAuthError, BmapDeviceError, BmapDesyncError,
+    BmapInvalidArgError,
+)
 from .types import AudioSettings, BatteryStatus, DeviceStatus
 from .devices import parsers
 
@@ -72,17 +75,26 @@ class BmapConnection:
             )
         return parsed
 
+    def _check_reply(self, parsed, fblock, func):
+        """Validate a single reply: present, from the right address, not ERROR.
+
+        Every single-reply path (GET, SETGET, START) goes through here so a
+        truncated frame, a desynced socket or a device error surface the same
+        way in all of them.
+        """
+        parsed = self._check_address(parsed, fblock, func)
+        if parsed is None:
+            raise BmapDeviceError("Invalid or empty response")
+        if parsed.op == OP_ERROR:
+            self._raise_error(parsed)
+        return parsed
+
     def _get_payload(self, feature_name):
         """Send a GET request and return its raw payload."""
         feat = self._feature(feature_name)
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
-        parsed = self._check_address(parse_response(resp), fblock, func)
-        if parsed is None:
-            raise BmapDeviceError("Invalid or empty response")
-        if parsed.op == OP_ERROR:
-            self._raise_error(parsed)
-        return parsed.payload
+        return self._check_reply(parse_response(resp), fblock, func).payload
 
     def _get(self, feature_name):
         """Send a GET request and return its parsed payload."""
@@ -100,10 +112,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_SETGET, payload)
         )
-        parsed = self._check_address(parse_response(resp), fblock, func)
-        if parsed and parsed.op == OP_ERROR:
-            self._raise_error(parsed)
-        return parsed
+        return self._check_reply(parse_response(resp), fblock, func)
 
     def _start(self, feature_name, payload=b""):
         """Send a START request and return the parsed response."""
@@ -112,10 +121,7 @@ class BmapConnection:
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_START, payload)
         )
-        parsed = self._check_address(parse_response(resp), fblock, func)
-        if parsed and parsed.op == OP_ERROR:
-            self._raise_error(parsed)
-        return parsed
+        return self._check_reply(parse_response(resp), fblock, func)
 
     def _start_drain(self, feature_name, payload=b""):
         """Send a START request and drain all responses."""
@@ -370,7 +376,7 @@ class BmapConnection:
         resp = self._start("current_mode", bytes([idx, 1 if announce else 0]))
         # Some firmware (QC Headphones "prince") acks START [31.3] with
         # PROCESSING and applies the switch asynchronously.
-        if resp and resp.op not in (OP_RESULT, OP_PROCESSING):
+        if resp.op not in (OP_RESULT, OP_PROCESSING):
             raise BmapDeviceError("Mode switch failed: %s" % fmt_response(resp))
 
     def set_cnc(self, level):
@@ -527,7 +533,7 @@ class BmapConnection:
         payload = builder(button_id, event, action)
         resp = self._setget("buttons", payload)
         parser = feat.get("parser")
-        if resp and parser and resp.payload:
+        if parser and resp.payload:
             return parser(resp.payload)
         return resp
 
@@ -543,9 +549,7 @@ class BmapConnection:
         feat = self._feature("routing")
         builder = feat.get("builder")
         payload = builder(mac)
-        resp = self._start("routing", payload)
-        if resp and resp.op == OP_ERROR:
-            self._raise_error(resp)
+        self._start("routing", payload)
 
     def pair(self):
         """Enter Bluetooth pairing mode."""
@@ -560,6 +564,7 @@ class BmapConnection:
         Returns the slot index used.
         """
         modes = self.modes()
+        self._refuse_preset_name(name, modes)
         slot = self._find_free_slot(modes)
         if slot is None:
             raise BmapError("No free profile slot available")
@@ -567,15 +572,42 @@ class BmapConnection:
                          wind_block=wind_block, anc_toggle=anc_toggle)
         return slot
 
-    def update_profile(self, name, **settings):
-        """Update an existing custom profile by name."""
+    def update_profile(self, name, rename=None, **settings):
+        """Update an existing custom profile by name.
+
+        Args:
+            name: Current profile name (case-insensitive).
+            rename: Optional new name for the profile.
+            **settings: cnc_level, spatial, wind_block, anc_toggle overrides.
+        """
+        if rename is not None:
+            settings["name"] = rename
         found = self._find_profile(name)
         if found is None:
             raise BmapError("Profile '%s' not found" % name)
         idx, config = found
         if not config.editable:
             raise BmapError("Cannot modify preset mode '%s'" % name)
+        new_name = settings.get("name")
+        if new_name is not None and new_name.strip().lower() != config.name.strip().lower():
+            self._refuse_preset_name(new_name, self.modes())
         self._write_mode_from_config(idx, config, **settings)
+
+    def _refuse_preset_name(self, name, modes):
+        """Refuse a custom profile name that matches a preset (any case).
+
+        Mode switching resolves preset names first, so a custom profile named
+        like a preset can never be selected by name.
+        """
+        wanted = name.strip().lower()
+        presets = {n.lower() for n in getattr(self._device, "PRESET_MODES", {})}
+        presets |= {cfg.name.strip().lower() for cfg in modes.values()
+                    if not cfg.editable}
+        if wanted in presets:
+            raise BmapInvalidArgError(
+                "'%s' is a preset mode name; choose a different profile name"
+                % name
+            )
 
     def _find_profile(self, name):
         """Look up a profile by name, preferring editable slots.
@@ -694,7 +726,8 @@ class BmapConnection:
         A slot is free when its name is the "None" sentinel or blank. The
         'configured' bit is not part of the test: firmware sets it on first
         write and never clears it, so a deleted slot keeps it and would
-        otherwise stay unusable. Matches find_free_slot() in the C++ library.
+        otherwise stay unusable. Same rule as find_free_slot() in the Rust
+        and C++ libraries.
         """
         for idx in self._device.EDITABLE_SLOTS:
             if idx not in modes:

@@ -457,8 +457,11 @@ This makes feature dispatch a simple dict lookup at runtime.
 ```
 BmapError
 ├── BmapConnectionError   — socket/transport failures
+│   └── BmapDesyncError   — reply came from a different [fblock.func]
 ├── BmapAuthError         — device returned error code 5
-├── BmapDeviceError       — device returned other error codes
+├── BmapDeviceError       — device returned other error codes, or an
+│                           invalid/empty reply to GET, SETGET or START
+├── BmapInvalidArgError   — caller supplied invalid arguments
 ├── BmapTimeoutError      — no response within timeout
 └── BmapNotFoundError     — no device found during discovery
 ```
@@ -523,6 +526,7 @@ pub enum BmapError {
     NotFound(String),
     Unsupported(String),
     InvalidArg(String),
+    Desync(String),   // reply came from a different [fblock.func]
 }
 ```
 
@@ -562,9 +566,12 @@ public:
 
 Tests use a `MockTransport` subclass.
 
-**Error handling** uses `std::runtime_error` exceptions. No typed
-hierarchy — auth errors (code 5) are not programmatically distinguishable
-from other device errors without parsing the message string. The `require()` helper
+**Error handling** uses standard exceptions plus two typed ones from
+`errors.h`, both derived from `std::runtime_error`: `bmap::device_error`
+(device ERROR reply, with `code()`, or an invalid/empty reply to GET, SETGET
+or START) and `bmap::desync_error` (reply came from a different
+`[fblock.func]`). Bad caller input throws `std::invalid_argument`. Auth
+errors (code 5) are a `device_error` with `code() == 5`. The `require()` helper
 converts `std::nullopt` to an exception for unsupported features:
 ```cpp
 static Addr require(const std::optional<Addr>& opt, const char* name) {

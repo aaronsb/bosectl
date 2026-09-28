@@ -9,7 +9,7 @@ from pybmap.protocol import bmap_packet
 from pybmap.constants import OP_GET, OP_SETGET, OP_STATUS, OP_RESULT, OP_ERROR
 from pybmap.errors import (
     BmapError, BmapAuthError, BmapDeviceError,
-    BmapDesyncError, BmapConnectionError,
+    BmapDesyncError, BmapConnectionError, BmapInvalidArgError,
 )
 from pybmap.devices import qc_ultra2, qc_ultra2_earbuds, qc_prince, qc45
 from pybmap.types import ModeConfig
@@ -542,3 +542,66 @@ class TestResponseAddressCheck:
     def test_desync_is_a_connection_error(self):
         # Callers that already retry on connection loss should retry on this.
         assert issubclass(BmapDesyncError, BmapConnectionError)
+
+
+class TestSetEqResponse:
+    """set_eq checks each SETGET reply instead of discarding it."""
+
+    def test_device_error_surfaces_and_stops(self, mock_dev):
+        mock_dev._transport.add_response(1, 7, OP_ERROR, bytes([1]))
+        with pytest.raises(BmapDeviceError) as info:
+            mock_dev.set_eq(1, 2, 3)
+        assert info.value.error_code == 1
+        assert len(mock_dev._transport.sent) == 1
+
+    def test_success_sends_three_bands(self, mock_dev):
+        mock_dev.set_eq(1, 2, 3)
+        assert [p[:3] for p in mock_dev._transport.sent] == [bytes([1, 7, OP_SETGET])] * 3
+
+
+class TestEmptyReply:
+    """GET, SETGET and START all reject an invalid or empty reply the same way."""
+
+    @pytest.mark.parametrize("call, key, response", [
+        (lambda d: d.set_multipoint(True), (1, 10), bytes([1, 10, 0x08, 0])),
+        (lambda d: d.set_eq(0, 0, 0), (1, 7), b""),
+        (lambda d: d.set_mode("aware"), (31, 3), bytes([31, 3, OP_RESULT, 4, 1])),
+        (lambda d: d.power_off(), (7, 4), b""),
+    ])
+    def test_raises_device_error(self, mock_dev, call, key, response):
+        mock_dev._transport.responses[key] = response
+        with pytest.raises(BmapDeviceError, match="Invalid or empty response"):
+            call(mock_dev)
+
+
+class TestPresetNameRefused:
+    """A new custom profile may not take a preset's name (see #29)."""
+
+    def test_create_refuses_preset_name(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {3: _mode(3, "Gym")})
+        written = []
+        monkeypatch.setattr(qc45_conn, "_write_mode",
+                            lambda slot, name, **kw: written.append(slot))
+        with pytest.raises(BmapInvalidArgError, match="preset"):
+            qc45_conn.create_profile(" AWARE")
+        assert written == []
+
+    def test_create_refuses_on_device_preset_name(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {
+            1: _mode(1, "Focus", editable=False), 3: _mode(3, "Gym")})
+        with pytest.raises(BmapInvalidArgError, match="preset"):
+            qc45_conn.create_profile("focus")
+
+    def test_rename_to_preset_refused(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {3: _mode(3, "Gym")})
+        with pytest.raises(BmapInvalidArgError, match="preset"):
+            qc45_conn.update_profile("Gym", rename="Quiet")
+
+    def test_create_reuses_cleared_slot(self, qc45_conn, monkeypatch):
+        monkeypatch.setattr(qc45_conn, "modes", lambda: {
+            2: _mode(2, "None"), 3: _mode(3, "Gym")})
+        written = []
+        monkeypatch.setattr(qc45_conn, "_write_mode",
+                            lambda slot, name, **kw: written.append((slot, name)))
+        assert qc45_conn.create_profile("Commute") == 2
+        assert written == [(2, "Commute")]
