@@ -48,6 +48,13 @@ FEATURES = {
         "addr": (1, 5),
         "parser": parsers.parse_cnc,
     },
+    # 3-band EQ. Same Settings-block register as qc45/qc_ultra2/qc_earbuds;
+    # verified working on prince firmware 1.0.6-80+f5f219b (range -10..+10).
+    "eq": {
+        "addr": (1, 7),
+        "parser": parsers.parse_eq,
+        "builder": parsers.build_eq_band,
+    },
     "pairing": {
         "addr": (4, 8),
     },

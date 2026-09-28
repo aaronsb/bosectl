@@ -52,6 +52,7 @@ inline DeviceConfig qc_prince() {
     c.product_name = Addr{1, 2};
     c.voice_prompts = Addr{1, 3};
     c.cnc = Addr{1, 5};
+    c.eq = Addr{1, 7};
     c.pairing = Addr{4, 8};
     c.get_all_modes = Addr{31, 1};
     c.current_mode = Addr{31, 3};
