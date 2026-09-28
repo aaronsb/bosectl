@@ -1,5 +1,8 @@
 """Tests for user-visible CLI output."""
 
+import pytest
+
+from pybmap import cli
 from pybmap.cli import cmd_status
 from pybmap.types import BatteryReading, DeviceStatus
 
@@ -54,3 +57,20 @@ def test_device_status_preserves_old_positional_shape():
     )
     assert status.mode == "quiet"
     assert status.battery_readings == ()
+
+
+@pytest.mark.parametrize("device_env", [None, ""])
+def test_mac_without_device_type_skips_bluetooth_hint(monkeypatch, capsys, device_env):
+    monkeypatch.setattr(cli.sys, "argv", ["bosectl", "status"])
+    monkeypatch.setenv("BMAP_MAC", "00:11:22:33:44:55")
+    monkeypatch.delenv("BOSE_MAC", raising=False)
+    if device_env is None:
+        monkeypatch.delenv("BMAP_DEVICE", raising=False)
+    else:
+        monkeypatch.setenv("BMAP_DEVICE", device_env)
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "device_type is required" in err
+    assert "Is Bluetooth on?" not in err

@@ -99,6 +99,14 @@ class TestParseAllResponses:
         assert responses[1].func == 3
         assert responses[1].payload == bytes([0x00])
 
+    def test_stops_at_unknown_operator(self):
+        pkt1 = bytes([31, 6, 0x03, 2, 0xAA, 0xBB])
+        unknown = bytes([31, 3, 0x08, 1, 0x00])
+        pkt3 = bytes([31, 3, 0x06, 1, 0x00])
+        responses = parse_all_responses(pkt1 + unknown + pkt3)
+        assert len(responses) == 1
+        assert responses[0].func == 6
+
     def test_empty_data(self):
         assert parse_all_responses(bytes()) == []
         assert parse_all_responses(bytes([1, 2, 3])) == []

@@ -258,6 +258,18 @@ TEST(explicit_mac_requires_device_type) {
     ASSERT_TRUE(threw);
 }
 
+TEST(connect_with_mac_requires_device_type) {
+    // Real connect(): validation fails before any transport is opened.
+    bool threw = false;
+    try { bmap::connect("00:11:22:33:44:55", ""); }
+    catch (const std::invalid_argument& error) {
+        threw = std::string(error.what()).find("device_type is required") != std::string::npos;
+        ASSERT_TRUE(bmap::connection_hint(error) == nullptr);
+    }
+    ASSERT_TRUE(threw);
+    ASSERT_TRUE(bmap::connection_hint(std::runtime_error("no device")) != nullptr);
+}
+
 TEST(qc35_no_eq) {
     auto t = std::make_unique<MockTransport>();
     BmapConnection dev(std::move(t), qc35());

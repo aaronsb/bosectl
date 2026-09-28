@@ -91,6 +91,13 @@ inline std::unique_ptr<RfcommTransport> open_transport(const std::string& mac,
 
 } // namespace detail
 
+/// Follow-up hint for a failed connect(), or nullptr when the failure is a
+/// caller setup mistake (std::invalid_argument) rather than a Bluetooth issue.
+inline const char* connection_hint(const std::exception& error) {
+    if (dynamic_cast<const std::invalid_argument*>(&error)) return nullptr;
+    return "Is Bluetooth on? Are the headphones paired and connected?";
+}
+
 /// Connect to a BMAP device. Device type is resolved only during MAC discovery.
 inline std::unique_ptr<BmapConnection> connect(
     const std::string& mac_override = "",

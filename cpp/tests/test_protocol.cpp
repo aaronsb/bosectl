@@ -46,6 +46,17 @@ TEST(parse_all_responses_two) {
     ASSERT_EQ(responses[1].func, 3);
 }
 
+TEST(parse_all_stops_at_unknown_operator) {
+    std::vector<uint8_t> data = {
+        31, 6, 0x03, 2, 0xAA, 0xBB,
+        31, 3, 0x08, 1, 0x00,
+        31, 3, 0x06, 1, 0x00,
+    };
+    auto responses = parse_all_responses(data);
+    ASSERT_EQ(responses.size(), 1u);
+    ASSERT_EQ(responses[0].func, 6);
+}
+
 TEST(parse_all_truncated) {
     std::vector<uint8_t> data = {31, 3, 0x06, 10, 0x00, 0x01};
     auto responses = parse_all_responses(data);

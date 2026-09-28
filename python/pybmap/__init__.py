@@ -25,7 +25,7 @@ from .catalog import (
 )
 from .errors import (
     BmapError, BmapConnectionError, BmapAuthError,
-    BmapDeviceError, BmapTimeoutError, BmapNotFoundError,
+    BmapDeviceError, BmapTimeoutError, BmapNotFoundError, BmapInvalidArgError,
 )
 from .types import (
     BatteryReading, BatteryStatus, BmapResponse, ButtonMapping, DeviceStatus,
@@ -66,7 +66,7 @@ def connect(mac=None, device_type=None):
         if device_type is None:
             device_type = detected_type
     elif device_type is None:
-        raise BmapError("device_type is required when mac is specified")
+        raise BmapInvalidArgError("device_type is required when mac is specified")
 
     device = get_device(device_type)
     channel = getattr(device, "RFCOMM_CHANNEL", 2)

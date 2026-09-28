@@ -4,7 +4,10 @@ import pytest
 
 import pybmap
 from pybmap.constants import OP_STATUS, OP_PROCESSING, OP_ERROR
-from pybmap.errors import BmapConnectionError, BmapTimeoutError, BmapDeviceError, BmapError
+from pybmap.errors import (
+    BmapConnectionError, BmapTimeoutError, BmapDeviceError,
+    BmapInvalidArgError,
+)
 from pybmap.devices import qc_prince
 from tests.test_connection import MockTransport
 
@@ -98,7 +101,7 @@ def test_fallback_order_skips_duplicate_of_configured(patch_transport):
 @pytest.mark.parametrize("device_type", [None, ""])
 def test_explicit_mac_requires_device_type(patch_transport, device_type):
     f = patch_transport({2: "bmap"})
-    with pytest.raises(BmapError, match="device_type is required"):
+    with pytest.raises(BmapInvalidArgError, match="device_type is required"):
         pybmap.connect(mac="00:11:22:33:44:55", device_type=device_type)
     assert f.attempts == []
 

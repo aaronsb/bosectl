@@ -54,8 +54,8 @@ int main(int argc, char** argv) {
     try {
         devptr = connect(mac_str, dev_str);
     } catch (const std::exception& e) {
-        std::cerr << "Connection failed: " << e.what() << "\n"
-                  << "Is Bluetooth on? Are the headphones paired and connected?\n";
+        std::cerr << "Connection failed: " << e.what() << "\n";
+        if (auto hint = connection_hint(e)) std::cerr << hint << "\n";
         return 1;
     }
     auto& dev = *devptr;

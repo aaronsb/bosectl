@@ -195,6 +195,16 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_all_stops_at_unknown_operator() {
+        let mut data = vec![31, 6, 0x03, 2, 0xAA, 0xBB];
+        data.extend_from_slice(&[31, 3, 0x08, 1, 0x00]);
+        data.extend_from_slice(&[31, 3, 0x06, 1, 0x00]);
+        let responses = parse_all_responses(&data);
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].func, 6);
+    }
+
+    #[test]
     fn test_parse_all_truncated() {
         // Length says 10 bytes but only 2 available
         let data = vec![31, 3, 0x06, 10, 0x00, 0x01];
