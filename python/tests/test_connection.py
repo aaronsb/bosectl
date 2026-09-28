@@ -156,15 +156,15 @@ class TestReadOperations:
             (1, 60), (2, 60), (3, 80)
         ]
 
-    def test_status_tolerates_battery_without_valid_readings(self):
+    def test_status_rejects_battery_without_valid_readings(self):
+        # A failed read must not surface as a measured 0%.
         transport = MockTransport()
         transport.add_response(2, 2, OP_STATUS,
                                bytes.fromhex("ffffff01ffffff02ffffff04ffffff03"))
         transport.add_response(31, 3, OP_STATUS, bytes([0x01]))
-        status = BmapConnection(transport, qc_ultra2_earbuds).status()
-        assert status.battery == 0
-        assert status.battery_readings == []
-        assert status.mode == "aware"
+        dev = BmapConnection(transport, qc_ultra2_earbuds)
+        with pytest.raises(BmapDeviceError, match="aggregate component 4"):
+            dev.status()
 
     def test_status_uses_one_battery_response(self):
         transport = MockTransport()

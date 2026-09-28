@@ -162,7 +162,8 @@ TEST(status_falls_back_when_fixture_aggregate_is_absent) {
     assert_fixture_bud_readings(status.battery_readings);
 }
 
-TEST(status_tolerates_battery_without_valid_readings) {
+TEST(status_rejects_battery_without_valid_readings) {
+    // A failed read must not surface as a measured 0%.
     auto raw = new MockTransport();
     raw->add(2, 2, 0x03, {
         0xff,0xff,0xff,0x01, 0xff,0xff,0xff,0x02,
@@ -170,10 +171,12 @@ TEST(status_tolerates_battery_without_valid_readings) {
     });
     raw->add(31, 3, 0x03, {0x01});
     BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2_earbuds());
-    auto status = dev.status();
-    ASSERT_EQ(status.battery, 0);
-    ASSERT_TRUE(status.battery_readings.empty());
-    ASSERT_EQ(status.mode, "aware");
+    bool threw = false;
+    try { dev.status(); }
+    catch (const std::runtime_error& error) {
+        threw = std::string(error.what()).find("aggregate component 4") != std::string::npos;
+    }
+    ASSERT_TRUE(threw);
 }
 
 TEST(status_uses_one_battery_response) {

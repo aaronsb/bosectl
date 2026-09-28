@@ -122,8 +122,7 @@ public:
             [&]{ return cnc(); }, {0, 10});
         auto [prom_on, prom_lang] = safe_call<std::pair<bool,std::string>>(
             [&]{ return prompts(); }, {false, ""});
-        auto battery_state = safe_call<BatteryStatus>(
-            [&]{ return battery_status(); }, {0, {}});
+        auto battery_state = battery_status();
 
         DeviceStatus s;
         s.battery = battery_state.aggregate;

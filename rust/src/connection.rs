@@ -268,10 +268,7 @@ impl<T: Transport> BmapConnection<T> {
         };
         let (cnc_level, cnc_max) = self.cnc().unwrap_or((0, 10));
         let (prompts_enabled, prompts_language) = self.prompts().unwrap_or((false, "Unknown"));
-        let battery = self.battery_status().unwrap_or(BatteryStatus {
-            aggregate: 0,
-            readings: Vec::new(),
-        });
+        let battery = self.battery_status()?;
 
         Ok(DeviceStatus {
             battery: battery.aggregate,
@@ -839,17 +836,17 @@ mod tests {
     }
 
     #[test]
-    fn test_status_tolerates_battery_without_valid_readings() {
+    fn test_status_rejects_battery_without_valid_readings() {
+        // A failed read must not surface as a measured 0%.
         let mut t = MockTransport::new();
         t.add(2, 2, 0x03, &[
             0xff,0xff,0xff,0x01, 0xff,0xff,0xff,0x02,
             0xff,0xff,0xff,0x04, 0xff,0xff,0xff,0x03,
         ]);
         t.add(31, 3, 0x03, &[0x01]);
-        let status = BmapConnection::new(t, devices::qc_ultra2_earbuds()).status().unwrap();
-        assert_eq!(status.battery, 0);
-        assert!(status.battery_readings.is_empty());
-        assert_eq!(status.mode, "aware");
+        let dev = BmapConnection::new(t, devices::qc_ultra2_earbuds());
+        assert!(matches!(dev.status(), Err(BmapError::Device { message, .. })
+            if message.contains("aggregate component 4")));
     }
 
     #[test]

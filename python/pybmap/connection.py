@@ -307,7 +307,7 @@ class BmapConnection:
         current_name = self._mode_name_from_idx(current_idx) if current_idx is not None else ""
         cnc_cur, cnc_max = self._safe_read(self.cnc, (0, 10))
         prompts_on, prompts_lang = self._safe_read(self.prompts, (False, ""))
-        battery = self._safe_read(self.battery_status, BatteryStatus(0, []))
+        battery = self.battery_status()
 
         return DeviceStatus(
             battery=battery.aggregate,

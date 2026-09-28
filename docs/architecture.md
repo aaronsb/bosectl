@@ -200,9 +200,6 @@ battery() / status()  →  reuse the parsed battery status
 `BatteryStatus` keeps the aggregate and all component readings from that one
 response. `DeviceStatus.battery_readings` carries the same snapshot to CLIs,
 which render known components in config order rather than packet order.
-`status()` treats battery like its other optional fields: a failed or
-unusable battery read yields `battery = 0` with no readings instead of
-failing the whole snapshot.
 
 **Write pattern** (SETGET):
 ```
