@@ -35,6 +35,14 @@ TEST(catalog_lookup_qc_ultra2_earbuds) {
     ASSERT_EQ(std::string(dev->config), std::string("qc_ultra2_earbuds"));
 }
 
+TEST(catalog_lookup_qc_headphones_gen2) {
+    auto* dev = lookup_device(0x4083);
+    ASSERT_TRUE(dev != nullptr);
+    ASSERT_EQ(std::string(dev->name), std::string("QuietComfort Headphones (2nd Gen)"));
+    ASSERT_TRUE(dev->config != nullptr);
+    ASSERT_EQ(std::string(dev->config), std::string("qc_ultra2"));
+}
+
 TEST(catalog_lookup_qc_prince) {
     auto* dev = lookup_device(0x4075);
     ASSERT_TRUE(dev != nullptr);
@@ -49,6 +57,7 @@ TEST(catalog_lookup_unknown) {
 
 TEST(catalog_is_supported) {
     ASSERT_TRUE(is_supported(0x4082));
+    ASSERT_TRUE(is_supported(0x4083));  // QC Headphones (2nd Gen)
     ASSERT_TRUE(is_supported(0x4075));
     ASSERT_TRUE(is_supported(0x402F));  // lando
     ASSERT_TRUE(is_supported(0x4039));  // duran

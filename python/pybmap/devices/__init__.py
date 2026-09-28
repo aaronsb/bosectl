@@ -22,6 +22,7 @@ DEVICES = {
 # Product ID -> device type (for auto-detection after connecting).
 PRODUCT_IDS = {
     0x4082: "qc_ultra2",
+    0x4083: "qc_ultra2",  # QuietComfort Headphones (2nd Gen) — same BMAP layout as wolverine
     0x4062: "qc_ultra2_earbuds",
     0x4075: "qc_prince",
     0x402F: "qc_earbuds",

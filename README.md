@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/aaronsb/bosectl)](https://github.com/aaronsb/bosectl/releases/latest)
-[![Devices](https://img.shields.io/badge/Devices-3_supported_·_38_known-green)](docs/architecture.md#device-catalog)
+[![Devices](https://img.shields.io/badge/Devices-3_supported_·_39_known-green)](docs/architecture.md#device-catalog)
 [![Python 3](https://img.shields.io/badge/Python-3-3572A5.svg)](python/)
 [![Rust](https://img.shields.io/badge/Rust-1.70+-DEA584.svg)](rust/)
 [![C++17](https://img.shields.io/badge/C++-17-f34b7d.svg)](cpp/)
