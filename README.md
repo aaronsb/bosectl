@@ -150,6 +150,15 @@ cd bosectl
 ./linux_install.sh    # or ./macOS_install.sh
 ```
 
+### With pipx (Linux, macOS)
+
+Installs `bosectl` into its own environment and puts it on your `PATH`. On macOS this also pulls in PyObjC.
+
+```bash
+git clone https://github.com/aaronsb/bosectl.git
+pipx install ./bosectl/python
+```
+
 ### From Release Binaries (Linux)
 
 ```bash
@@ -169,6 +178,14 @@ cargo add bose-bmap       # use as a library; the import is still `use bmap::`
 ```
 
 ### From Source
+
+The C++ build and `make test` need the BlueZ development headers, plus CMake and a Rust toolchain:
+
+| Distribution | Package |
+|---|---|
+| Debian / Ubuntu | `libbluetooth-dev` |
+| Fedora | `bluez-libs-devel` |
+| Arch | `bluez-libs` |
 
 ```bash
 git clone https://github.com/aaronsb/bosectl.git
@@ -251,9 +268,9 @@ Full protocol reference: **[NOTES.md](NOTES.md)** and
 ## Building & Releasing
 
 ```bash
-make test                       # All tests (121 Python, 63 Rust, 54 C++)
+make test                       # All tests (Python, Rust, C++)
 make artifacts                  # Build + strip + SHA256SUMS in dist/
-make release VERSION=v0.2.0     # Test → build → gh release create
+make release VERSION=vX.Y.Z     # Test → build → gh release create
 make clean                      # Remove all build artifacts
 ```
 
