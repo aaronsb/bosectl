@@ -149,7 +149,7 @@ Each feature entry maps a name to its protocol address and codec functions:
 | RFCOMM channel | 2 | 8 | 8 |
 | Init packet | None | None | GET [0.1] required |
 | Noise control | CNC [1.5] / live [31.10] | CNC/wind via [31.6] ModeConfig | ANR [1.6] (off/high/wind/low) |
-| EQ | 3-band [1.7] | Not verified | Not supported |
+| EQ | 3-band [1.7] | 3-band [1.7] | Not supported |
 | Spatial audio | [31.6] ModeConfig | Field observed in [31.6] | Not supported |
 | Mode profiles | 7 editable slots (4-10) | 2 editable slots observed (2-3) | None |
 | Sidetone | [1.11] | Not verified | [1.11] |
@@ -374,6 +374,7 @@ a default config since they don't have a tested implementation yet.
 | `0x4039` | duran | QuietComfort 45 | `qc45` (inferred, untested) |
 | `0x4068` | serena | Ultra Open Earbuds | `ultra_open` (partial) |
 | `0x4082` | wolverine | QuietComfort Ultra Headphones (2nd Gen) | `qc_ultra2` |
+| `0x4083` | unconfirmed | QuietComfort Headphones (2nd Gen) | `qc_ultra2` |
 
 ### Known Unsupported (Future Targets)
 

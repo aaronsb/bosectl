@@ -68,7 +68,7 @@ pub fn qc_prince() -> DeviceConfig {
         product_name: Some(Addr(1, 2)),
         voice_prompts: Some(Addr(1, 3)),
         cnc: Some(Addr(1, 5)),
-        eq: None,
+        eq: Some(Addr(1, 7)),
         buttons: None,
         multipoint: None,
         sidetone: None,
@@ -310,6 +310,7 @@ mod tests {
         assert_eq!(dev.info.codename, "prince");
         assert_eq!(dev.rfcomm_channel, 8);
         assert!(dev.mode_config.is_some());
+        assert!(dev.eq.is_some());
         assert!(dev.audio_settings.is_none());
         assert!(!dev.supports_anc_toggle);
         assert_eq!(dev.editable_slots, &[2, 3]);

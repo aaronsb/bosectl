@@ -155,6 +155,21 @@ wind:   0 -> 1 -> 0
 
 These writes applied immediately when the edited slot was the current mode.
 
+## EQ
+
+`prince` exposes the same 3-band equalizer register as `qc45` and
+`qc_ultra2`:
+
+```
+[1.7] RangeControl/EQ GET/SETGET
+```
+
+A GET returns 4-byte groups `[min, max, current, band_id]` with signed
+`-10..+10` values. SETGET writes one band per packet as `[value, band_id]`
+(`0` = bass, `1` = mid, `2` = treble). Verified on firmware
+1.0.6-80+f5f219b: a read returned Bass +6 / Mid +5 / Treble +6, and a write
+round-tripped through a subsequent read.
+
 ## Unsupported or Not Yet Verified
 
 The tested firmware does not support QC Ultra 2's direct live settings register:
@@ -179,5 +194,5 @@ No unauthenticated true ANC-off toggle was found:
 | `[1.5]` SettingsCnc SETGET with disable flag | rejected/auth gated |
 
 The verified local controls are mode switching, editable-mode raw CNC level,
-and Wind Block. EQ, buttons, multipoint, power, and true ANC off remain
-unverified for `prince`.
+Wind Block, and 3-band EQ. Buttons, multipoint, power, and true ANC off
+remain unverified for `prince`.

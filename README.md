@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/aaronsb/bosectl)](https://github.com/aaronsb/bosectl/releases/latest)
-[![Devices](https://img.shields.io/badge/Devices-3_supported_·_38_known-green)](docs/architecture.md#device-catalog)
+[![Devices](https://img.shields.io/badge/Devices-3_supported_·_39_known-green)](docs/architecture.md#device-catalog)
 [![Python 3](https://img.shields.io/badge/Python-3-3572A5.svg)](python/)
 [![Rust](https://img.shields.io/badge/Rust-1.70+-DEA584.svg)](rust/)
 [![C++17](https://img.shields.io/badge/C++-17-f34b7d.svg)](cpp/)
@@ -26,7 +26,7 @@ connection to the headphones.
 | Device                      | NC Control                            | EQ     | Spatial        | Profiles              | Buttons                | Status             |
 | --------------------------- | ------------------------------------- | ------ | -------------- | --------------------- | ---------------------- | ------------------ |
 | **QC Ultra Headphones 2**   | CNC 0-10 slider                       | 3-band | room/head      | 7 custom slots        | Shortcut remap         | Verified           |
-| **QuietComfort Headphones** | CNC 0-10 + Wind Block via ModeConfig  | —      | field observed | 2 user slots observed | —                      | Verified (`prince`) |
+| **QuietComfort Headphones** | CNC 0-10 + Wind Block via ModeConfig  | 3-band | field observed | 2 user slots observed | —                      | Verified (`prince`) |
 | **QuietComfort 35 / 35 II** | ANR off/high/wind/low                 | —      | —              | —                     | Action remap (VPA/ANC) | Verified           |
 | **QuietComfort Earbuds**    | CNC 0-10 via direct SETGET            | 3-band | —              | 4 fixed modes         | Remap                  | Verified (`lando`) |
 | **QuietComfort 45**         | CNC 0-10 via ModeConfig               | 3-band | —              | 2 user slots          | Remap                  | Inferred (`duran`), untested on hardware |
@@ -173,6 +173,13 @@ curl -LO https://github.com/aaronsb/bosectl/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS
 chmod +x bmapctl-rust-linux-x86_64
 sudo cp bmapctl-rust-linux-x86_64 /usr/local/bin/bmapctl
+```
+
+### From crates.io (Rust, Linux)
+
+```bash
+cargo install bose-bmap   # installs the bmapctl binary
+cargo add bose-bmap       # use as a library; the import is still `use bmap::`
 ```
 
 ### From Source

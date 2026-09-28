@@ -31,7 +31,7 @@ from .types import DeviceStatus, ModeConfig, EqBand, ButtonMapping, BmapResponse
 from .protocol import bmap_packet, parse_response, parse_all_responses
 from .constants import OP_STATUS
 
-__version__ = "0.1.0"
+__version__ = "0.4.1"
 
 
 def connect(mac=None, device_type=None):
