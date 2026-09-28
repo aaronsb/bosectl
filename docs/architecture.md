@@ -374,6 +374,7 @@ a default config since they don't have a tested implementation yet.
 | `0x4039` | duran | QuietComfort 45 | `qc45` (inferred, untested) |
 | `0x4068` | serena | Ultra Open Earbuds | `ultra_open` (partial) |
 | `0x4082` | wolverine | QuietComfort Ultra Headphones (2nd Gen) | `qc_ultra2` |
+| `0x4083` | unconfirmed | QuietComfort Headphones (2nd Gen) | `qc_ultra2` |
 
 ### Known Unsupported (Future Targets)
 

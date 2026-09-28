@@ -42,6 +42,10 @@ pub const CATALOG: &[BoseDevice] = &[
     BoseDevice { product_id: 0x4066, codename: "lonestarr",  name: "QuietComfort Ultra Headphones",          category: Category::Headphones, config: None },
     BoseDevice { product_id: 0x4075, codename: "prince",     name: "QuietComfort Headphones",                category: Category::Headphones, config: Some("qc_prince") },
     BoseDevice { product_id: 0x4082, codename: "wolverine",  name: "QuietComfort Ultra Headphones (2nd Gen)", category: Category::Headphones, config: Some("qc_ultra2") },
+    // Codename unconfirmed. Firmware 8.x, MAC prefix 68:F2:1F (wolverine family),
+    // RFCOMM channel 2, 48-byte STATUS / 40-byte SETGET ModeConfig — same BMAP
+    // layout as QC Ultra 2, including the Immersion preset mode.
+    BoseDevice { product_id: 0x4083, codename: "unconfirmed", name: "QuietComfort Headphones (2nd Gen)",     category: Category::Headphones, config: Some("qc_ultra2") },
     // Earbuds
     BoseDevice { product_id: 0x4012, codename: "ice",        name: "SoundSport",                             category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4013, codename: "flurry",     name: "SoundSport Pulse",                       category: Category::Earbuds, config: None },
@@ -134,6 +138,13 @@ mod tests {
     }
 
     #[test]
+    fn test_lookup_qc_headphones_gen2() {
+        let dev = lookup_device(0x4083).unwrap();
+        assert_eq!(dev.name, "QuietComfort Headphones (2nd Gen)");
+        assert_eq!(dev.config, Some("qc_ultra2"));
+    }
+
+    #[test]
     fn test_lookup_qc_prince() {
         let dev = lookup_device(0x4075).unwrap();
         assert_eq!(dev.codename, "prince");
@@ -149,6 +160,7 @@ mod tests {
     fn test_is_supported() {
         assert!(is_supported(0x4082)); // wolverine
         assert!(is_supported(0x4062)); // edith
+        assert!(is_supported(0x4083)); // QC Headphones (2nd Gen)
         assert!(is_supported(0x4075)); // prince
         assert!(is_supported(0x402F)); // lando
         assert!(is_supported(0x4039)); // duran
