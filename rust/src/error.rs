@@ -6,7 +6,10 @@ use std::fmt;
 pub type BmapResult<T> = Result<T, BmapError>;
 
 /// BMAP error types.
+///
+/// Non-exhaustive: match with a wildcard arm, since new variants may be added.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BmapError {
     /// Failed to connect to device.
     Connection(String),

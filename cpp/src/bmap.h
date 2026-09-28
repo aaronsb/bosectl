@@ -27,7 +27,9 @@ inline constexpr uint8_t FALLBACK_CHANNELS[] = {2, 8, 9};
 /// Backoff before each retry of a channel that answered EBUSY or
 /// ECONNREFUSED: the headset is still tearing down the previous RFCOMM link,
 /// or has not re-listened on the channel yet. The same channel is retried
-/// after each delay before the probe moves on.
+/// after each delay before the probe moves on. ECONNREFUSED is retried only on
+/// the configured channel: a fallback that refuses is usually just not a BMAP
+/// channel. Linux only; the macOS transport's errors carry no errno.
 inline constexpr std::chrono::milliseconds RETRY_DELAYS[] = {
     std::chrono::milliseconds(500),
     std::chrono::milliseconds(1000),
@@ -73,20 +75,21 @@ inline bool speaks_bmap(Transport& transport, const DeviceConfig& config) {
 using OpenChannel = std::function<std::unique_ptr<Transport>(uint8_t)>;
 using SleepFor = std::function<void(std::chrono::milliseconds)>;
 
-inline bool is_retryable(int error_number) {
-    return error_number == EBUSY || error_number == ECONNREFUSED;
+inline bool is_retryable(int error_number, bool configured) {
+    return error_number == EBUSY || (configured && error_number == ECONNREFUSED);
 }
 
-/// Open `channel`, retrying EBUSY/ECONNREFUSED after each of RETRY_DELAYS.
-/// Rethrows the last failure.
+/// Open `channel`, retrying EBUSY (and ECONNREFUSED on the configured
+/// channel) after each of RETRY_DELAYS. Rethrows the last failure.
 inline std::unique_ptr<Transport> connect_with_retry(uint8_t channel,
+                                                     bool configured,
                                                      const OpenChannel& open,
                                                      const SleepFor& sleep) {
     for (size_t retry = 0;; ++retry) {
         try {
             return open(channel);
         } catch (const connect_error& e) {
-            if (!is_retryable(e.error_number()) || retry >= std::size(RETRY_DELAYS)) throw;
+            if (!is_retryable(e.error_number(), configured) || retry >= std::size(RETRY_DELAYS)) throw;
         }
         sleep(RETRY_DELAYS[retry]);
     }
@@ -98,9 +101,12 @@ inline std::unique_ptr<Transport> connect_with_retry(uint8_t channel,
 /// channels accept and stay silent — so each fallback is confirmed with a
 /// firmware GET [0.5] before it is returned.
 ///
-/// Each channel is retried on EBUSY/ECONNREFUSED before the probe moves on.
-/// If any channel was still busy at the end, throws busy_error rather than
-/// "no channel found". `open` and `sleep` are injectable for tests.
+/// Each channel is retried on EBUSY (the configured one also on ECONNREFUSED)
+/// before the probe moves on. A configured channel still busy after its
+/// retries throws busy_error at once: the headset is there, so probing other
+/// channels would only add delay. A fallback still busy at the end is
+/// reported the same way rather than "no channel found". `open` and `sleep`
+/// are injectable for tests.
 inline std::unique_ptr<Transport> probe_channels(const std::string& mac,
                                                  const DeviceConfig& config,
                                                  const OpenChannel& open,
@@ -111,14 +117,20 @@ inline std::unique_ptr<Transport> probe_channels(const std::string& mac,
     }
     std::string first_error;
     std::string busy;
+    std::string tried;
 
     for (size_t i = 0; i < candidates.size(); ++i) {
+        if (i) tried += ", ";
+        tried += std::to_string(candidates[i]);
         std::unique_ptr<Transport> transport;
         try {
-            transport = connect_with_retry(candidates[i], open, sleep);
+            transport = connect_with_retry(candidates[i], i == 0, open, sleep);
         } catch (const connect_error& e) {
             if (first_error.empty()) first_error = e.what();
-            if (busy.empty() && e.error_number() == EBUSY) busy = e.what();
+            if (busy.empty() && e.error_number() == EBUSY) {
+                busy = e.what();
+                if (i == 0) break;
+            }
             continue;
         } catch (const std::exception& e) {
             if (first_error.empty()) first_error = e.what();
@@ -133,11 +145,6 @@ inline std::unique_ptr<Transport> probe_channels(const std::string& mac,
         // transport destroyed here, closing the socket
     }
 
-    std::string tried;
-    for (size_t i = 0; i < candidates.size(); ++i) {
-        if (i) tried += ", ";
-        tried += std::to_string(candidates[i]);
-    }
     if (!busy.empty()) {
         throw busy_error(std::string(BUSY_MESSAGE) + " (" + mac + ", tried " +
                              tried + "): " + busy,

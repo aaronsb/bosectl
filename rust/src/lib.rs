@@ -85,7 +85,9 @@ pub const FALLBACK_CHANNELS: [u8; 3] = [2, 8, 9];
 /// Backoff before each retry of a channel that answered EBUSY or
 /// ECONNREFUSED: the headset is still tearing down the previous RFCOMM link,
 /// or has not re-listened on the channel yet. The same channel is retried
-/// after each delay before the probe moves on.
+/// after each delay before the probe moves on. ECONNREFUSED is retried only on
+/// the configured channel: a fallback that refuses is usually just not a BMAP
+/// channel. Linux only; the macOS transport's errors carry no errno.
 pub const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(500),
     Duration::from_millis(1000),
@@ -95,8 +97,12 @@ pub const RETRY_DELAYS: [Duration; 3] = [
 const BUSY_MESSAGE: &str =
     "Headphones busy (another connection is still closing); try again in a few seconds";
 
-fn is_retryable(errno: Option<i32>) -> bool {
-    matches!(errno, Some(libc::EBUSY) | Some(libc::ECONNREFUSED))
+fn is_retryable(errno: Option<i32>, configured: bool) -> bool {
+    match errno {
+        Some(libc::EBUSY) => true,
+        Some(libc::ECONNREFUSED) => configured,
+        _ => false,
+    }
 }
 
 /// Connect on the configured channel, then probe fallbacks.
@@ -118,9 +124,11 @@ fn open_transport(
     )
 }
 
-/// Open `ch`, retrying EBUSY/ECONNREFUSED after each of [`RETRY_DELAYS`].
+/// Open `ch`, retrying EBUSY (and ECONNREFUSED on the configured channel)
+/// after each of [`RETRY_DELAYS`].
 fn connect_with_retry<T>(
     ch: u8,
+    configured: bool,
     connect: &mut impl FnMut(u8) -> Result<T, ConnectError>,
     sleep: &mut impl FnMut(Duration),
 ) -> Result<T, ConnectError> {
@@ -128,7 +136,7 @@ fn connect_with_retry<T>(
     loop {
         match connect(ch) {
             Ok(t) => return Ok(t),
-            Err(e) if is_retryable(e.errno) => match delays.next() {
+            Err(e) if is_retryable(e.errno, configured) => match delays.next() {
                 Some(&d) => sleep(d),
                 None => return Err(e),
             },
@@ -140,8 +148,10 @@ fn connect_with_retry<T>(
 /// Channel probe behind [`open_transport`], with connect and sleep injected
 /// so tests run without sockets or real delays.
 ///
-/// If any channel was still busy after its retries, the failure is
-/// [`BmapError::Busy`] rather than "no channel found".
+/// A configured channel still busy after its retries fails at once with
+/// [`BmapError::Busy`]: the headset is there, so probing other channels would
+/// only add delay. A fallback still busy at the end is reported the same way
+/// rather than "no channel found".
 fn probe_channels<T: Transport>(
     mac: &str,
     channel: u8,
@@ -154,13 +164,18 @@ fn probe_channels<T: Transport>(
         .collect();
     let mut first_error: Option<BmapError> = None;
     let mut busy_error: Option<BmapError> = None;
+    let mut tried: Vec<String> = Vec::new();
 
     for (i, &ch) in candidates.iter().enumerate() {
-        let transport = match connect_with_retry(ch, &mut connect, &mut sleep) {
+        tried.push(ch.to_string());
+        let transport = match connect_with_retry(ch, i == 0, &mut connect, &mut sleep) {
             Ok(t) => t,
             Err(e) => {
                 if e.errno == Some(libc::EBUSY) && busy_error.is_none() {
                     busy_error = Some(e.error);
+                    if i == 0 {
+                        break;
+                    }
                 } else {
                     first_error.get_or_insert(e.error);
                 }
@@ -178,11 +193,16 @@ fn probe_channels<T: Transport>(
         // transport dropped here, closing the socket
     }
 
-    let tried: Vec<String> = candidates.iter().map(|c| c.to_string()).collect();
     if let Some(e) = busy_error {
+        // Bare transport message, without the "Connection error: " prefix,
+        // so the text matches Python and C++.
+        let detail = match e {
+            BmapError::Connection(msg) => msg,
+            other => other.to_string(),
+        };
         return Err(BmapError::Busy(format!(
             "{} ({}, tried {}): {}",
-            BUSY_MESSAGE, mac, tried.join(", "), e
+            BUSY_MESSAGE, mac, tried.join(", "), detail
         )));
     }
     Err(BmapError::Connection(format!(
@@ -266,9 +286,12 @@ mod probe_tests {
                 let outcome = if outcomes.len() > 1 { outcomes.remove(0) } else { outcomes[0] };
                 match outcome {
                     Up => Ok(FakeTransport { channel: ch }),
+                    // Same shape as RfcommTransport::try_connect's message.
                     Errno(code) => Err(ConnectError {
                         error: BmapError::Connection(format!(
-                            "Failed to connect: {}", std::io::Error::from_raw_os_error(code)
+                            "Failed to connect to {}: {}",
+                            "00:11:22:33:44:55",
+                            std::io::Error::from_raw_os_error(code)
                         )),
                         errno: Some(code),
                     }),
@@ -295,28 +318,51 @@ mod probe_tests {
     fn ebusy_forever_reports_busy() {
         let busy: &[Outcome] = &[Errno(libc::EBUSY)];
         let (res, h) = run(&[(2, busy), (8, busy), (9, busy)]);
-        // One try plus three retries per channel, three sleeps per channel.
-        assert_eq!(*h.attempts.borrow(), [[2; 4], [8; 4], [9; 4]].concat());
-        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0, 0.5, 1.0, 2.0, 0.5, 1.0, 2.0]));
+        // One try plus three retries on the configured channel, then stop.
+        assert_eq!(*h.attempts.borrow(), vec![2; 4]);
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0]));
         match res {
             Err(BmapError::Busy(msg)) => {
-                assert!(msg.contains("Headphones busy"));
+                assert!(msg.starts_with("Headphones busy"));
                 assert!(!msg.contains("No BMAP channel found"));
-                assert!(msg.contains("busy (os error 16)"));
+                assert!(!msg.contains("Connection error: "));
+                assert!(msg.contains("tried 2): Failed to connect to "));
+                assert!(msg.contains("(os error 16)"));
             }
             other => panic!("expected Busy, got {:?}", other.err()),
         }
     }
 
     #[test]
-    fn busy_on_configured_channel_wins_over_other_errors() {
+    fn busy_configured_channel_stops_probe() {
+        let (res, h) = run(&[(2, &[Errno(libc::EBUSY)]), (8, &[Up]), (9, &[Up])]);
+        assert!(matches!(res, Err(BmapError::Busy(_))));
+        assert_eq!(*h.attempts.borrow(), vec![2; 4]);
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0]));
+    }
+
+    #[test]
+    fn busy_fallback_reported_as_busy() {
         let (res, h) = run(&[
-            (2, &[Errno(libc::EBUSY)]),
-            (8, &[Errno(libc::EHOSTDOWN)]),
-            (9, &[Errno(libc::ECONNREFUSED)]),
+            (2, &[Errno(libc::EHOSTDOWN)]),
+            (8, &[Errno(libc::EBUSY)]),
+            (9, &[Errno(libc::EHOSTDOWN)]),
         ]);
         assert!(matches!(res, Err(BmapError::Busy(_))));
-        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0, 0.5, 1.0, 2.0]));
+        assert_eq!(*h.attempts.borrow(), vec![2, 8, 8, 8, 8, 9]);
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0]));
+    }
+
+    #[test]
+    fn econnrefused_on_fallback_moves_on_without_sleep() {
+        let (res, h) = run(&[
+            (2, &[Errno(libc::EHOSTDOWN)]),
+            (8, &[Errno(libc::ECONNREFUSED), Up]),
+            (9, &[Up]),
+        ]);
+        assert_eq!(res.unwrap().channel, 9);
+        assert_eq!(*h.attempts.borrow(), vec![2, 8, 9]);
+        assert!(h.sleeps.borrow().is_empty());
     }
 
     #[test]
@@ -335,7 +381,8 @@ mod probe_tests {
             Err(BmapError::Connection(msg)) => assert!(msg.contains("No BMAP channel found")),
             other => panic!("expected Connection, got {:?}", other.err()),
         }
-        assert_eq!(h.sleeps.borrow().len(), 9);
+        // Configured channel only; refusing fallbacks move on.
+        assert_eq!(*h.sleeps.borrow(), secs(&[0.5, 1.0, 2.0]));
     }
 
     #[test]

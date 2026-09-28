@@ -404,7 +404,7 @@ implemented.
 To add support for a new Bose device:
 
 1. **Add to the catalog** — add its PID, codename, and name with `config=None`
-2. **Discover the RFCOMM channel** — `connect()` tries the config's channel, then probes 2, 8, 9 with a firmware GET (`FALLBACK_CHANNELS`). A channel that answers EBUSY or ECONNREFUSED (the headset is still closing a previous connection) is retried after 0.5, 1 and 2 s before the probe moves on, and if a channel is still busy at the end the error says the headphones are busy instead of "No BMAP channel found". Set `RFCOMM_CHANNEL` to whichever answers on your unit
+2. **Discover the RFCOMM channel** — `connect()` tries the config's channel, then probes 2, 8, 9 with a firmware GET (`FALLBACK_CHANNELS`). On Linux, a channel that answers EBUSY (the headset is still closing a previous connection) is retried after 0.5, 1 and 2 s before the probe moves on; ECONNREFUSED gets the same retries on the configured channel only. If the configured channel is still busy after its retries, `connect()` fails at once with a "headphones busy" error instead of probing further; a fallback still busy at the end gets the same error instead of "No BMAP channel found". The retry is Linux-only: macOS IOBluetooth errors carry no errno, so they are never retried. Set `RFCOMM_CHANNEL` to whichever answers on your unit
 3. **Check if an init packet is needed** — send GET [0.1] and see if subsequent commands work
 4. **Probe features** — GET on known function addresses to see what responds
 5. **Create a device config** with the discovered addresses and parsers
@@ -521,6 +521,7 @@ use `BmapConnection<MockTransport>` with canned responses.
 
 **Error handling** uses `Result<T, BmapError>` with an enum:
 ```rust
+#[non_exhaustive]
 pub enum BmapError {
     Connection(String),
     Auth(String),
