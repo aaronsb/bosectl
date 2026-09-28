@@ -135,14 +135,14 @@ pybmap.known_devices()       # full catalog
 - **Bluetooth** enabled in System Settings
 - **Bose headphones** paired/connected via System Settings
 
-### Installation (macOS & Linux Python CLI)
+### Installation (Python CLI)
 
-Run the included installer to set up dependencies (such as PyObjC on macOS) and symlink `bosectl` globally:
+Run the installer for your platform. It checks prerequisites (PyObjC on macOS, a Bluetooth-capable Python on Linux) and symlinks `bosectl` into `/usr/local/bin`:
 
 ```bash
 git clone https://github.com/aaronsb/bosectl.git
 cd bosectl
-./macOS_install.sh
+./linux_install.sh    # or ./macOS_install.sh
 ```
 
 ### From Release Binaries (Linux)
