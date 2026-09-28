@@ -17,6 +17,11 @@ over Bluetooth RFCOMM. Full control over noise cancellation, EQ, spatial
 audio, button mapping, profiles, and device settings through a direct
 connection to the headphones.
 
+**Want a desktop app?** [bosectl-qt](https://github.com/aaronsb/bosectl-qt)
+is a Qt6 system tray app built on the C++ library, and a working reference
+for embedding it: noise cancellation, modes, EQ, and battery reporting to
+the desktop through BlueZ. On Arch it's in the AUR as `bosectl-qt`.
+
 > **This is not an exploit.** We use the BMAP protocol's standard SETGET
 > operator, which the headphones accept without authentication. No keys
 > are extracted, no encryption is broken, no traffic is replayed.
