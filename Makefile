@@ -66,7 +66,8 @@ rust-publish: rust-test ## Publish to crates.io
 ENV_CRATES ?= .env.crates
 rust-secret: ## Push CARGO_REGISTRY_TOKEN from .env.crates (or ENV_CRATES=path) to GitHub Actions secrets
 	@test -f "$(ENV_CRATES)" || { echo "$(ENV_CRATES) not found"; exit 1; }
-	@. "$(abspath $(ENV_CRATES))" && test -n "$$CARGO_REGISTRY_TOKEN" && \
+	@. "$(abspath $(ENV_CRATES))" && \
+		{ test -n "$$CARGO_REGISTRY_TOKEN" || { echo "CARGO_REGISTRY_TOKEN empty in $(ENV_CRATES)" >&2; exit 1; }; } && \
 		printf '%s' "$$CARGO_REGISTRY_TOKEN" | gh secret set CARGO_REGISTRY_TOKEN
 
 # ── C++ ──────────────────────────────────────────────────────────────────────

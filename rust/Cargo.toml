@@ -5,13 +5,15 @@ edition = "2021"
 description = "Control Bluetooth audio devices over the BMAP protocol"
 license = "MIT"
 repository = "https://github.com/aaronsb/bosectl"
-readme = "../README.md"
+readme = "README.md"
+rust-version = "1.70"
+keywords = ["bose", "bluetooth", "bmap", "headphones", "rfcomm"]
+categories = ["hardware-support", "command-line-utilities"]
 
 # Published as bose-bmap (the crates.io name "bmap" belongs to an unrelated
 # crate); the library keeps its import name, so code still says `use bmap::`.
 [lib]
 name = "bmap"
-path = "src/lib.rs"
 
 [dependencies]
 libc = "0.2"

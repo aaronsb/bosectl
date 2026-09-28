@@ -156,6 +156,13 @@ chmod +x bmapctl-rust-linux-x86_64
 sudo cp bmapctl-rust-linux-x86_64 /usr/local/bin/bmapctl
 ```
 
+### From crates.io (Rust, Linux)
+
+```bash
+cargo install bose-bmap   # installs the bmapctl binary
+cargo add bose-bmap       # use as a library; the import is still `use bmap::`
+```
+
 ### From Source
 
 ```bash
