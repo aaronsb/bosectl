@@ -34,6 +34,8 @@ TEST(parse_response_basic) {
 TEST(parse_response_too_short) {
     auto resp = parse_response({1, 2});
     ASSERT_FALSE(resp.has_value());
+    ASSERT_FALSE(parse_response({2, 2, 0x03, 4, 80, 0xff}).has_value());
+    ASSERT_FALSE(parse_response({2, 2, 0x08, 0}).has_value());
 }
 
 TEST(parse_all_responses_two) {
@@ -42,6 +44,17 @@ TEST(parse_all_responses_two) {
     ASSERT_EQ(responses.size(), 2u);
     ASSERT_EQ(responses[0].func, 6);
     ASSERT_EQ(responses[1].func, 3);
+}
+
+TEST(parse_all_stops_at_unknown_operator) {
+    std::vector<uint8_t> data = {
+        31, 6, 0x03, 2, 0xAA, 0xBB,
+        31, 3, 0x08, 1, 0x00,
+        31, 3, 0x06, 1, 0x00,
+    };
+    auto responses = parse_all_responses(data);
+    ASSERT_EQ(responses.size(), 1u);
+    ASSERT_EQ(responses[0].func, 6);
 }
 
 TEST(parse_all_truncated) {

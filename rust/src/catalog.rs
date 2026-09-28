@@ -58,7 +58,7 @@ pub const CATALOG: &[BoseDevice] = &[
     BoseDevice { product_id: 0x404C, codename: "celine_ii",  name: "Frames (2nd Gen)",                       category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4060, codename: "olivia",     name: "Frames Tempo",                           category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4061, codename: "vedder",     name: "Frames",                                 category: Category::Earbuds, config: None },
-    BoseDevice { product_id: 0x4062, codename: "edith",      name: "QuietComfort Ultra Earbuds (2nd Gen)",   category: Category::Earbuds, config: Some("qc_ultra2") },
+    BoseDevice { product_id: 0x4062, codename: "edith",      name: "QuietComfort Ultra Earbuds (2nd Gen)",   category: Category::Earbuds, config: Some("qc_ultra2_earbuds") },
     BoseDevice { product_id: 0x4064, codename: "smalls",     name: "QuietComfort Earbuds II",                category: Category::Earbuds, config: None },
     BoseDevice { product_id: 0x4068, codename: "serena",     name: "Ultra Open Earbuds",                     category: Category::Earbuds, config: Some("ultra_open") },
     BoseDevice { product_id: 0x4072, codename: "scotty",     name: "QuietComfort Ultra Earbuds",             category: Category::Earbuds, config: None },
@@ -134,7 +134,7 @@ mod tests {
     fn test_lookup_qc_ultra2_earbuds() {
         let dev = lookup_device(0x4062).unwrap();
         assert_eq!(dev.codename, "edith");
-        assert_eq!(dev.config, Some("qc_ultra2"));
+        assert_eq!(dev.config, Some("qc_ultra2_earbuds"));
     }
 
     #[test]

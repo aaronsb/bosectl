@@ -26,6 +26,7 @@ connection to the headphones.
 | Device                      | NC Control                            | EQ     | Spatial        | Profiles              | Buttons                | Status             |
 | --------------------------- | ------------------------------------- | ------ | -------------- | --------------------- | ---------------------- | ------------------ |
 | **QC Ultra Headphones 2**   | CNC 0-10 slider                       | 3-band | room/head      | 7 custom slots        | Shortcut remap         | Verified           |
+| **QC Ultra Earbuds 2**      | CNC 0-10 (verified)                   | inherited | modes verified | inherited           | inherited              | Battery/status/modes/CNC verified (`edith`) |
 | **QuietComfort Headphones** | CNC 0-10 + Wind Block via ModeConfig  | 3-band | field observed | 2 user slots observed | —                      | Verified (`prince`) |
 | **QuietComfort 35 / 35 II** | ANR off/high/wind/low                 | —      | —              | —                     | Action remap (VPA/ANC) | Verified           |
 | **QuietComfort Earbuds**    | CNC 0-10 via direct SETGET            | 3-band | —              | 4 fixed modes         | Remap                  | Verified (`lando`) |
@@ -96,6 +97,10 @@ bosectl eq 3 0 -2           # EQ: bass/mid/treble
 bosectl buttons set ANC     # Remap programmable button
 bosectl quiet               # Switch to Quiet mode
 ```
+
+When `BMAP_MAC` (or Python CLI alias `BOSE_MAC`) is set, also set
+`BMAP_DEVICE` to the matching config key. Device type is auto-detected only
+when the MAC address is auto-detected.
 
 ### Device Catalog API
 

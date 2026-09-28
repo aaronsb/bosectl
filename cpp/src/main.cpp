@@ -1,6 +1,7 @@
 // bmapctl — Minimal CLI for controlling BMAP devices (C++ version).
 
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <string>
 
@@ -30,7 +31,8 @@ static void usage() {
               << "  off                 Power off\n\n"
               << "Environment:\n"
               << "  BMAP_MAC=XX:XX:XX:XX:XX:XX   Device MAC\n"
-              << "  BMAP_DEVICE=qc_ultra2|qc_prince|qc35   Device type\n";
+              << "  BMAP_DEVICE=qc_ultra2|qc_ultra2_earbuds|qc_prince|qc35|"
+                 "qc_earbuds|qc45|ultra_open\n";
 }
 
 static bool is_on(const std::string& s) {
@@ -52,8 +54,8 @@ int main(int argc, char** argv) {
     try {
         devptr = connect(mac_str, dev_str);
     } catch (const std::exception& e) {
-        std::cerr << "Connection failed: " << e.what() << "\n"
-                  << "Is Bluetooth on? Are the headphones paired and connected?\n";
+        std::cerr << "Connection failed: " << e.what() << "\n";
+        if (auto hint = connection_hint(e)) std::cerr << hint << "\n";
         return 1;
     }
     auto& dev = *devptr;
@@ -63,6 +65,15 @@ int main(int argc, char** argv) {
             auto s = dev.status();
             std::cout << "  Model        " << dev.config().info.name << "\n";
             std::cout << "  Battery      " << (int)s.battery << "%\n";
+            for (const auto& [id, label] : dev.config().battery_components) {
+                for (const auto& reading : s.battery_readings) {
+                    if (id == reading.component_id) {
+                        std::cout << "  " << std::left << std::setw(12) << label
+                                  << std::right << (int)reading.level << "%\n";
+                        break;
+                    }
+                }
+            }
             if (!s.mode.empty())
                 std::cout << "  Mode         " << s.mode << "\n";
             if (dev.has_feature("anr")) {

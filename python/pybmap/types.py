@@ -25,6 +25,12 @@ ModeConfig = namedtuple("ModeConfig", [
 # A single EQ band reading.
 EqBand = namedtuple("EqBand", ["band_id", "name", "min_val", "max_val", "current"])
 
+# A single component battery reading from a multi-battery device.
+BatteryReading = namedtuple("BatteryReading", ["component_id", "level"])
+
+# Aggregate and component readings parsed from one battery response.
+BatteryStatus = namedtuple("BatteryStatus", ["aggregate", "readings"])
+
 # Complete device status snapshot.
 DeviceStatus = namedtuple("DeviceStatus", [
     "battery",
@@ -41,7 +47,10 @@ DeviceStatus = namedtuple("DeviceStatus", [
     "auto_answer",
     "prompts_enabled",
     "prompts_language",
+    "battery_readings",  # List of BatteryReading from the same response
 ])
+# Preserve positional construction of the pre-snapshot status shape.
+DeviceStatus.__new__.__defaults__ = ((),)
 
 # Current audio settings (CNC, spatial, wind, ANC) from [31.10].
 AudioSettings = namedtuple("AudioSettings", [

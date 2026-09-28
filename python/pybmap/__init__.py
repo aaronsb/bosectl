@@ -25,9 +25,12 @@ from .catalog import (
 )
 from .errors import (
     BmapError, BmapConnectionError, BmapAuthError,
-    BmapDeviceError, BmapTimeoutError, BmapNotFoundError,
+    BmapDeviceError, BmapTimeoutError, BmapNotFoundError, BmapInvalidArgError,
 )
-from .types import DeviceStatus, ModeConfig, EqBand, ButtonMapping, BmapResponse
+from .types import (
+    BatteryReading, BatteryStatus, BmapResponse, ButtonMapping, DeviceStatus,
+    EqBand, ModeConfig,
+)
 from .protocol import bmap_packet, parse_response, parse_all_responses
 from .constants import OP_STATUS
 
@@ -40,7 +43,7 @@ def connect(mac=None, device_type=None):
     Args:
         mac: Bluetooth MAC address. Auto-detected if None.
         device_type: Device type string (e.g. "qc_ultra2", "qc35").
-                     Defaults to "qc_ultra2" if not specified.
+                     Required when mac is specified; auto-detected otherwise.
 
     Returns:
         BmapConnection context manager.
@@ -49,6 +52,9 @@ def connect(mac=None, device_type=None):
         BmapNotFoundError: If no device is found.
         BmapConnectionError: If the connection fails.
     """
+    mac = mac or None
+    device_type = device_type or None
+
     if mac is None:
         detected_mac, detected_type = find_bmap_device()
         if detected_mac is None:
@@ -59,9 +65,8 @@ def connect(mac=None, device_type=None):
         mac = detected_mac
         if device_type is None:
             device_type = detected_type
-
-    if device_type is None:
-        device_type = "qc_ultra2"
+    elif device_type is None:
+        raise BmapInvalidArgError("device_type is required when mac is specified")
 
     device = get_device(device_type)
     channel = getattr(device, "RFCOMM_CHANNEL", 2)

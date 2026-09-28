@@ -27,7 +27,9 @@ fn main() {
         Ok(d) => d,
         Err(e) => {
             eprintln!("Connection failed: {}", e);
-            eprintln!("Is Bluetooth on? Are the headphones paired and connected?");
+            if let Some(hint) = connection_hint(&e) {
+                eprintln!("{}", hint);
+            }
             process::exit(1);
         }
     };
@@ -254,6 +256,14 @@ fn main() {
     }
 }
 
+/// Follow-up hint for a failed connect; setup mistakes are not Bluetooth problems.
+fn connection_hint(e: &BmapError) -> Option<&'static str> {
+    match e {
+        BmapError::InvalidArg(_) => None,
+        _ => Some("Is Bluetooth on? Are the headphones paired and connected?"),
+    }
+}
+
 fn err_exit(e: &BmapError) {
     eprintln!("Error: {}", e);
     process::exit(1);
@@ -266,6 +276,15 @@ fn cmd_status(dev: &bmap::BmapConnection<impl bmap::Transport>) -> Result<(), Bm
 
     println!("  Model        {}", dev.config().info.name);
     println!("  Battery      {}%", s.battery);
+    for (component_id, label) in dev.config().battery_components {
+        if let Some(reading) = s
+            .battery_readings
+            .iter()
+            .find(|reading| reading.component_id == *component_id)
+        {
+            println!("  {:12} {}%", label, reading.level);
+        }
+    }
     if !s.mode.is_empty() {
         println!("  Mode         {}", s.mode);
     }
@@ -326,5 +345,18 @@ fn usage() {
     println!();
     println!("Environment:");
     println!("  BMAP_MAC=XX:XX:XX:XX:XX:XX   Device MAC (auto-detected if unset)");
-    println!("  BMAP_DEVICE=qc_ultra2|qc_prince|qc35   Device type");
+    println!("  BMAP_DEVICE=qc_ultra2|qc_ultra2_earbuds|qc_prince|qc35|qc_earbuds|qc45|ultra_open");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_device_type_skips_bluetooth_hint() {
+        let err = connect(Some("00:11:22:33:44:55"), None).err().unwrap();
+        assert!(matches!(err, BmapError::InvalidArg(_)));
+        assert_eq!(connection_hint(&err), None);
+        assert!(connection_hint(&BmapError::NotFound("none".into())).is_some());
+    }
 }

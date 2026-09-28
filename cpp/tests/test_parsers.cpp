@@ -12,6 +12,34 @@ TEST(parse_battery_empty) {
     ASSERT_EQ(parse_battery({}), 0);
 }
 
+TEST(parse_battery_readings) {
+    auto readings = parse_battery_readings(decode_hex_fixture(
+        "../../fixtures/packets/qc-ultra2-earbuds/battery-status.hex"));
+    ASSERT_EQ(readings.size(), 4u);
+    ASSERT_EQ(readings[0].component_id, 1);
+    ASSERT_EQ(readings[0].level, 60);
+    ASSERT_EQ(readings[3].component_id, 3);
+    ASSERT_EQ(readings[3].level, 80);
+    auto shuffled = parse_battery_readings({
+        0x50,0xff,0xff,0x03, 0x46,0xff,0xff,0x04,
+        0x32,0xff,0xff,0x09, 0x3c,0xff,0xff,0x01,
+        0x3c,0xff,0xff,0x02,
+    });
+    ASSERT_EQ(shuffled.size(), 5u);
+    ASSERT_EQ(shuffled[0].component_id, 3);
+    ASSERT_EQ(shuffled[1].component_id, 4);
+    ASSERT_EQ(shuffled[2].component_id, 9);
+    bool threw = false;
+    try { parse_battery_readings({0x50, 0xff}); }
+    catch (const std::invalid_argument&) { threw = true; }
+    ASSERT_TRUE(threw);
+    threw = false;
+    try { parse_battery_readings({
+        0x3c,0xff,0xff,0x01, 0x50,0xff,0xff,0x01}); }
+    catch (const std::invalid_argument&) { threw = true; }
+    ASSERT_TRUE(threw);
+}
+
 TEST(parse_firmware_from_capture) {
     std::vector<uint8_t> p = {'8','.','2','.','2','0','+','g','3','4','c','f','0','2','9'};
     ASSERT_EQ(parse_firmware(p), "8.2.20+g34cf029");

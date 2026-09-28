@@ -19,6 +19,16 @@ inline constexpr uint8_t FALLBACK_CHANNELS[] = {2, 8, 9};
 
 namespace detail {
 
+inline void validate_device_override(
+    const std::string& mac_override,
+    const std::string& device_type_override)
+{
+    if (!mac_override.empty() && device_type_override.empty()) {
+        throw std::invalid_argument(
+            "device_type is required when mac is specified");
+    }
+}
+
 inline void send_init(Transport& transport, const DeviceConfig& config) {
     if (config.init_packet) {
         auto pkt = bmap_packet(config.init_packet->fblock,
@@ -81,11 +91,19 @@ inline std::unique_ptr<RfcommTransport> open_transport(const std::string& mac,
 
 } // namespace detail
 
-/// Connect to a BMAP device, auto-detecting if mac/device_type are empty.
+/// Follow-up hint for a failed connect(), or nullptr when the failure is a
+/// caller setup mistake (std::invalid_argument) rather than a Bluetooth issue.
+inline const char* connection_hint(const std::exception& error) {
+    if (dynamic_cast<const std::invalid_argument*>(&error)) return nullptr;
+    return "Is Bluetooth on? Are the headphones paired and connected?";
+}
+
+/// Connect to a BMAP device. Device type is resolved only during MAC discovery.
 inline std::unique_ptr<BmapConnection> connect(
     const std::string& mac_override = "",
     const std::string& device_type_override = "")
 {
+    detail::validate_device_override(mac_override, device_type_override);
     std::string mac = mac_override;
     std::string device_type = device_type_override;
 
@@ -99,9 +117,6 @@ inline std::unique_ptr<BmapConnection> connect(
         if (device_type.empty()) {
             device_type = detected->second;
         }
-    }
-    if (device_type.empty()) {
-        device_type = "qc_ultra2";
     }
 
     auto config = get_device(device_type);

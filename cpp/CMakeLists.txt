@@ -43,5 +43,10 @@ add_executable(bmap_tests
     tests/test_catalog.cpp
     tests/test_transport.cpp
 )
-target_link_libraries(bmap_tests PRIVATE bmap)
+# Linked like bmapctl so tests can call the real connect(); no BT at runtime.
+if(APPLE)
+    target_link_libraries(bmap_tests PRIVATE bmap)
+else()
+    target_link_libraries(bmap_tests PRIVATE bmap bluetooth)
+endif()
 add_test(NAME bmap_tests COMMAND bmap_tests)

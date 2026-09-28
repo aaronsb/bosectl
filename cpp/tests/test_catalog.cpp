@@ -32,7 +32,7 @@ TEST(catalog_lookup_qc_ultra2_earbuds) {
     ASSERT_TRUE(dev != nullptr);
     ASSERT_EQ(std::string(dev->codename), std::string("edith"));
     ASSERT_TRUE(dev->config != nullptr);
-    ASSERT_EQ(std::string(dev->config), std::string("qc_ultra2"));
+    ASSERT_EQ(std::string(dev->config), std::string("qc_ultra2_earbuds"));
 }
 
 TEST(catalog_lookup_qc_headphones_gen2) {

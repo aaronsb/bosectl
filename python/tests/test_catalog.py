@@ -28,7 +28,7 @@ class TestLookup:
     def test_qc_ultra2_earbuds(self):
         dev = lookup_device(0x4062)
         assert dev.codename == "edith"
-        assert dev.config == "qc_ultra2"
+        assert dev.config == "qc_ultra2_earbuds"
 
     def test_qc_headphones_gen2(self):
         dev = lookup_device(0x4083)

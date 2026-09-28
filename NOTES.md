@@ -21,6 +21,35 @@ the app uses to change modes in real time.
 - Custom name: "Fargo"
 - Product ID: 0x4082, Variant: 0x01
 
+## QC Ultra 2 Earbuds — EDITH
+
+- Product: Bose QuietComfort Ultra Earbuds (2nd Gen)
+- Codename: `edith`
+- Product ID: `0x4062`
+- Platform: OTG-QCC-384
+- Transport: Bluetooth SPP over RFCOMM channel 2
+- Feature layout: shared with QC Ultra 2 headphones
+- Hardware validation: physical `edith` device; battery components, status,
+  listening modes, and CNC behavior verified
+
+### Component Battery Response
+
+EDITH returns multiple four-byte battery records from `[2.2]`. Each record is
+`[level, reserved, reserved, component_id]`:
+
+| Component ID | Component | Example |
+|--------------|-----------|---------|
+| `0x01` | Right | `3cffff01` = 60% |
+| `0x02` | Left | `3cffff02` = 60% |
+| `0x03` | Case | `50ffff03` = 80% |
+| `0x04` | Combined buds | `3cffff04` = 60%, used for generic Battery |
+
+Records must be identified by component ID, not payload position. The generic
+`Battery` value uses ID `0x04` (falling back to the lower of `0x01`/`0x02`
+when `0x04` is absent or `0xFF`); the CLI separately displays IDs `0x01`, `0x02`,
+and `0x03`. BMAP `[2.5]` tracks whether both earbuds are seated and did not
+change across observed charger transitions, so case charging is not inferred.
+
 ## BMAP Protocol
 - Version: 1.1.0
 - Transport: Bluetooth SPP over RFCOMM channel 2

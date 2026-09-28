@@ -63,7 +63,7 @@ CATALOG = {
     0x404C: BoseDevice(0x404C, "celine_ii",  "Frames (2nd Gen)",                     "earbuds", None),
     0x4060: BoseDevice(0x4060, "olivia",     "Frames Tempo",                         "earbuds", None),
     0x4061: BoseDevice(0x4061, "vedder",     "Frames",                               "earbuds", None),
-    0x4062: BoseDevice(0x4062, "edith",      "QuietComfort Ultra Earbuds (2nd Gen)", "earbuds", "qc_ultra2"),
+    0x4062: BoseDevice(0x4062, "edith",      "QuietComfort Ultra Earbuds (2nd Gen)", "earbuds", "qc_ultra2_earbuds"),
     0x4064: BoseDevice(0x4064, "smalls",     "QuietComfort Earbuds II",              "earbuds", None),
     0x4068: BoseDevice(0x4068, "serena",     "Ultra Open Earbuds",                   "earbuds", "ultra_open"),
     0x4072: BoseDevice(0x4072, "scotty",     "QuietComfort Ultra Earbuds",           "earbuds", None),

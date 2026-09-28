@@ -21,6 +21,10 @@ class BmapDeviceError(BmapError):
         self.error_code = error_code
 
 
+class BmapInvalidArgError(BmapError):
+    """Caller supplied invalid or incomplete arguments."""
+
+
 class BmapTimeoutError(BmapError):
     """Device did not respond in time."""
 

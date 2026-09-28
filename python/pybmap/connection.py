@@ -18,7 +18,8 @@ from .constants import (
 )
 from .protocol import bmap_packet, parse_response, parse_all_responses, fmt_response
 from .errors import BmapError, BmapAuthError, BmapDeviceError
-from .types import DeviceStatus, AudioSettings
+from .types import AudioSettings, BatteryStatus, DeviceStatus
+from .devices import parsers
 
 
 # The device name field is 32 bytes on every BMAP device seen so far.
@@ -53,20 +54,26 @@ class BmapConnection:
             )
         return features[name]
 
-    def _get(self, feature_name):
-        """Send a GET request and return the parsed payload."""
+    def _get_payload(self, feature_name):
+        """Send a GET request and return its raw payload."""
         feat = self._feature(feature_name)
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(bmap_packet(fblock, func, OP_GET))
         parsed = parse_response(resp)
         if parsed is None:
-            return None
+            raise BmapDeviceError("Invalid or empty response")
         if parsed.op == OP_ERROR:
             self._raise_error(parsed)
+        return parsed.payload
+
+    def _get(self, feature_name):
+        """Send a GET request and return its parsed payload."""
+        feat = self._feature(feature_name)
+        payload = self._get_payload(feature_name)
         parser = feat.get("parser")
         if parser:
-            return parser(parsed.payload)
-        return parsed.payload
+            return parser(payload)
+        return payload
 
     def _setget(self, feature_name, payload):
         """Send a SETGET request and return the parsed response."""
@@ -126,7 +133,46 @@ class BmapConnection:
 
     def battery(self):
         """Battery percentage (int)."""
-        return self._get("battery")
+        return self.battery_status().aggregate
+
+    def battery_status(self):
+        """Aggregate and component levels from one battery response."""
+        feature = self._feature("battery")
+        payload = self._get_payload("battery")
+
+        aggregate_id = self.battery_aggregate_id
+        if aggregate_id is None:
+            parser = feature.get("parser", parsers.parse_battery)
+            aggregate = parser(payload)
+            if aggregate is None:
+                raise BmapDeviceError("Empty battery response")
+            return BatteryStatus(aggregate=aggregate, readings=[])
+
+        try:
+            readings = parsers.parse_battery_readings(payload)
+        except ValueError as error:
+            raise BmapDeviceError(str(error)) from error
+        aggregate = next(
+            (reading.level for reading in readings
+             if reading.component_id == aggregate_id),
+            None,
+        )
+        if aggregate is None:
+            # Aggregate missing or 0xFF: fall back to the lowest bud reading.
+            sources = self.battery_aggregate_sources
+            aggregate = min(
+                (reading.level for reading in readings
+                 if reading.component_id in sources),
+                default=None,
+            )
+        if aggregate is None:
+            raise BmapDeviceError(
+                "Battery response missing aggregate component %d" % aggregate_id)
+        return BatteryStatus(aggregate=aggregate, readings=readings)
+
+    def battery_readings(self):
+        """Component battery readings, when the device reports multiple cells."""
+        return self.battery_status().readings
 
     def firmware(self):
         """Firmware version string."""
@@ -261,9 +307,11 @@ class BmapConnection:
         current_name = self._mode_name_from_idx(current_idx) if current_idx is not None else ""
         cnc_cur, cnc_max = self._safe_read(self.cnc, (0, 10))
         prompts_on, prompts_lang = self._safe_read(self.prompts, (False, ""))
+        battery = self.battery_status()
 
         return DeviceStatus(
-            battery=self.battery(),
+            battery=battery.aggregate,
+            battery_readings=battery.readings,
             mode=current_name,
             mode_idx=current_idx,
             cnc_level=cnc_cur, cnc_max=cnc_max,
@@ -551,6 +599,21 @@ class BmapConnection:
     def device_info(self):
         """Device identification dict."""
         return self._device.DEVICE_INFO
+
+    @property
+    def battery_components(self):
+        """Known component ID to label mappings for battery readings."""
+        return getattr(self._device, "BATTERY_COMPONENTS", {})
+
+    @property
+    def battery_aggregate_id(self):
+        """Component ID used for the generic battery level, when applicable."""
+        return getattr(self._device, "BATTERY_AGGREGATE_ID", None)
+
+    @property
+    def battery_aggregate_sources(self):
+        """Component IDs whose lowest level stands in for a missing aggregate."""
+        return getattr(self._device, "BATTERY_AGGREGATE_SOURCES", ())
 
     @property
     def preset_modes(self):

@@ -5,7 +5,8 @@ Shared across Python, Rust, and C++ test suites.
 
 ## Structure
 
-- `packets/<device>/` — Raw captured request/response pairs (JSON files from bmap-capture.py)
+- `packets/<device>/` — Raw captured request/response pairs and payloads
+  (`.json` snapshots or plain hexadecimal `.hex` files)
 - `expected/` — Expected parse results for unit tests (JSON)
 
 ## Packet format

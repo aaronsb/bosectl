@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -25,7 +26,38 @@ public:
 
     // ── Read Operations ─────────────────────────────────────────────────────
 
-    uint8_t battery()                     { return parse_battery(get(require(config_.battery, "battery"))); }
+    uint8_t battery() {
+        return battery_status().aggregate;
+    }
+    BatteryStatus battery_status() {
+        auto payload = get(require(config_.battery, "battery"));
+        if (config_.battery_aggregate_id) {
+            auto readings = parse_battery_readings(payload);
+            for (const auto& reading : readings) {
+                if (reading.component_id == *config_.battery_aggregate_id)
+                    return {reading.level, std::move(readings)};
+            }
+            // Aggregate missing or 0xFF: fall back to the lowest bud reading.
+            std::optional<uint8_t> lowest;
+            for (const auto& reading : readings) {
+                const auto& sources = config_.battery_aggregate_sources;
+                if (std::find(sources.begin(), sources.end(), reading.component_id) ==
+                    sources.end())
+                    continue;
+                if (!lowest || reading.level < *lowest) lowest = reading.level;
+            }
+            if (lowest) return {*lowest, std::move(readings)};
+            throw std::runtime_error(
+                "Battery response missing aggregate component " +
+                std::to_string(*config_.battery_aggregate_id));
+        }
+        if (payload.empty())
+            throw std::runtime_error("Empty battery response");
+        return {parse_battery(payload), {}};
+    }
+    std::vector<BatteryReading> battery_readings() {
+        return battery_status().readings;
+    }
     std::string firmware()                { return parse_firmware(get(require(config_.firmware, "firmware"))); }
     std::string name()                    { return parse_product_name(get(require(config_.product_name, "product_name"))); }
     std::pair<uint8_t, uint8_t> cnc()     { return parse_cnc(get(require(config_.cnc, "cnc"))); }
@@ -90,9 +122,11 @@ public:
             [&]{ return cnc(); }, {0, 10});
         auto [prom_on, prom_lang] = safe_call<std::pair<bool,std::string>>(
             [&]{ return prompts(); }, {false, ""});
+        auto battery_state = battery_status();
 
         DeviceStatus s;
-        s.battery = battery();
+        s.battery = battery_state.aggregate;
+        s.battery_readings = std::move(battery_state.readings);
         s.mode = mode_name;
         s.mode_idx = idx;
         s.cnc_level = cnc_cur;
@@ -293,7 +327,7 @@ private:
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::Get);
         auto data = transport_->send_recv(pkt);
         auto resp = parse_response(data);
-        if (!resp) throw std::runtime_error("Empty response");
+        if (!resp) throw std::runtime_error("Invalid or empty response");
         check_error(*resp);
         return resp->payload;
     }

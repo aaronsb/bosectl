@@ -41,6 +41,17 @@ inline DeviceConfig qc_ultra2() {
     return c;
 }
 
+/// Bose QuietComfort Ultra Earbuds 2 -- edith, product ID 0x4062.
+/// Shares the QC Ultra 2 protocol layout and reports separate battery cells.
+inline DeviceConfig qc_ultra2_earbuds() {
+    auto c = qc_ultra2();
+    c.info = {"Bose QuietComfort Ultra Earbuds (2nd Gen)", "edith", "OTG-QCC-384"};
+    c.battery_components = {{1, "Right"}, {2, "Left"}, {3, "Case"}};
+    c.battery_aggregate_id = 4;
+    c.battery_aggregate_sources = {1, 2};
+    return c;
+}
+
 /// Bose QuietComfort Headphones -- prince, product ID 0x4075.
 /// Verified against firmware 1.0.6-80+f5f219b. RFCOMM channel 8.
 inline DeviceConfig qc_prince() {
@@ -188,6 +199,7 @@ inline DeviceConfig ultra_open() {
 
 inline std::optional<DeviceConfig> get_device(const std::string& name) {
     if (name == "qc_ultra2") return qc_ultra2();
+    if (name == "qc_ultra2_earbuds") return qc_ultra2_earbuds();
     if (name == "qc35") return qc35();
     if (name == "qc_prince") return qc_prince();
     if (name == "qc_earbuds") return qc_earbuds();

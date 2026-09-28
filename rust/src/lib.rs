@@ -22,17 +22,27 @@ pub mod catalog;
 
 pub use connection::BmapConnection;
 pub use transport::Transport;
-pub use device::{DeviceConfig, DeviceStatus, ModeConfig, EqBand, ButtonMapping};
+pub use device::{
+    BatteryReading, BatteryStatus, ButtonMapping, DeviceConfig, DeviceStatus,
+    EqBand, ModeConfig,
+};
 pub use error::{BmapError, BmapResult};
 pub use protocol::{Operator, BmapResponse};
 
 /// Connect to a BMAP device over Bluetooth RFCOMM.
 ///
 /// - `mac`: Bluetooth MAC address. Auto-detected if None.
-/// - `device_type`: Device type string. Auto-detected if None.
+/// - `device_type`: Device type string. Auto-detected only when `mac` is None.
 pub fn connect(mac: Option<&str>, device_type: Option<&str>) -> BmapResult<BmapConnection<transport::RfcommTransport>> {
+    let mac = mac.filter(|value| !value.is_empty());
+    let device_type = device_type.filter(|value| !value.is_empty());
     let (mac, resolved_type) = match mac {
-        Some(m) => (m.to_string(), device_type.unwrap_or("qc_ultra2").to_string()),
+        Some(m) => {
+            let dtype = device_type.ok_or_else(|| BmapError::InvalidArg(
+                "device_type is required when mac is specified".into()
+            ))?;
+            (m.to_string(), dtype.to_string())
+        }
         None => {
             let (detected_mac, detected_type) = discovery::find_bmap_device()
                 .ok_or_else(|| BmapError::NotFound(
@@ -48,6 +58,20 @@ pub fn connect(mac: Option<&str>, device_type: Option<&str>) -> BmapResult<BmapC
 
     let transport = open_transport(&mac, config.rfcomm_channel, config.init_packet)?;
     Ok(BmapConnection::new(transport, config))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_mac_requires_device_type() {
+        for device_type in [None, Some("")] {
+            let result = connect(Some("00:11:22:33:44:55"), device_type);
+            assert!(matches!(result, Err(BmapError::InvalidArg(message))
+                if message.contains("device_type is required")));
+        }
+    }
 }
 
 /// RFCOMM channels BMAP has been observed on. The channel a unit exposes can

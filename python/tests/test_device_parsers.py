@@ -1,7 +1,12 @@
 """Tests for device-specific parsers using real captured data."""
 
+from pathlib import Path
+
+import pytest
+
 from pybmap.devices.parsers import (
     parse_battery, parse_firmware, parse_product_name, parse_cnc,
+    parse_battery_readings,
     parse_eq, parse_buttons, parse_multipoint, parse_bool,
     parse_sidetone, parse_voice_prompts,
     parse_mode_config_48, parse_mode_config_47,
@@ -10,6 +15,11 @@ from pybmap.devices.parsers import (
     build_buttons,
 )
 from pybmap.types import ModeConfig, EqBand, ButtonMapping
+
+
+EDITH_BATTERY_CAPTURE = Path(
+    __file__
+).parents[2] / "fixtures/packets/qc-ultra2-earbuds/battery-status.hex"
 
 
 # ── Test data from real QC Ultra 2 captures ──────────────────────────────────
@@ -23,6 +33,30 @@ class TestParseBattery:
 
     def test_empty(self):
         assert parse_battery(bytes()) is None
+
+
+class TestParseBatteryReadings:
+    def test_multi_component_capture(self):
+        payload = bytes.fromhex(EDITH_BATTERY_CAPTURE.read_text().strip())
+        readings = parse_battery_readings(payload)
+        assert [(r.component_id, r.level) for r in readings] == [
+            (1, 60), (2, 60), (4, 60), (3, 80)
+        ]
+
+    def test_rejects_incomplete_record(self):
+        with pytest.raises(ValueError, match="Malformed battery response"):
+            parse_battery_readings(bytes.fromhex("50ffff"))
+
+    def test_rejects_duplicate_component(self):
+        with pytest.raises(ValueError, match="Duplicate battery component 1"):
+            parse_battery_readings(bytes.fromhex("3cffff0150ffff01"))
+
+    def test_preserves_shuffled_component_ids(self):
+        payload = bytes.fromhex("50ffff0332ffff0946ffff043cffff013cffff02")
+        readings = parse_battery_readings(payload)
+        assert [(r.component_id, r.level) for r in readings] == [
+            (3, 80), (9, 50), (4, 70), (1, 60), (2, 60)
+        ]
 
 
 class TestParseFirmware:

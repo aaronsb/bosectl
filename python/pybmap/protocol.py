@@ -39,7 +39,11 @@ def parse_response(data):
     fblock = data[0]
     func = data[1]
     op = data[2] & 0x0F
+    if op not in OP_NAMES:
+        return None
     length = data[3]
+    if len(data) < 4 + length:
+        return None
     payload = data[4:4 + length]
     return BmapResponse(fblock, func, op, payload)
 
@@ -60,6 +64,8 @@ def parse_all_responses(data):
         fblock = data[pos]
         func = data[pos + 1]
         op = data[pos + 2] & 0x0F
+        if op not in OP_NAMES:
+            break
         length = data[pos + 3]
         if pos + 4 + length > len(data):
             break  # Truncated packet
