@@ -19,7 +19,12 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: System :: Hardware",
 ]
-dependencies = []
+# Linux uses only the standard library; macOS talks to IOBluetooth via PyObjC.
+dependencies = [
+    "pyobjc-core; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
+    "pyobjc-framework-IOBluetooth; sys_platform == 'darwin'",
+]
 
 [project.urls]
 Homepage = "https://github.com/aaronsb/bosectl"
