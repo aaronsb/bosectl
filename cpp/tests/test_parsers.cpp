@@ -150,3 +150,28 @@ TEST(mode_config_prince_capture) {
     ASSERT_FALSE(mc->wind_block);
     ASSERT_FALSE(mc->anc_toggle);
 }
+
+// Empty custom slot as the QC Ultra 2 reports it (firmware 8.2.20): byte 45
+// is 1 on every editable slot, wind block lives at byte 46.
+static std::vector<uint8_t> qc_ultra2_status_48(uint8_t wind) {
+    std::vector<uint8_t> p(48, 0);
+    p[0] = 4;
+    p[3] = 1;
+    p[6] = 'N'; p[7] = 'o'; p[8] = 'n'; p[9] = 'e';
+    p[41] = 0x1d;
+    p[45] = 1;
+    p[46] = wind;
+    return p;
+}
+
+TEST(mode_config_qc_ultra2_wind_block_offset) {
+    auto mc = parse_mode_config_qc_ultra2(qc_ultra2_status_48(0));
+    ASSERT_TRUE(mc.has_value());
+    ASSERT_EQ(mc->mode_idx, 4);
+    ASSERT_TRUE(mc->editable);
+    ASSERT_FALSE(mc->wind_block);
+
+    mc = parse_mode_config_qc_ultra2(qc_ultra2_status_48(1));
+    ASSERT_TRUE(mc.has_value());
+    ASSERT_TRUE(mc->wind_block);
+}

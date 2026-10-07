@@ -453,7 +453,9 @@ pub fn build_buttons(button_id: u8, event: u8, action: u8) -> Vec<u8> {
 
 /// Parse a 48-byte ModeConfig STATUS response (QC Ultra 2 / newer firmware).
 ///
-/// STATUS offsets: CNC=42, spatial=44, wind=45, anc=47.
+/// STATUS offsets: CNC=42, spatial=44, wind=46, anc=47. Byte 45 mirrors
+/// the editable flag; the firmware inserts it when expanding the 40-byte
+/// SETGET layout into the 48-byte STATUS reply.
 /// This function is passed as `parse_mode_config` in the QC Ultra 2 config.
 pub fn parse_mode_config_qc_ultra2(payload: &[u8]) -> Option<ModeConfig> {
     if payload.len() < 6 {
@@ -476,7 +478,7 @@ pub fn parse_mode_config_qc_ultra2(payload: &[u8]) -> Option<ModeConfig> {
             name,
             cnc_level: payload[42],
             spatial: payload[44],
-            wind_block: payload[45] != 0,
+            wind_block: payload[46] != 0,
             anc_toggle: payload[47] != 0,
             editable,
             configured,
@@ -810,5 +812,29 @@ mod tests {
         assert_eq!(mc.cnc_level, 5);
         assert!(!mc.wind_block);
         assert!(!mc.anc_toggle);
+    }
+
+    /// Empty custom slot as the QC Ultra 2 reports it (firmware 8.2.20):
+    /// byte 45 is 1 on every editable slot, wind block lives at byte 46.
+    fn qc_ultra2_status_48(wind: u8) -> Vec<u8> {
+        let mut p = vec![0u8; 48];
+        p[0] = 4;
+        p[3] = 1;
+        p[6..10].copy_from_slice(b"None");
+        p[41] = 0x1d;
+        p[45] = 1;
+        p[46] = wind;
+        p
+    }
+
+    #[test]
+    fn test_parse_mode_config_qc_ultra2_wind_block_offset() {
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(0)).unwrap();
+        assert_eq!(mc.mode_idx, 4);
+        assert!(mc.editable);
+        assert!(!mc.wind_block, "byte 45 must not be read as wind block");
+
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(1)).unwrap();
+        assert!(mc.wind_block);
     }
 }
