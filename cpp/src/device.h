@@ -360,7 +360,7 @@ inline std::optional<ModeConfig> parse_mode_config_qc_ultra2(const std::vector<u
                               reinterpret_cast<const char*>(name_end));
         mc.cnc_level = p[42];
         mc.spatial = p[44];
-        mc.wind_block = p[45] != 0;
+        mc.wind_block = p[46] != 0;  // [45] mirrors the editable flag
         mc.anc_toggle = p[47] != 0;
         return mc;
     } else if (p.size() >= 40) {

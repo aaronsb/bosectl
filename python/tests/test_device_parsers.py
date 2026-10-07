@@ -382,3 +382,31 @@ class TestBuilders:
     def test_voice_prompts_off(self):
         payload = build_voice_prompts(False, 1)  # US English, off
         assert payload == bytes([0x01])  # bit5=0, lang=1
+
+
+class TestParseModeConfig48WindBlockOffset:
+    """Byte 45 of a 48-byte STATUS mirrors the editable flag; wind is byte 46.
+
+    Before the fix every empty custom slot parsed as wind_block=True because
+    [45] is 1 on all editable slots.
+    """
+
+    @staticmethod
+    def _status(wind):
+        p = bytearray(48)
+        p[0] = 4
+        p[3] = 1                 # editable
+        p[6:10] = b"None"
+        p[41] = 0x1d
+        p[45] = 1                # mirrors editable, not wind
+        p[46] = wind
+        return bytes(p)
+
+    def test_empty_custom_slot_wind_off(self):
+        config = parse_mode_config_48(self._status(0))
+        assert config.editable is True
+        assert config.wind_block is False
+
+    def test_wind_on_moves_byte_46(self):
+        config = parse_mode_config_48(self._status(1))
+        assert config.wind_block is True
