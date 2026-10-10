@@ -1,0 +1,78 @@
+name: Build Windows bmapctl
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+          override: true
+
+      - name: Show rustc and cargo versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Build release (bmapctl)
+        shell: powershell
+        run: |
+          Set-Location $Env:GITHUB_WORKSPACE\rust
+          cargo build --release
+
+      - name: Prepare dist directory and copy binary
+        shell: powershell
+        run: |
+          $dist = Join-Path $Env:GITHUB_WORKSPACE 'dist'
+          if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
+          New-Item -ItemType Directory -Path $dist | Out-Null
+          $src = Join-Path $Env:GITHUB_WORKSPACE 'rust\target\release\bmapctl.exe'
+          if (-Not (Test-Path $src)) { Write-Error "Built binary not found at $src"; exit 2 }
+          Copy-Item -Path $src -Destination (Join-Path $dist 'bmapctl-windows-x86_64.exe') -Force
+
+      - name: Strip binary if a strip tool is available
+        shell: powershell
+        run: |
+          $exe = Join-Path $Env:GITHUB_WORKSPACE 'dist\bmapctl-windows-x86_64.exe'
+          if (Get-Command llvm-strip -ErrorAction SilentlyContinue) { llvm-strip $exe } 
+          elseif (Get-Command strip -ErrorAction SilentlyContinue) { strip $exe } 
+          else { Write-Output 'No strip tool found; skipping strip step' }
+
+      - name: Create SHA256SUMS
+        shell: powershell
+        run: |
+          $file = Join-Path $Env:GITHUB_WORKSPACE 'dist\bmapctl-windows-x86_64.exe'
+          $hash = Get-FileHash -Algorithm SHA256 $file
+          "{0}  {1}" -f $hash.Hash.ToLower(), (Split-Path $file -Leaf) | Out-File -FilePath (Join-Path $Env:GITHUB_WORKSPACE 'dist\SHA256SUMS') -Encoding utf8
+
+      - name: Verification: run --help
+        shell: powershell
+        run: |
+          $exe = Join-Path $Env:GITHUB_WORKSPACE 'dist\bmapctl-windows-x86_64.exe'
+          & $exe --help
+          Write-Output "Exit: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { Write-Error 'Help command failed (non-zero exit)'; exit 3 }
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bmapctl-windows-x86_64
+          path: dist
+
+      - name: Notes: MSVC toolchain and cross-compile fallback
+        shell: powershell
+        run: |
+          Write-Output 'This job uses the MSVC Rust target (x86_64-pc-windows-msvc). windows-latest includes Visual Studio Build Tools.'
+          Write-Output 'If MSVC build is undesirable, consider adding an additional job that uses mingw-w64 or cross-compilation on ubuntu-latest with rustup target add x86_64-pc-windows-gnu and mingw toolchain.'
