@@ -4,7 +4,6 @@ version = "0.5.0"
 edition = "2021"
 description = "Control Bluetooth audio devices over the BMAP protocol"
 license = "MIT"
-repository = "https://github.com/aaronsb/bosectl"
 readme = "README.md"
 rust-version = "1.70"
 keywords = ["bose", "bluetooth", "bmap", "headphones", "rfcomm"]
@@ -14,9 +13,25 @@ categories = ["hardware-support", "command-line-utilities"]
 # crate); the library keeps its import name, so code still says `use bmap::`.
 [lib]
 name = "bmap"
+crate-type = ["cdylib", "rlib"]
+
 
 [dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_GenericAttributeProfile",
+    "Devices_Enumeration",
+    "Storage_Streams",
+    "Foundation",
+    "Foundation_Collections"
+] }
+pollster = "0.3"
+serialport = "4.3"
+
+
 
 [[bin]]
 name = "bmapctl"
