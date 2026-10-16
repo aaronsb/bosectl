@@ -282,7 +282,7 @@ mod probe_tests {
             None,
             |ch| {
                 h.attempts.borrow_mut().push(ch);
-                let outcomes = script.entry(ch).or_insert_with(|| vec![Errno(libc::EHOSTDOWN)]);
+                let outcomes = script.entry(ch).or_insert_with(|| vec![Errno(libc::ENETDOWN)]);
                 let outcome = if outcomes.len() > 1 { outcomes.remove(0) } else { outcomes[0] };
                 match outcome {
                     Up => Ok(FakeTransport { channel: ch }),
@@ -344,9 +344,9 @@ mod probe_tests {
     #[test]
     fn busy_fallback_reported_as_busy() {
         let (res, h) = run(&[
-            (2, &[Errno(libc::EHOSTDOWN)]),
+            (2, &[Errno(libc::ENETDOWN)]),
             (8, &[Errno(libc::EBUSY)]),
-            (9, &[Errno(libc::EHOSTDOWN)]),
+            (9, &[Errno(libc::ENETDOWN)]),
         ]);
         assert!(matches!(res, Err(BmapError::Busy(_))));
         assert_eq!(*h.attempts.borrow(), vec![2, 8, 8, 8, 8, 9]);
@@ -356,7 +356,7 @@ mod probe_tests {
     #[test]
     fn econnrefused_on_fallback_moves_on_without_sleep() {
         let (res, h) = run(&[
-            (2, &[Errno(libc::EHOSTDOWN)]),
+            (2, &[Errno(libc::ENETDOWN)]),
             (8, &[Errno(libc::ECONNREFUSED), Up]),
             (9, &[Up]),
         ]);
@@ -387,7 +387,7 @@ mod probe_tests {
 
     #[test]
     fn non_retryable_error_moves_on_without_sleep() {
-        let (res, h) = run(&[(2, &[Errno(libc::EHOSTDOWN)]), (8, &[Up])]);
+        let (res, h) = run(&[(2, &[Errno(libc::ENETDOWN)]), (8, &[Up])]);
         assert_eq!(res.unwrap().channel, 8);
         assert_eq!(*h.attempts.borrow(), vec![2, 8]);
         assert!(h.sleeps.borrow().is_empty());

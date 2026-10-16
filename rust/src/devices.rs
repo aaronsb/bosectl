@@ -108,6 +108,7 @@ pub fn qc_prince() -> DeviceConfig {
         preset_modes: &[
             ("quiet", PresetMode { idx: 0, description: "Quiet - full ANC" }),
             ("aware", PresetMode { idx: 1, description: "Aware - transparency" }),
+            ("immersion", PresetMode {idx: 2, description: "Immersion Mode: Full ANC with spatial audio"}),
         ],
         editable_slots: &[2, 3],
         parse_mode_config: Some(parse_mode_config_prince),
