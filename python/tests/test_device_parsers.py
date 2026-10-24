@@ -188,12 +188,17 @@ class TestBuildButtons:
 
 class TestParseMultipoint:
     def test_from_capture(self):
-        # "1.10": "07" — bit 1 set (0x02), multipoint on
+        # "1.10": "07" — bit 0 set (0x01), multipoint on
         payload = bytes.fromhex("07")
         assert parse_multipoint(payload) is True
 
+    def test_enabled_bit_is_bit0(self):
+        assert parse_multipoint(bytes([0x01])) is True
+
     def test_disabled(self):
-        assert parse_multipoint(bytes([0x01])) is False  # bit 1 not set
+        # Seen on QC Ultra 2 after SETGET 00: bit 1 (supported) stays set,
+        # bit 0 (enabled) is clear.
+        assert parse_multipoint(bytes([0x06])) is False
 
     def test_empty(self):
         assert parse_multipoint(bytes()) is False

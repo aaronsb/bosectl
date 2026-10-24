@@ -196,7 +196,7 @@ inline std::vector<EqBand> parse_eq(const std::vector<uint8_t>& p) {
 }
 
 inline bool parse_multipoint(const std::vector<uint8_t>& p) {
-    return !p.empty() && (p[0] & 0x02) != 0;
+    return !p.empty() && (p[0] & 0x01) != 0;
 }
 
 inline bool parse_bool(const std::vector<uint8_t>& p) {

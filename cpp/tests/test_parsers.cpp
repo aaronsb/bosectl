@@ -68,8 +68,13 @@ TEST(parse_multipoint_on) {
     ASSERT_TRUE(parse_multipoint({0x07}));
 }
 
+TEST(parse_multipoint_bit0_is_enabled) {
+    ASSERT_TRUE(parse_multipoint({0x01}));
+}
+
 TEST(parse_multipoint_off) {
-    ASSERT_FALSE(parse_multipoint({0x01}));
+    // bit 1 (supported) set, bit 0 (enabled) clear
+    ASSERT_FALSE(parse_multipoint({0x06}));
 }
 
 TEST(parse_sidetone_medium) {

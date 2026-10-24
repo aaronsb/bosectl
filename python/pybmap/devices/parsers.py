@@ -161,9 +161,9 @@ def build_buttons(button_id, event, action):
 
 
 def parse_multipoint(payload):
-    """Parse multipoint GET. Bit 1 (0x02) = enabled."""
+    """Parse multipoint GET. Bit 0 (0x01) = enabled, bit 1 (0x02) = supported."""
     if payload:
-        return bool(payload[0] & 0x02)
+        return bool(payload[0] & 0x01)
     return False
 
 
