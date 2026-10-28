@@ -140,8 +140,10 @@ inline DeviceConfig qc_earbuds() {
 }
 
 /// Bose QuietComfort 45 — codename duran, CSR8670.
-/// Layout inferred from the Bose app (#21); unverified on hardware. Shares
-/// the prince 47/39-byte ModeConfig format. Needs GET [0.1] before responding.
+/// Layout inferred from the Bose app (#21) and now confirmed on hardware
+/// (firmware 4.0.4-4360+de6a887). Shares the prince 47/39-byte ModeConfig
+/// format. Needs GET [0.1] before responding. See
+/// docs/quietcomfort-45-duran.md.
 inline DeviceConfig qc45() {
     DeviceConfig c;
     c.info = {"Bose QuietComfort 45", "duran", "CSR8670"};

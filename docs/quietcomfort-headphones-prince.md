@@ -5,8 +5,9 @@ codename `prince`, product ID `0x4075`, firmware
 `1.0.6-80+f5f219b`.
 
 This is not the same catalog entry as QuietComfort 45 (`duran`, `0x4039`).
-The protocol may be related, but `duran` should remain unclaimed until it is
-verified on real hardware.
+The protocols are related — `duran` reuses the prince 47/39-byte ModeConfig
+parsers — and `duran` is now verified on real hardware in its own report; see
+[docs/quietcomfort-45-duran.md](quietcomfort-45-duran.md).
 
 ## Transport
 
