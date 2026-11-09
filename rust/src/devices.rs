@@ -16,6 +16,8 @@ pub fn qc_ultra2() -> DeviceConfig {
         },
         rfcomm_channel: 2,
         init_packet: None,
+        notifications: None,
+        status_supported_only: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -81,6 +83,8 @@ pub fn qc_prince() -> DeviceConfig {
         },
         rfcomm_channel: 8,
         init_packet: None,
+        notifications: None,
+        status_supported_only: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -130,6 +134,8 @@ pub fn qc35() -> DeviceConfig {
         },
         rfcomm_channel: 8,
         init_packet: Some(Addr(0, 1)),  // GET [0.1] required before QC35 responds
+        notifications: None,
+        status_supported_only: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -180,6 +186,8 @@ pub fn qc_earbuds() -> DeviceConfig {
         },
         rfcomm_channel: 8,
         init_packet: None,
+        notifications: None,
+        status_supported_only: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -228,6 +236,8 @@ pub fn qc45() -> DeviceConfig {
         },
         rfcomm_channel: 8,
         init_packet: Some(Addr(0, 1)),
+        notifications: None,
+        status_supported_only: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -277,6 +287,8 @@ pub fn ultra_open() -> DeviceConfig {
         },
         rfcomm_channel: 2,
         init_packet: None,
+        notifications: None,
+        status_supported_only: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -310,6 +322,54 @@ pub fn ultra_open() -> DeviceConfig {
     }
 }
 
+/// Bose Noise Cancelling Headphones 700 — codename goodyear, firmware
+/// 1.8.2-11524+e0f7590. BMAP on channel 8, no init packet, no AudioModes
+/// block. CNC is direct SETGET [1.5], answered only once notifications [9.2]
+/// are enabled (payload as the Bose app sends it).
+pub fn nc700() -> DeviceConfig {
+    DeviceConfig {
+        info: DeviceInfo {
+            name: "Bose Noise Cancelling Headphones 700",
+            codename: "goodyear",
+            platform: "",
+        },
+        rfcomm_channel: 8,
+        init_packet: None,
+        notifications: Some(&[0x01, 0x00, 0x05, 0x02, 0x37]),
+        status_supported_only: true,
+        battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
+        firmware: Some(Addr(0, 5)),
+        product_name: Some(Addr(1, 2)),
+        voice_prompts: None,
+        cnc: Some(Addr(1, 5)),
+        eq: Some(Addr(1, 7)),
+        buttons: Some(Addr(1, 9)),
+        multipoint: Some(Addr(1, 10)),
+        sidetone: Some(Addr(1, 11)),
+        auto_pause: None,
+        auto_answer: None,
+        anr: None,
+        pairing: None,
+        routing: None,
+        source: None,
+        power: None,
+        get_all_modes: None,
+        current_mode: None,
+        mode_config: None,
+        favorites: None,
+        audio_settings: None,
+        preset_modes: &[],
+        editable_slots: &[],
+        parse_mode_config: None,
+        build_mode_config: None,
+        supports_anc_toggle: false,
+        cnc_direct_setget: true,
+    }
+}
+
 pub fn get_device(name: &str) -> Option<DeviceConfig> {
     match name {
         "qc_ultra2" => Some(qc_ultra2()),
@@ -319,6 +379,7 @@ pub fn get_device(name: &str) -> Option<DeviceConfig> {
         "qc_earbuds" => Some(qc_earbuds()),
         "qc45" => Some(qc45()),
         "ultra_open" => Some(ultra_open()),
+        "nc700" => Some(nc700()),
         _ => None,
     }
 }
@@ -397,5 +458,27 @@ mod tests {
         assert!(dev.eq.is_some());
         assert!(!dev.supports_anc_toggle);
         assert_eq!(dev.editable_slots, &[2, 3]);
+    }
+
+    #[test]
+    fn nc700_config() {
+        let dev = get_device("nc700").unwrap();
+        assert_eq!(dev.info.codename, "goodyear");
+        assert_eq!(dev.rfcomm_channel, 8);
+        assert!(dev.init_packet.is_none());
+        assert_eq!(dev.notifications, Some(&[0x01u8, 0x00, 0x05, 0x02, 0x37][..]));
+        assert!(matches!(dev.cnc, Some(Addr(1, 5))));
+        assert!(dev.cnc_direct_setget);
+        assert!(dev.current_mode.is_none());
+        assert!(dev.preset_modes.is_empty());
+        assert!(dev.buttons.is_some());
+        assert!(dev.status_supported_only);
+    }
+
+    #[test]
+    fn only_nc700_shows_supported_settings_only() {
+        for name in ["qc_ultra2", "qc_ultra2_earbuds", "qc35", "qc_prince", "qc_earbuds", "qc45", "ultra_open"] {
+            assert!(!get_device(name).unwrap().status_supported_only, "{}", name);
+        }
     }
 }

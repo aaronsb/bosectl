@@ -312,8 +312,13 @@ fn cmd_status(dev: &bmap::BmapConnection<impl bmap::Transport>) -> Result<(), Bm
     println!("  FW           {}", s.firmware);
     println!("  Sidetone     {}", s.sidetone);
     println!("  Multipoint   {}", if s.multipoint { "on" } else { "off" });
-    println!("  AutoPause    {}", if s.auto_pause { "on" } else { "off" });
-    println!("  Prompts      {} ({})", if s.prompts_enabled { "on" } else { "off" }, s.prompts_language);
+    let supported_only = dev.config().status_supported_only;
+    if !supported_only || dev.config().auto_pause.is_some() {
+        println!("  AutoPause    {}", if s.auto_pause { "on" } else { "off" });
+    }
+    if !supported_only || dev.config().voice_prompts.is_some() {
+        println!("  Prompts      {} ({})", if s.prompts_enabled { "on" } else { "off" }, s.prompts_language);
+    }
     Ok(())
 }
 

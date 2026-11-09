@@ -103,6 +103,12 @@ struct DeviceConfig {
     uint8_t rfcomm_channel = 2;
     /// Init packet required before device responds (QC35 needs GET [0.1]).
     std::optional<Addr> init_packet;
+    /// SETGET [9.2] NotificationByFblock payload sent on connect (empty: none).
+    /// The NC 700 applies SETGET writes but only answers them once notifications are on.
+    std::vector<uint8_t> notifications;
+    /// `status` shows only settings the device has (NC 700), instead of "off" or
+    /// "custom(0)" for the rest.
+    bool status_supported_only = false;
     std::optional<Addr> battery;
     /// Component IDs and display labels for multi-cell battery responses.
     std::vector<std::pair<uint8_t, std::string>> battery_components;

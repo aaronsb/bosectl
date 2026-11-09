@@ -125,6 +125,14 @@ mod tests {
         assert!(!is_mac("AA-bb-CC-dd-EE-ff"));
     }
 
+    // Modalias line as reported for a NC 700 in issue #48.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_nc700_modalias_detected() {
+        let info = "Name: LE-NC 700\n\tModalias: bluetooth:v009Ep4024d0182\n";
+        assert_eq!(detect_device_type(info), "nc700");
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn test_macos_discovery_returns_none() {

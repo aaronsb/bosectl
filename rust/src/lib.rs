@@ -60,6 +60,7 @@ pub fn connect(mac: Option<&str>, device_type: Option<&str>) -> BmapResult<BmapC
         .ok_or_else(|| BmapError::InvalidArg(format!("Unknown device: {}", resolved_type)))?;
 
     let transport = open_transport(&mac, config.rfcomm_channel, config.init_packet)?;
+    enable_notifications(&transport, config.notifications)?;
     Ok(BmapConnection::new(transport, config))
 }
 
@@ -216,6 +217,15 @@ fn probe_channels<T: Transport>(
 fn send_init(transport: &impl Transport, init_packet: Option<device::Addr>) -> BmapResult<()> {
     if let Some(init) = init_packet {
         let pkt = protocol::bmap_packet(init.0, init.1, protocol::Operator::Get, &[]);
+        transport.send_recv(&pkt)?;
+    }
+    Ok(())
+}
+
+/// Send the device's SETGET [9.2] NotificationByFblock payload, if it has one.
+fn enable_notifications(transport: &impl Transport, payload: Option<&[u8]>) -> BmapResult<()> {
+    if let Some(payload) = payload {
+        let pkt = protocol::bmap_packet(9, 2, protocol::Operator::SetGet, payload);
         transport.send_recv(&pkt)?;
     }
     Ok(())
@@ -410,5 +420,40 @@ mod probe_tests {
         assert!(matches!(res, Err(BmapError::Connection(_))));
         assert_eq!(*attempts.borrow(), vec![2, 8, 9]);
         assert_eq!(*sleeps.borrow(), 0);
+    }
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    struct RecordingTransport {
+        sent: RefCell<Vec<Vec<u8>>>,
+    }
+
+    impl Transport for RecordingTransport {
+        fn send_recv(&self, packet: &[u8]) -> BmapResult<Vec<u8>> {
+            self.sent.borrow_mut().push(packet.to_vec());
+            Ok(vec![packet[0], packet[1], 0x03, 0])
+        }
+        fn send_recv_drain(&self, packet: &[u8]) -> BmapResult<Vec<u8>> {
+            self.send_recv(packet)
+        }
+    }
+
+    #[test]
+    fn nc700_enables_notifications() {
+        let transport = RecordingTransport::default();
+        enable_notifications(&transport, devices::nc700().notifications).unwrap();
+        assert_eq!(*transport.sent.borrow(), vec![vec![0x09, 0x02, 0x02, 0x05, 0x01, 0x00, 0x05, 0x02, 0x37]]);
+    }
+
+    #[test]
+    fn other_devices_send_nothing() {
+        let transport = RecordingTransport::default();
+        enable_notifications(&transport, devices::qc_prince().notifications).unwrap();
+        assert!(transport.sent.borrow().is_empty());
     }
 }

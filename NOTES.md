@@ -50,6 +50,39 @@ when `0x04` is absent or `0xFF`); the CLI separately displays IDs `0x01`, `0x02`
 and `0x03`. BMAP `[2.5]` tracks whether both earbuds are seated and did not
 change across observed charger transitions, so case charging is not inferred.
 
+## Noise Cancelling Headphones 700 — GOODYEAR
+
+Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
+
+- **Channel:** BMAP on RFCOMM channel 8 (its SPP record). No init packet. The
+  BMAP UUID's own SDP record leads to a channel that only repeats a status
+  beacon (`ff 55 02 00 ee 10`) and ignores commands.
+- **No AudioModes block:** GET [31.0] returns ERROR `03` (BlockNotSupp), and
+  [1.6] ANR returns ERROR `04`. Noise cancelling is [1.5] only.
+- **CNC [1.5]:** GET returns `[steps, step, flags]`, e.g. `0b 00 01` = 11
+  steps, step 0. As on other models, step 0 is the most cancelling (the Bose
+  app shows `|step − (steps − 1)|` as its 0-10 "noise cancelling" level).
+  Flags: bit 0 = enabled; bit 1 clear = the user may switch CNC on/off.
+  SETGET `[step, 0x01]` works **without authentication** on the 700.
+- **CNC presets [1.15]:** GET returns `[selected index, step, step, step]`,
+  the levels the headphones' button cycles through (`00 00 05 0a` by default).
+- **SETGET replies need notifications.** The 700 applies a SETGET but sends
+  no reply until notifications are enabled with SETGET [9.2]
+  (NotificationByFblock). Payload: `[mask, 4-byte big-endian block bitmap]`.
+  The Bose app sends `01 00 05 02 37` (blocks 0, 1, 2, 4, 5, 9, 16, 18) and the
+  device answers STATUS `00 05 02 37`. After that a CNC SETGET is answered
+  with STATUS [1.5] (twice) and STATUS [1.15] within ~100 ms, and changes
+  made with the headphones' own button are pushed as STATUS too. Device
+  configs can declare `NOTIFICATIONS` (sent on connect).
+- **Buttons [1.9]:** `80 05 03 00 01 20 88 00 00 00 80` = Shortcut, press and
+  hold, BatteryLevel. The supported-actions bitmap (`00 01 20 88`) is
+  big-endian, as the Bose app reads it: BatteryLevel, ToggleWakeWord,
+  WindMode, SpotifyGo, which includes the current action.
+- **Also answering GET:** battery [2.2], firmware [0.5], product name [1.2]
+  (`00` + "NC 700"), EQ [1.7] (3-band), buttons [1.9], multipoint [1.10],
+  sidetone [1.11], standby timer [1.4] (`b4` = 180 min), CNC persistence
+  [1.14], auto play/pause [1.20], audio source [5.1].
+
 ## BMAP Protocol
 - Version: 1.1.0
 - Transport: Bluetooth SPP over RFCOMM channel 2
