@@ -36,7 +36,7 @@ from .types import (
     EqBand, ModeConfig,
 )
 from .protocol import bmap_packet, parse_response, parse_all_responses
-from .constants import OP_STATUS
+from .constants import OP_SETGET, OP_STATUS
 
 __version__ = "0.5.0"
 
@@ -75,7 +75,19 @@ def connect(mac=None, device_type=None):
     device = get_device(device_type)
     channel = getattr(device, "RFCOMM_CHANNEL", 2)
     transport = _open_transport(mac, channel, device)
+    _enable_notifications(transport, device)
     return BmapConnection(transport, device)
+
+
+def _enable_notifications(transport, device):
+    """Send the device's SETGET [9.2] NotificationByFblock payload, if it has one.
+
+    Some devices (Noise Cancelling Headphones 700) apply SETGET writes but
+    only answer them once notifications are enabled.
+    """
+    payload = getattr(device, "NOTIFICATIONS", None)
+    if payload:
+        transport.send_recv(bmap_packet(9, 2, OP_SETGET, payload))
 
 
 # RFCOMM channels BMAP has been observed on. The channel a unit exposes can

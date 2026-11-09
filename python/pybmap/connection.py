@@ -685,6 +685,11 @@ class BmapConnection:
         """Preset mode definitions dict (name -> {idx, description})."""
         return self._device.PRESET_MODES
 
+    @property
+    def status_supported_only(self):
+        """Whether `status` should show only settings the device has."""
+        return getattr(self._device, "STATUS_SUPPORTED_ONLY", False)
+
     def has_feature(self, name):
         """Check if the connected device supports a feature."""
         return name in self._device.FEATURES

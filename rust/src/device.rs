@@ -108,6 +108,11 @@ pub struct DeviceConfig {
     pub rfcomm_channel: u8,
     /// Init packet required before device responds (Some((fblock, func)) for QC35).
     pub init_packet: Option<Addr>,
+    /// SETGET [9.2] NotificationByFblock payload sent on connect. The NC 700
+    /// applies SETGET writes but only answers them once notifications are on.
+    pub notifications: Option<&'static [u8]>,
+    /// `status` shows only settings the device has (NC 700), instead of "off" for the rest.
+    pub status_supported_only: bool,
     pub battery: Option<Addr>,
     /// Component IDs and display labels for multi-cell battery responses.
     pub battery_components: &'static [(u8, &'static str)],

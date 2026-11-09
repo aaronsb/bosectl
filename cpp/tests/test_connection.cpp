@@ -762,3 +762,34 @@ TEST(probe_error_without_errno_is_not_retried) {
     ASSERT_TRUE((attempts == std::vector<uint8_t>{2, 8, 9}));
     ASSERT_EQ(sleeps, 0);
 }
+
+TEST(nc700_config) {
+    auto c = get_device("nc700");
+    ASSERT_TRUE(c.has_value());
+    ASSERT_EQ(c->info.codename, std::string("goodyear"));
+    ASSERT_EQ((int)c->rfcomm_channel, 8);
+    ASSERT_FALSE(c->init_packet.has_value());
+    ASSERT_TRUE(c->cnc_direct_setget);
+    ASSERT_FALSE(c->current_mode.has_value());
+    ASSERT_TRUE(c->buttons.has_value());
+    ASSERT_TRUE(c->status_supported_only);
+}
+
+TEST(only_nc700_shows_supported_settings_only) {
+    for (auto name : {"qc_ultra2", "qc_ultra2_earbuds", "qc35", "qc_prince", "qc_earbuds", "qc45", "ultra_open"}) {
+        ASSERT_FALSE(get_device(name)->status_supported_only);
+    }
+}
+
+TEST(nc700_enables_notifications) {
+    MockTransport t;
+    detail::enable_notifications(t, nc700());
+    ASSERT_EQ(t.sent.size(), 1u);
+    ASSERT_TRUE(t.sent[0] == (std::vector<uint8_t>{0x09, 0x02, 0x02, 0x05, 0x01, 0x00, 0x05, 0x02, 0x37}));
+}
+
+TEST(other_devices_send_no_notifications) {
+    MockTransport t;
+    detail::enable_notifications(t, qc_prince());
+    ASSERT_EQ(t.sent.size(), 0u);
+}

@@ -74,7 +74,8 @@ int main(int argc, char** argv) {
                     }
                 }
             }
-            if (!s.mode.empty())
+            const bool supported_only = dev.config().status_supported_only;
+            if (!s.mode.empty() && (!supported_only || dev.config().current_mode))
                 std::cout << "  Mode         " << s.mode << "\n";
             if (dev.has_feature("anr")) {
                 try { std::cout << "  ANR          " << dev.anr() << "\n"; } catch (...) {}
@@ -97,10 +98,14 @@ int main(int argc, char** argv) {
             std::cout << "  Name         " << s.name << "\n"
                       << "  FW           " << s.firmware << "\n"
                       << "  Sidetone     " << s.sidetone << "\n"
-                      << "  Multipoint   " << (s.multipoint ? "on" : "off") << "\n"
-                      << "  AutoPause    " << (s.auto_pause ? "on" : "off") << "\n"
-                      << "  Prompts      " << (s.prompts_enabled ? "on" : "off")
-                      << " (" << s.prompts_language << ")\n";
+                      << "  Multipoint   " << (s.multipoint ? "on" : "off") << "\n";
+            if (!supported_only || dev.config().auto_pause) {
+                std::cout << "  AutoPause    " << (s.auto_pause ? "on" : "off") << "\n";
+            }
+            if (!supported_only || dev.config().voice_prompts) {
+                std::cout << "  Prompts      " << (s.prompts_enabled ? "on" : "off")
+                          << " (" << s.prompts_language << ")\n";
+            }
 
         } else if (cmd == "battery") {
             std::cout << (int)dev.battery() << "\n";

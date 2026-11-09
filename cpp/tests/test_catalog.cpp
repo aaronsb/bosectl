@@ -51,6 +51,16 @@ TEST(catalog_lookup_qc_prince) {
     ASSERT_EQ(std::string(dev->config), std::string("qc_prince"));
 }
 
+// Discovery picks the device type from this config (issue #48: the NC 700
+// used to fall back to qc_ultra2).
+TEST(catalog_lookup_nc700) {
+    auto* dev = lookup_device(0x4024);
+    ASSERT_TRUE(dev != nullptr);
+    ASSERT_EQ(std::string(dev->codename), std::string("goodyear"));
+    ASSERT_TRUE(dev->config != nullptr);
+    ASSERT_EQ(std::string(dev->config), std::string("nc700"));
+}
+
 TEST(catalog_lookup_unknown) {
     ASSERT_TRUE(lookup_device(0xFFFF) == nullptr);
 }
@@ -63,7 +73,8 @@ TEST(catalog_is_supported) {
     ASSERT_TRUE(is_supported(0x4039));  // duran
     ASSERT_TRUE(is_supported(0x4068));  // serena
     ASSERT_TRUE(is_supported(0x4020));
-    ASSERT_FALSE(is_supported(0x4024));  // NCH 700, no config
+    ASSERT_TRUE(is_supported(0x4024));   // goodyear (NC 700)
+    ASSERT_FALSE(is_supported(0x4066));  // lonestarr, no config
     ASSERT_FALSE(is_supported(0xFFFF));
 }
 
