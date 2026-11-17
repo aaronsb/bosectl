@@ -6,7 +6,7 @@
 use crate::protocol::encode_mode_name;
 
 /// A function block address: (fblock_id, function_id).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Addr(pub u8, pub u8);
 
 /// Device identification.
@@ -108,6 +108,11 @@ pub struct DeviceConfig {
     pub rfcomm_channel: u8,
     /// Init packet required before device responds (Some((fblock, func)) for QC35).
     pub init_packet: Option<Addr>,
+    /// SETGET [9.2] NotificationByFblock payload sent on connect. The NC 700
+    /// applies SETGET writes but only answers them once notifications are on.
+    pub notifications: Option<&'static [u8]>,
+    /// `status` shows only settings the device has (NC 700), instead of "off" for the rest.
+    pub status_supported_only: bool,
     pub battery: Option<Addr>,
     /// Component IDs and display labels for multi-cell battery responses.
     pub battery_components: &'static [(u8, &'static str)],
@@ -148,6 +153,9 @@ pub struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     pub cnc_direct_setget: bool,
+    /// Addresses the device can read but bosectl refuses to write, because
+    /// no write to them has been checked on the hardware.
+    pub read_only: &'static [Addr],
 }
 
 // ── Shared Parsers ──────────────────────────────────────────────────────────

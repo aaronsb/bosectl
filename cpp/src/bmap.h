@@ -59,6 +59,13 @@ inline void send_init(Transport& transport, const DeviceConfig& config) {
     }
 }
 
+/// Send the device's SETGET [9.2] NotificationByFblock payload, if it has one.
+inline void enable_notifications(Transport& transport, const DeviceConfig& config) {
+    if (!config.notifications.empty()) {
+        transport.send_recv(bmap_packet(9, 2, Operator::SetGet, config.notifications));
+    }
+}
+
 /// Send a firmware GET and return true on any parseable BMAP reply.
 inline bool speaks_bmap(Transport& transport, const DeviceConfig& config) {
     try {
@@ -139,9 +146,13 @@ inline std::unique_ptr<Transport> probe_channels(const std::string& mac,
         if (i == 0) {
             // Configured channel connected: trust it, send init if needed.
             send_init(*transport, config);
+            enable_notifications(*transport, config);
             return transport;
         }
-        if (speaks_bmap(*transport, config)) return transport;
+        if (speaks_bmap(*transport, config)) {
+            enable_notifications(*transport, config);
+            return transport;
+        }
         // transport destroyed here, closing the socket
     }
 

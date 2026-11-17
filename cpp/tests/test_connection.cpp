@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <utility>
@@ -56,6 +57,35 @@ static std::unique_ptr<BmapConnection> mock_qc_ultra2() {
 }
 
 TEST(battery) { ASSERT_EQ(mock_qc_ultra2()->battery(), 80); }
+
+TEST(status_leaves_mode_empty_when_mode_read_fails) {
+    // QC35 has no AudioModes block; the mock answers [31.3] with an error.
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, {80, 0xff, 0xff, 0x00});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc35());
+    ASSERT_TRUE(dev.status().mode.empty());
+}
+
+TEST(nc700_refuses_unchecked_writes_before_sending) {
+    auto raw = new MockTransport();
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    std::vector<std::function<void()>> writes = {
+        [&] { dev.set_name("Desk"); },
+        [&] { dev.set_eq(1, 0, 0); },
+        [&] { dev.set_multipoint(true); },
+        [&] { dev.set_sidetone("low"); },
+    };
+    for (auto& write : writes) {
+        bool refused = false;
+        try { write(); }
+        catch (const unsupported_error& error) {
+            refused = std::string(error.what()).find("does not write it yet") != std::string::npos;
+        }
+        catch (...) {}  // any other outcome, such as a sent write's device error, fails below
+        ASSERT_TRUE(refused);
+    }
+    ASSERT_TRUE(raw->sent.empty());
+}
 
 TEST(battery_empty_response) {
     auto raw = new MockTransport();
@@ -761,4 +791,51 @@ TEST(probe_error_without_errno_is_not_retried) {
     ASSERT_TRUE(threw);
     ASSERT_TRUE((attempts == std::vector<uint8_t>{2, 8, 9}));
     ASSERT_EQ(sleeps, 0);
+}
+
+TEST(nc700_config) {
+    auto c = get_device("nc700");
+    ASSERT_TRUE(c.has_value());
+    ASSERT_EQ(c->info.codename, std::string("goodyear"));
+    ASSERT_EQ((int)c->rfcomm_channel, 8);
+    ASSERT_FALSE(c->init_packet.has_value());
+    ASSERT_TRUE(c->cnc_direct_setget);
+    ASSERT_FALSE(c->current_mode.has_value());
+    ASSERT_TRUE(c->buttons.has_value());
+    ASSERT_TRUE(c->status_supported_only);
+}
+
+TEST(only_nc700_shows_supported_settings_only) {
+    for (auto name : {"qc_ultra2", "qc_ultra2_earbuds", "qc35", "qc_prince", "qc_earbuds", "qc45", "ultra_open"}) {
+        ASSERT_FALSE(get_device(name)->status_supported_only);
+    }
+}
+
+// Run the channel probe for `config` against a transport that connects on
+// the configured channel, and return what it sent.
+static std::vector<std::vector<uint8_t>> probe_sent(const DeviceConfig& config) {
+    MockTransport* raw = nullptr;
+    auto transport = detail::probe_channels(
+        "00:11:22:33:44:55", config,
+        [&raw](uint8_t) -> std::unique_ptr<Transport> {
+            auto t = std::make_unique<MockTransport>();
+            raw = t.get();
+            return t;
+        },
+        [](std::chrono::milliseconds) {});
+    return raw->sent;
+}
+
+TEST(probe_enables_nc700_notifications) {
+    auto sent = probe_sent(nc700());
+    ASSERT_EQ(sent.size(), 1u);
+    ASSERT_TRUE(sent[0] == (std::vector<uint8_t>{0x09, 0x02, 0x02, 0x05, 0x01, 0x00, 0x05, 0x02, 0x37}));
+}
+
+TEST(probe_sends_no_notifications_for_other_devices) {
+    for (auto name : {"qc_ultra2", "qc35", "qc_prince", "qc45"}) {
+        for (const auto& packet : probe_sent(*get_device(name))) {
+            ASSERT_FALSE(packet[0] == 0x09 && packet[1] == 0x02);
+        }
+    }
 }

@@ -57,6 +57,20 @@ class BmapConnection:
             )
         return features[name]
 
+    def _writable_feature(self, name):
+        """Look up a feature to write. Raises BmapError if it is read-only.
+
+        A device config marks a feature read-only when the device answers
+        reads of it but no write to it has been checked on the hardware.
+        """
+        feat = self._feature(name)
+        if feat.get("read_only"):
+            raise BmapError(
+                "%s can read '%s' but bosectl does not write it yet: no write "
+                "has been checked on this device" % (
+                    self._device.DEVICE_INFO.get("name", "Device"), name))
+        return feat
+
     def _select_reply(self, data, fblock, func):
         """Pick the frame answering [fblock.func] out of a received buffer.
 
@@ -115,7 +129,7 @@ class BmapConnection:
 
     def _setget(self, feature_name, payload):
         """Send a SETGET request and return the parsed response."""
-        feat = self._feature(feature_name)
+        feat = self._writable_feature(feature_name)
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_SETGET, payload)
@@ -431,7 +445,7 @@ class BmapConnection:
 
     def set_eq(self, bass=0, mid=0, treble=0):
         """Set 3-band equalizer (-10 to +10 each)."""
-        feat = self._feature("eq")
+        feat = self._writable_feature("eq")
         builder = feat.get("builder")
         for band_id, val in enumerate([bass, mid, treble]):
             if not -10 <= val <= 10:
@@ -492,14 +506,14 @@ class BmapConnection:
         level_lower = level.lower()
         if level_lower not in SIDETONE_VALUES:
             raise ValueError("Sidetone must be off, low, medium, or high")
-        feat = self._feature("sidetone")
+        feat = self._writable_feature("sidetone")
         builder = feat.get("builder")
         payload = builder(SIDETONE_VALUES[level_lower])
         self._setget("sidetone", payload)
 
     def set_multipoint(self, enabled):
         """Toggle multipoint connection (bool)."""
-        feat = self._feature("multipoint")
+        feat = self._writable_feature("multipoint")
         builder = feat.get("builder")
         self._setget("multipoint", builder(enabled))
 
@@ -684,6 +698,11 @@ class BmapConnection:
     def preset_modes(self):
         """Preset mode definitions dict (name -> {idx, description})."""
         return self._device.PRESET_MODES
+
+    @property
+    def status_supported_only(self):
+        """Whether `status` should show only settings the device has."""
+        return getattr(self._device, "STATUS_SUPPORTED_ONLY", False)
 
     def has_feature(self, name):
         """Check if the connected device supports a feature."""

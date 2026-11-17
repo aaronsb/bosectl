@@ -104,9 +104,12 @@ def cmd_status(dev):
     row("Sidetone", s.sidetone)
     row("Multipoint", "on" if s.multipoint else "off",
         C_GREEN if s.multipoint else C_DIM)
-    row("AutoPause", "on" if s.auto_pause else "off",
-        C_GREEN if s.auto_pause else C_DIM)
-    row("Prompts", "%s (%s)" % ("on" if s.prompts_enabled else "off", s.prompts_language))
+    supported_only = getattr(dev, "status_supported_only", False)
+    if not supported_only or dev.has_feature("auto_pause"):
+        row("AutoPause", "on" if s.auto_pause else "off",
+            C_GREEN if s.auto_pause else C_DIM)
+    if not supported_only or dev.has_feature("voice_prompts"):
+        row("Prompts", "%s (%s)" % ("on" if s.prompts_enabled else "off", s.prompts_language))
 
 
 def cmd_profiles(dev):
