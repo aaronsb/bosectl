@@ -180,8 +180,7 @@ fn describe(c: &DeviceConfig) -> Vec<String> {
     }
     lines.push(format!("status-supported-only {}", c.status_supported_only as u8));
     lines.push(format!("anc-toggle {}", c.supports_anc_toggle as u8));
-    let mut slots = c.editable_slots.to_vec();
-    slots.sort_unstable();
+    let slots = c.editable_slots.to_vec();
     lines.push(format!(
         "editable-slots {}",
         if slots.is_empty() { "-".into() } else { slots.iter().map(u8::to_string).collect::<Vec<_>>().join(" ") }

@@ -67,16 +67,16 @@ Each call names the library method of the same name. ARGs are separated by singl
 
 ## Errors
 
-A call that fails answers `err CLASS`, where CLASS says what happened. The adapter maps its library's errors to these classes:
+A call that fails answers `err CLASS`, where CLASS says what happened. The adapter maps its library's errors to these classes, and maps nothing else: a library that lacks an error type for a class, or raises the wrong one, fails the case, so the harness shows the gap instead of the adapter covering it.
 
 | Class | When |
 |---|---|
 | `unsupported` | The device does not have the feature, or the library refuses the write (a read-only feature). |
-| `invalid-arg` | The library rejected an argument before sending anything. |
+| `invalid-arg` | The library rejected an argument before sending anything. An adapter also answers `invalid-arg` for an ARG it cannot pass to the library at all: a missing ARG, a word that is not a number, or a number outside the range of the library parameter's type (such as 300 for a C++ `uint8_t`). A value the parameter can hold is always passed through, so the library decides. |
 | `device-error N` | The headphones answered with a BMAP error; N is its code in decimal, `5` for an authentication error. `device-error -` when the library found the reply unusable but no error code applies, such as an empty or malformed reply. |
 | `timeout` | The transport timed out. |
 | `desync` | The reply carried a different address than the request. |
-| `other DETAIL` | Anything else. DETAIL is the error's text, for diagnosis; the runner judges only the class. |
+| `other DETAIL` | Anything else. DETAIL is the error's text, for diagnosis. A case that expects `result err other` matches any DETAIL; a known divergence (README.md) pins the exact line. |
 
 ## Describe
 
@@ -91,5 +91,5 @@ A call that fails answers `err CLASS`, where CLASS says what happened. The adapt
 | `read-only F.N` | One line for each address whose writes the library refuses. |
 | `status-supported-only 0` or `1` | Whether `status` shows only the settings the device has. |
 | `anc-toggle 0` or `1` | The config's ANC-toggle flag, as the library reads it (Python's `SUPPORTS_ANC_TOGGLE`, which counts as 1 when a device module leaves it out). |
-| `editable-slots N N ...` or `editable-slots -` | The profile slots a user may edit. |
+| `editable-slots N N ...` or `editable-slots -` | The profile slots a user may edit, in the config's order. |
 | `preset NAME N` | One line for each preset mode and its index. |

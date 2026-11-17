@@ -1,0 +1,9 @@
+# spec: on the QC Ultra 2, set_cnc reads the live settings register [31.10] and writes it back with only the CNC level changed.
+# source: NOTES.md, "The real CNC path: [31.10] AudioModesSettingsConfig" (5-byte payload [cnc, autoCNC, spatial, wind, anc]). Synthetic: the current settings read back (cnc 5, auto off, spatial off, wind off, ANC on).
+device qc_ultra2
+call set_cnc 2
+send 1f 0a 01 00
+recv 1f 0a 03 05 05 00 00 00 01
+send 1f 0a 02 05 02 00 00 00 01
+recv 1f 0a 03 05 02 00 00 00 01
+result ok

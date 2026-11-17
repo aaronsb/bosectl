@@ -7,7 +7,7 @@ make conformance                       # build the adapters, judge all three
 python3 -I conformance/run.py --adapter python="python/.venv/bin/python -m pybmap.replay" qc-ultra2-eq
 ```
 
-The runner exits 0 when every verdict holds, 1 on a failure, and 2 when it refuses to run, for example on a malformed case.
+The runner exits 0 when every verdict holds, 1 on a failure, and 2 when it refuses to run: a malformed case or divergence entry, or an adapter that will not start. Lines an adapter prints after a case's last result fail the case.
 
 | Path | What it is |
 |---|---|
@@ -59,7 +59,7 @@ The captures keep each reply's payload but not its header. A case builds the rep
 ### Writing a case
 
 1. Write the expectation from the evidence first, then run the case.
-2. Run it with `--selftest`. The self-test changes each expectation in the case and requires the case to fail every time, which shows that every line is actually checked.
+2. Run it with `--selftest`. The self-test changes each expectation in the case, in turn: each `send` line's last byte, each `send` to `send-drain` and back, and each `result`. It runs every change on an adapter that passes the case and requires the case to fail each time, which shows that every line is actually checked. A case that no adapter passes cannot be self-tested, and fails.
 3. A case that fails on an implementation is a finding. Fix the implementation, or record the case in `divergences.tsv` with the issue that owns the fix. Never change a case so an implementation passes. A case changes only when its evidence was wrong, and the commit says what the new evidence is.
 
 ## Describe
@@ -71,8 +71,13 @@ For each device in `devices.list`, the runner asks every adapter to `describe` t
 `divergences.tsv` lists the differences that an open issue owns, one per line, separated by tabs:
 
 ```
-KIND    NAME                       ADAPTER  ISSUE  NOTE
-case    qc45-set-anc-unsupported   python   #56    Python writes the ANC byte ...
+KIND      NAME                       ADAPTER  ISSUE  WANT                                  NOTE
+case      qc45-set-anc-unsupported   python   #56    5: send 1f030100                      Python writes the ANC byte ...
+describe  qc35                       python   #56    -anc-toggle 0; +anc-toggle 1          Python leaves SUPPORTS_ANC_TOGGLE unset ...
 ```
 
-KIND is `case` or `describe`. A listed failure prints as `known` and does not fail the run. Each entry must still fail: once the fix lands and the case passes, the runner fails until the line is removed, so the list cannot go stale.
+KIND is `case` or `describe`. WANT is the exact failure the entry excuses. For a case it is the case line where the adapter went wrong and the line it printed there. For a describe it is the adapter's difference from the reference, as `-` and `+` lines. A failure that matches WANT prints as `known` and does not fail the run; any other failure of the same case still fails, so an entry cannot hide a second bug or a dead adapter.
+
+The list cannot go stale. An entry whose case passes, or whose describe agrees, fails the run until the line is removed. An entry the run never reached fails too, unless the run left it out on purpose: its adapter was not given, its case was not asked for, or a single adapter had nothing to compare. An entry that names a case or device that does not exist stops the runner.
+
+For `describe`, adapters with a known divergence for that device don't vote. The reference is the view a strict majority of the remaining adapters print; without one, the runner fails and prints every view.

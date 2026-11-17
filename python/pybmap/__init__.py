@@ -29,7 +29,7 @@ from .catalog import (
 from .errors import (
     BmapError, BmapConnectionError, BmapAuthError,
     BmapDeviceError, BmapTimeoutError, BmapNotFoundError, BmapInvalidArgError,
-    BmapDesyncError, BmapBusyError,
+    BmapDesyncError, BmapBusyError, BmapUnsupportedError,
 )
 from .types import (
     BatteryReading, BatteryStatus, BmapResponse, ButtonMapping, DeviceStatus,

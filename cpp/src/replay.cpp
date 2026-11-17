@@ -30,12 +30,6 @@ using namespace bmap;
 
 namespace {
 
-/// The runner answered `timeout`. The C++ library has no timeout error of
-/// its own (RfcommTransport throws a plain std::runtime_error), so the
-/// adapter throws this and maps it to `err timeout`.
-struct stdio_timeout : std::runtime_error {
-    stdio_timeout() : std::runtime_error("timeout from the conformance runner") {}
-};
 
 /// An answer line to print instead of a call's result.
 struct reply_line : std::runtime_error {
@@ -79,7 +73,10 @@ private:
         write_line(std::string(word) + " " + to_hex(packet));
         std::string line;
         if (!std::getline(std::cin, line)) throw reply_line("err other stdin closed mid-call");
-        if (line == "timeout") throw stdio_timeout();
+        // The C++ library has no timeout error type: RfcommTransport throws a
+        // plain std::runtime_error("No response: ..."), so this does the same,
+        // and the call reports `err other` until the library gains one (#56).
+        if (line == "timeout") throw std::runtime_error("No response: timeout from the conformance runner");
         if (line == "recv") return {};
         if (line.rfind("recv ", 0) == 0) return from_hex(line.substr(5));
         throw reply_line("err other expected recv or timeout, got " + line);
@@ -172,8 +169,6 @@ std::string call(BmapConnection& dev, const std::string& method, const Args& arg
         return "ok";
     } catch (const reply_line& e) {
         return e.what();
-    } catch (const stdio_timeout&) {
-        return "err timeout";
     } catch (const unsupported_error&) {
         return "err unsupported";
     } catch (const desync_error&) {
@@ -181,7 +176,7 @@ std::string call(BmapConnection& dev, const std::string& method, const Args& arg
     } catch (const device_error& e) {
         // check_error() passes an ERROR frame's code; every other
         // device_error (an empty or unparseable reply) leaves it at 0.
-        return "err device-error " + (e.code() ? std::to_string(e.code()) : std::string("-"));
+        return "err device-error " + std::to_string(e.code());
     } catch (const std::invalid_argument&) {
         return "err invalid-arg";
     } catch (const std::exception& e) {
