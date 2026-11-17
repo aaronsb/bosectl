@@ -33,6 +33,14 @@ else()
     target_link_libraries(bmapctl PRIVATE bmap bluetooth)
 endif()
 
+# Conformance adapter for conformance/run.py
+add_executable(bmap_replay src/replay.cpp)
+if(APPLE)
+    target_link_libraries(bmap_replay PRIVATE bmap)
+else()
+    target_link_libraries(bmap_replay PRIVATE bmap bluetooth)
+endif()
+
 # Tests
 enable_testing()
 add_executable(bmap_tests
