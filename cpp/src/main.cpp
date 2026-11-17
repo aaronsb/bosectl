@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
                 }
             }
             const bool supported_only = dev.config().status_supported_only;
-            if (!s.mode.empty() && (!supported_only || dev.config().current_mode))
+            if (!s.mode.empty())
                 std::cout << "  Mode         " << s.mode << "\n";
             if (dev.has_feature("anr")) {
                 try { std::cout << "  ANR          " << dev.anr() << "\n"; } catch (...) {}

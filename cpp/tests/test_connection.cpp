@@ -58,6 +58,14 @@ static std::unique_ptr<BmapConnection> mock_qc_ultra2() {
 
 TEST(battery) { ASSERT_EQ(mock_qc_ultra2()->battery(), 80); }
 
+TEST(status_leaves_mode_empty_when_mode_read_fails) {
+    // QC35 has no AudioModes block; the mock answers [31.3] with an error.
+    auto raw = new MockTransport();
+    raw->add(2, 2, 0x03, {80, 0xff, 0xff, 0x00});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc35());
+    ASSERT_TRUE(dev.status().mode.empty());
+}
+
 TEST(nc700_refuses_unchecked_writes_before_sending) {
     auto raw = new MockTransport();
     BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
@@ -803,15 +811,31 @@ TEST(only_nc700_shows_supported_settings_only) {
     }
 }
 
-TEST(nc700_enables_notifications) {
-    MockTransport t;
-    detail::enable_notifications(t, nc700());
-    ASSERT_EQ(t.sent.size(), 1u);
-    ASSERT_TRUE(t.sent[0] == (std::vector<uint8_t>{0x09, 0x02, 0x02, 0x05, 0x01, 0x00, 0x05, 0x02, 0x37}));
+// Run the channel probe for `config` against a transport that connects on
+// the configured channel, and return what it sent.
+static std::vector<std::vector<uint8_t>> probe_sent(const DeviceConfig& config) {
+    MockTransport* raw = nullptr;
+    auto transport = detail::probe_channels(
+        "00:11:22:33:44:55", config,
+        [&raw](uint8_t) -> std::unique_ptr<Transport> {
+            auto t = std::make_unique<MockTransport>();
+            raw = t.get();
+            return t;
+        },
+        [](std::chrono::milliseconds) {});
+    return raw->sent;
 }
 
-TEST(other_devices_send_no_notifications) {
-    MockTransport t;
-    detail::enable_notifications(t, qc_prince());
-    ASSERT_EQ(t.sent.size(), 0u);
+TEST(probe_enables_nc700_notifications) {
+    auto sent = probe_sent(nc700());
+    ASSERT_EQ(sent.size(), 1u);
+    ASSERT_TRUE(sent[0] == (std::vector<uint8_t>{0x09, 0x02, 0x02, 0x05, 0x01, 0x00, 0x05, 0x02, 0x37}));
+}
+
+TEST(probe_sends_no_notifications_for_other_devices) {
+    for (auto name : {"qc_ultra2", "qc35", "qc_prince", "qc45"}) {
+        for (const auto& packet : probe_sent(*get_device(name))) {
+            ASSERT_FALSE(packet[0] == 0x09 && packet[1] == 0x02);
+        }
+    }
 }

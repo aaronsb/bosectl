@@ -146,9 +146,13 @@ inline std::unique_ptr<Transport> probe_channels(const std::string& mac,
         if (i == 0) {
             // Configured channel connected: trust it, send init if needed.
             send_init(*transport, config);
+            enable_notifications(*transport, config);
             return transport;
         }
-        if (speaks_bmap(*transport, config)) return transport;
+        if (speaks_bmap(*transport, config)) {
+            enable_notifications(*transport, config);
+            return transport;
+        }
         // transport destroyed here, closing the socket
     }
 
@@ -207,7 +211,6 @@ inline std::unique_ptr<BmapConnection> connect(
     }
 
     auto transport = detail::open_transport(mac, *config);
-    detail::enable_notifications(*transport, *config);
     return std::make_unique<BmapConnection>(std::move(transport), std::move(*config));
 }
 

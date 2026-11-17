@@ -140,8 +140,12 @@ public:
     }
 
     DeviceStatus status() {
-        auto idx = safe_call<uint8_t>([&]{ return mode_idx(); }, 0);
-        auto mode_name = safe_call<std::string>([&]{ return mode_name_from_idx(idx); }, "");
+        // A failed mode read leaves the mode empty, as in Python and Rust,
+        // instead of naming slot 0.
+        auto idx = safe_call<std::optional<uint8_t>>(
+            [&]{ return std::optional<uint8_t>(mode_idx()); }, std::nullopt);
+        auto mode_name = idx ? safe_call<std::string>([&]{ return mode_name_from_idx(*idx); }, "")
+                             : std::string();
         auto [cnc_cur, cnc_max] = safe_call<std::pair<uint8_t,uint8_t>>(
             [&]{ return cnc(); }, {0, 10});
         auto [prom_on, prom_lang] = safe_call<std::pair<bool,std::string>>(
@@ -152,7 +156,7 @@ public:
         s.battery = battery_state.aggregate;
         s.battery_readings = std::move(battery_state.readings);
         s.mode = mode_name;
-        s.mode_idx = idx;
+        s.mode_idx = idx.value_or(0);
         s.cnc_level = cnc_cur;
         s.cnc_max = cnc_max;
         s.eq = safe_call<std::vector<EqBand>>([&]{ return eq(); }, {});

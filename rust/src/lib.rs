@@ -59,8 +59,7 @@ pub fn connect(mac: Option<&str>, device_type: Option<&str>) -> BmapResult<BmapC
     let config = devices::get_device(&resolved_type)
         .ok_or_else(|| BmapError::InvalidArg(format!("Unknown device: {}", resolved_type)))?;
 
-    let transport = open_transport(&mac, config.rfcomm_channel, config.init_packet)?;
-    enable_notifications(&transport, config.notifications)?;
+    let transport = open_transport(&mac, config.rfcomm_channel, config.init_packet, config.notifications)?;
     Ok(BmapConnection::new(transport, config))
 }
 
@@ -110,16 +109,19 @@ fn is_retryable(errno: Option<i32>, configured: bool) -> bool {
 ///
 /// A socket that accepts the connection is not proof of BMAP — several
 /// channels accept and stay silent — so each fallback is confirmed with a
-/// firmware GET [0.5] before it is returned.
+/// firmware GET [0.5] before it is returned. The device's notifications
+/// payload, if it has one, is sent on the channel that is returned.
 fn open_transport(
     mac: &str,
     channel: u8,
     init_packet: Option<device::Addr>,
+    notifications: Option<&[u8]>,
 ) -> BmapResult<transport::RfcommTransport> {
     probe_channels(
         mac,
         channel,
         init_packet,
+        notifications,
         |ch| transport::RfcommTransport::try_connect(mac, ch),
         std::thread::sleep,
     )
@@ -157,6 +159,7 @@ fn probe_channels<T: Transport>(
     mac: &str,
     channel: u8,
     init_packet: Option<device::Addr>,
+    notifications: Option<&[u8]>,
     mut connect: impl FnMut(u8) -> Result<T, ConnectError>,
     mut sleep: impl FnMut(Duration),
 ) -> BmapResult<T> {
@@ -186,9 +189,11 @@ fn probe_channels<T: Transport>(
         if i == 0 {
             // Configured channel connected: trust it, send init if needed.
             send_init(&transport, init_packet)?;
+            enable_notifications(&transport, notifications)?;
             return Ok(transport);
         }
         if speaks_bmap(&transport, init_packet) {
+            enable_notifications(&transport, notifications)?;
             return Ok(transport);
         }
         // transport dropped here, closing the socket
@@ -289,6 +294,7 @@ mod probe_tests {
         let result = probe_channels(
             "00:11:22:33:44:55",
             2,
+            None,
             None,
             |ch| {
                 h.attempts.borrow_mut().push(ch);
@@ -411,6 +417,7 @@ mod probe_tests {
             "00:11:22:33:44:55",
             2,
             None,
+            None,
             |ch| {
                 attempts.borrow_mut().push(ch);
                 Err(BmapError::Connection("Invalid MAC address".into()).into())
@@ -443,17 +450,32 @@ mod notification_tests {
         }
     }
 
-    #[test]
-    fn nc700_enables_notifications() {
-        let transport = RecordingTransport::default();
-        enable_notifications(&transport, devices::nc700().notifications).unwrap();
-        assert_eq!(*transport.sent.borrow(), vec![vec![0x09, 0x02, 0x02, 0x05, 0x01, 0x00, 0x05, 0x02, 0x37]]);
+    /// Run the channel probe for `config` against a transport that connects
+    /// on the configured channel, and return what it sent.
+    fn probe_sent(config: device::DeviceConfig) -> Vec<Vec<u8>> {
+        let transport = probe_channels(
+            "00:11:22:33:44:55",
+            config.rfcomm_channel,
+            config.init_packet,
+            config.notifications,
+            |_| Ok::<_, ConnectError>(RecordingTransport::default()),
+            |_| {},
+        ).unwrap();
+        let sent = transport.sent.borrow().clone();
+        sent
     }
 
     #[test]
-    fn other_devices_send_nothing() {
-        let transport = RecordingTransport::default();
-        enable_notifications(&transport, devices::qc_prince().notifications).unwrap();
-        assert!(transport.sent.borrow().is_empty());
+    fn probe_enables_nc700_notifications() {
+        assert_eq!(probe_sent(devices::nc700()),
+                   vec![vec![0x09, 0x02, 0x02, 0x05, 0x01, 0x00, 0x05, 0x02, 0x37]]);
+    }
+
+    #[test]
+    fn probe_sends_no_notifications_for_other_devices() {
+        for name in ["qc_ultra2", "qc35", "qc_prince", "qc45"] {
+            let sent = probe_sent(devices::get_device(name).unwrap());
+            assert!(sent.iter().all(|p| p[..2] != [0x09, 0x02]), "{}: {:?}", name, sent);
+        }
     }
 }
