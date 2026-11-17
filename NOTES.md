@@ -157,8 +157,8 @@ Offset  Size  Field              Notes
 42      1     cncLevel           0-10
 43      1     autoCNCEnabled
 44      1     spatialAudioType   0=off, 1=room, 2=head
-45      1     windBlockEnabled
-46      1     ?
+45      1     ?                  1 on custom slots, mirrors flags[3]
+46      1     windBlockEnabled
 47      1     ancToggleEnabled
 ```
 
