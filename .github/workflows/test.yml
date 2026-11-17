@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: [main, integration, stage]
   pull_request:
 
 jobs:
