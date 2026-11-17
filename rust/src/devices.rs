@@ -53,6 +53,7 @@ pub fn qc_ultra2() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_40),
         supports_anc_toggle: true,
         cnc_direct_setget: false,
+        read_only: &[],
     }
 }
 
@@ -118,6 +119,7 @@ pub fn qc_prince() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_39),
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        read_only: &[],
     }
 }
 
@@ -170,6 +172,7 @@ pub fn qc35() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        read_only: &[],
     }
 }
 
@@ -221,6 +224,7 @@ pub fn qc_earbuds() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: true,
+        read_only: &[],
     }
 }
 
@@ -271,6 +275,7 @@ pub fn qc45() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_39),
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        read_only: &[],
     }
 }
 
@@ -319,6 +324,7 @@ pub fn ultra_open() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        read_only: &[],
     }
 }
 
@@ -367,6 +373,11 @@ pub fn nc700() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: true,
+        // Product name, EQ, multipoint and sidetone read correctly, but no
+        // write to them has been checked on a 700. Once one has, drop it from
+        // this list; with all four checked:
+        // read_only: &[],
+        read_only: &[Addr(1, 2), Addr(1, 7), Addr(1, 10), Addr(1, 11)],
     }
 }
 

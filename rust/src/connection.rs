@@ -93,6 +93,12 @@ impl<T: Transport> BmapConnection<T> {
     }
 
     fn setget(&self, addr: Addr, payload: &[u8]) -> BmapResult<BmapResponse> {
+        if self.config.read_only.contains(&addr) {
+            return Err(BmapError::Unsupported(format!(
+                "{} can read [{}.{}] but bosectl does not write it yet: \
+                 no write has been checked on this device",
+                self.config.info.name, addr.0, addr.1)));
+        }
         let pkt = bmap_packet(addr.0, addr.1, Operator::SetGet, payload);
         let data = self.transport.send_recv(&pkt)?;
         self.check_reply(&data, addr)
@@ -784,6 +790,22 @@ mod tests {
     #[test]
     fn test_battery() {
         assert_eq!(mock_qc_ultra2().battery().unwrap(), 80);
+    }
+
+    #[test]
+    fn test_nc700_refuses_unchecked_writes_before_sending() {
+        let dev = BmapConnection::new(MockTransport::new(), devices::nc700());
+        let results = [
+            dev.set_name("Desk"),
+            dev.set_eq(1, 0, 0),
+            dev.set_multipoint(true),
+            dev.set_sidetone("low"),
+        ];
+        for r in results {
+            assert!(matches!(r, Err(BmapError::Unsupported(ref m)) if m.contains("does not write it yet")),
+                    "{:?}", r);
+        }
+        assert!(dev.transport.sent.borrow().is_empty());
     }
 
     #[test]

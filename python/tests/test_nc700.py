@@ -10,6 +10,7 @@ import pytest
 import pybmap
 from pybmap.catalog import CATALOG
 from pybmap.connection import BmapConnection
+from pybmap.errors import BmapError
 from pybmap.constants import OP_STATUS
 from pybmap.devices import nc700, parsers, DEVICES, PRODUCT_IDS
 from pybmap.protocol import bmap_packet
@@ -85,6 +86,18 @@ class TestNC700Writes:
         transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
         BmapConnection(transport, nc700).set_cnc(5)
         assert transport.sent == [bmap_packet(1, 5, 2, bytes([5, 1]))]
+
+    @pytest.mark.parametrize("write", [
+        lambda dev: dev.set_name("Desk"),
+        lambda dev: dev.set_eq(1, 0, 0),
+        lambda dev: dev.set_multipoint(True),
+        lambda dev: dev.set_sidetone("low"),
+    ], ids=["name", "eq", "multipoint", "sidetone"])
+    def test_unchecked_writes_are_refused_before_sending(self, write):
+        transport = MockTransport()
+        with pytest.raises(BmapError, match="does not write it yet"):
+            write(BmapConnection(transport, nc700))
+        assert transport.sent == []
 
 
 class TestNotificationsOnConnect:

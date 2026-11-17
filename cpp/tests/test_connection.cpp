@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <utility>
@@ -56,6 +57,27 @@ static std::unique_ptr<BmapConnection> mock_qc_ultra2() {
 }
 
 TEST(battery) { ASSERT_EQ(mock_qc_ultra2()->battery(), 80); }
+
+TEST(nc700_refuses_unchecked_writes_before_sending) {
+    auto raw = new MockTransport();
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    std::vector<std::function<void()>> writes = {
+        [&] { dev.set_name("Desk"); },
+        [&] { dev.set_eq(1, 0, 0); },
+        [&] { dev.set_multipoint(true); },
+        [&] { dev.set_sidetone("low"); },
+    };
+    for (auto& write : writes) {
+        bool refused = false;
+        try { write(); }
+        catch (const unsupported_error& error) {
+            refused = std::string(error.what()).find("does not write it yet") != std::string::npos;
+        }
+        catch (...) {}  // any other outcome, such as a sent write's device error, fails below
+        ASSERT_TRUE(refused);
+    }
+    ASSERT_TRUE(raw->sent.empty());
+}
 
 TEST(battery_empty_response) {
     auto raw = new MockTransport();

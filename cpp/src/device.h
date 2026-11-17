@@ -18,6 +18,7 @@ namespace bmap {
 struct Addr {
     uint8_t fblock;
     uint8_t func;
+    bool operator==(const Addr& o) const { return fblock == o.fblock && func == o.func; }
 };
 
 struct DeviceInfo {
@@ -145,6 +146,9 @@ struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     bool cnc_direct_setget = false;
+    /// Addresses the device can read but bosectl refuses to write, because
+    /// no write to them has been checked on the hardware.
+    std::vector<Addr> read_only;
 };
 
 // ── Shared Parsers ──────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@
 use crate::protocol::encode_mode_name;
 
 /// A function block address: (fblock_id, function_id).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Addr(pub u8, pub u8);
 
 /// Device identification.
@@ -153,6 +153,9 @@ pub struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     pub cnc_direct_setget: bool,
+    /// Addresses the device can read but bosectl refuses to write, because
+    /// no write to them has been checked on the hardware.
+    pub read_only: &'static [Addr],
 }
 
 // ── Shared Parsers ──────────────────────────────────────────────────────────

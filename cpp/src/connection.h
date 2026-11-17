@@ -394,6 +394,14 @@ private:
     }
 
     BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
+        for (const auto& ro : config_.read_only) {
+            if (ro == addr) {
+                throw unsupported_error(
+                    config_.info.name + " can read [" + std::to_string(addr.fblock) + "." +
+                    std::to_string(addr.func) +
+                    "] but bosectl does not write it yet: no write has been checked on this device");
+            }
+        }
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
         return check_reply(transport_->send_recv(pkt), addr);
     }

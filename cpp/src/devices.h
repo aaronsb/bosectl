@@ -217,6 +217,10 @@ inline DeviceConfig nc700() {
     c.sidetone = Addr{1, 11};
     c.supports_anc_toggle = false;
     c.cnc_direct_setget = true;
+    // Product name, EQ, multipoint and sidetone read correctly, but no write
+    // to them has been checked on a 700. Once one has, drop it from this
+    // list; with all four checked, delete the line.
+    c.read_only = {Addr{1, 2}, Addr{1, 7}, Addr{1, 10}, Addr{1, 11}};
     return c;
 }
 

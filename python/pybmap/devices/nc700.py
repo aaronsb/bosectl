@@ -70,9 +70,14 @@ FEATURES = {
         "addr": (0, 5),
         "parser": parsers.parse_firmware,
     },
+    # Product name, EQ, multipoint and sidetone read correctly, but no write to
+    # them has been checked on a 700, so they are read-only. Once a write has
+    # been checked, drop its "read_only" line and restore its builder.
     "product_name": {
         "addr": (1, 2),
         "parser": parsers.parse_product_name,
+        "read_only": True,
+        # "builder": lambda name: name.encode("utf-8"),
     },
     "cnc": {
         "addr": (1, 5),
@@ -82,6 +87,8 @@ FEATURES = {
     "eq": {
         "addr": (1, 7),
         "parser": parsers.parse_eq,
+        "read_only": True,
+        # "builder": parsers.build_eq_band,
     },
     "buttons": {
         "addr": (1, 9),
@@ -90,10 +97,14 @@ FEATURES = {
     "multipoint": {
         "addr": (1, 10),
         "parser": parsers.parse_multipoint,
+        "read_only": True,
+        # "builder": parsers.build_toggle,
     },
     "sidetone": {
         "addr": (1, 11),
         "parser": parsers.parse_sidetone,
+        "read_only": True,
+        # "builder": parsers.build_sidetone,
     },
 }
 
