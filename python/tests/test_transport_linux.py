@@ -21,6 +21,28 @@ from pybmap.transport import RfcommTransport
 
 
 @pytest.fixture(autouse=True)
+def _bluetooth_constants(monkeypatch):
+    """Supply the Bluetooth socket constants on Pythons built without BlueZ.
+
+    socket.socket is mocked in these tests, so the constants only need to
+    exist. CI's setup-python build lacks them. The values match Linux.
+    """
+    monkeypatch.setattr(socket, "AF_BLUETOOTH", getattr(socket, "AF_BLUETOOTH", 31), raising=False)
+    monkeypatch.setattr(socket, "BTPROTO_RFCOMM", getattr(socket, "BTPROTO_RFCOMM", 3), raising=False)
+
+
+class TestLinuxTransportNoBluetoothSupport:
+    """A Python without AF_BLUETOOTH gets a connection error, not AttributeError."""
+
+    def test_connect_reports_missing_bluetooth_support(self, monkeypatch):
+        monkeypatch.delattr(socket, "AF_BLUETOOTH")
+        transport = RfcommTransport("68:F2:1F:00:00:00")
+        with pytest.raises(BmapConnectionError, match="without Bluetooth socket support"):
+            transport.connect()
+        assert transport._sock is None
+
+
+@pytest.fixture(autouse=True)
 def _no_stale_discard(request, monkeypatch):
     """Keep the pre-send discard out of tests that script recv() calls.
 
