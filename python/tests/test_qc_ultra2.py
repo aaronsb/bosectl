@@ -75,6 +75,7 @@ class TestQCUltra2Config:
         offsets = qc_ultra2.STATUS_OFFSETS
         assert offsets["cnc_level"] == 42
         assert offsets["spatial"] == 44
+        assert offsets["wind_block"] == 46
         assert offsets["anc_toggle"] == 47
 
     def test_mode_config_has_parser_and_builder(self):

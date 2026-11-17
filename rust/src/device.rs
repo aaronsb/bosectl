@@ -816,25 +816,30 @@ mod tests {
 
     /// Empty custom slot as the QC Ultra 2 reports it (firmware 8.2.20):
     /// byte 45 is 1 on every editable slot, wind block lives at byte 46.
-    fn qc_ultra2_status_48(wind: u8) -> Vec<u8> {
+    fn qc_ultra2_status_48(wind: u8, byte45: u8) -> Vec<u8> {
         let mut p = vec![0u8; 48];
         p[0] = 4;
         p[3] = 1;
         p[6..10].copy_from_slice(b"None");
         p[41] = 0x1d;
-        p[45] = 1;
+        p[45] = byte45;
         p[46] = wind;
         p
     }
 
     #[test]
     fn test_parse_mode_config_qc_ultra2_wind_block_offset() {
-        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(0)).unwrap();
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(0, 1)).unwrap();
         assert_eq!(mc.mode_idx, 4);
         assert!(mc.editable);
         assert!(!mc.wind_block, "byte 45 must not be read as wind block");
 
-        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(1)).unwrap();
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(1, 1)).unwrap();
         assert!(mc.wind_block);
+
+        // Byte 45 clear and byte 46 set: only a parser reading byte 46
+        // reports wind block on.
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(1, 0)).unwrap();
+        assert!(mc.wind_block, "wind block must be read from byte 46");
     }
 }
