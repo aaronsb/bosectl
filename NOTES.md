@@ -435,7 +435,7 @@ Serial:  T5333020XXXXXXXXXXXXX
 | 5    | CNC              | 0b0003     | [numSteps=11, step=0, flags=3] |
 | 7    | RangeControl/EQ  | f60a0000f60a0001f60a0002 | 3-band EQ, all at 0 |
 | 9    | Buttons          | 80090e00094002 | |
-| 10   | Multipoint       | 07         | |
+| 10   | Multipoint       | 07         | Bit 0 = enabled, bit 1 = supported (as the vendor app reads it); bit 2 unknown. QC Ultra 2 fw 10.12.12 reads 06 after SETGET [1.10] 00 |
 | 11   | Sidetone         | 01020f     | |
 | 12   | SetupComplete    | 01         | |
 | 24   | AutoPlayPause    | 01         | |

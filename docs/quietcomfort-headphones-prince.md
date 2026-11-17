@@ -23,10 +23,12 @@ Mode switches via `START [31.3]` are acked with `PROCESSING` (7) rather than
 `RESULT` and applied asynchronously; `set_mode()` treats both as success.
 
 Open question: the two units disagreed on sidetone (`off` vs `medium`) and
-multipoint (`off` vs `on`) read from the same device seconds apart. The unit
-reporting `medium` had sidetone set to medium earlier in that session, which
-points at the `[1.11]`/`[1.10]` parsers' offsets being worth re-checking
-against a capture.
+multipoint (`off` vs `on`) read from the same device seconds apart. The
+`[1.10]` multipoint reader used to treat bit 1 as "enabled"; it now reads bit
+0, with bit 1 meaning "supported" (see NOTES.md). That may explain the
+multipoint disagreement, but nobody has re-checked it on a prince unit. The
+unit reporting `medium` had sidetone set to medium earlier in that session, so
+the `[1.11]` sidetone parser is still worth re-checking against a capture.
 
 BMAP framing is unchanged:
 
