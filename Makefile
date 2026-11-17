@@ -116,7 +116,7 @@ artifacts: rust-build cpp-build ## Build release binaries with checksums
 
 release: test artifacts ## Run tests, build artifacts, create GitHub release
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=v0.2.0"; exit 1; fi
-	gh release create $(VERSION) \
+	gh release create $(VERSION) --target main \
 		$(DIST)/bmapctl-rust-linux-$(ARCH) \
 		$(DIST)/bmapctl-cpp-linux-$(ARCH) \
 		$(DIST)/SHA256SUMS \
