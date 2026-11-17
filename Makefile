@@ -4,7 +4,7 @@
         python-setup python-test python-lint python-build python-publish \
         rust-test rust-build rust-publish rust-secret \
         cpp-test cpp-build \
-        integration \
+        integration conformance \
         artifacts release
 
 help: ## Show this help
@@ -87,6 +87,20 @@ cpp-build: ## Build C++ library
 
 integration: python-setup ## Run integration tests (requires paired BT device)
 	BMAP_INTEGRATION=1 $(PYTEST) $(PYTHON_DIR)/tests/ -v --tb=short --integration
+
+# ── Conformance ──────────────────────────────────────────────────────────────
+
+# One adapter per implementation, judged by conformance/run.py (see
+# conformance/README.md). The runner runs under the system python3 with -I,
+# so it cannot import pybmap from the virtualenv.
+CONFORMANCE_ADAPTERS = \
+	--adapter python="$(PYTHON) -m pybmap.replay" \
+	--adapter rust=$(RUST_DIR)/target/debug/bmap-replay \
+	--adapter cpp=$(CPP_BUILD)/bmap_replay
+
+conformance: python-setup cpp-build ## Judge Python, Rust and C++ against the conformance cases
+	cd $(RUST_DIR) && cargo build --bin bmap-replay
+	python3 -I conformance/run.py --selftest $(CONFORMANCE_ADAPTERS)
 
 # ── Cross-Language ───────────────────────────────────────────────────────────
 
