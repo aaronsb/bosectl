@@ -18,3 +18,4 @@ describe	qc_earbuds	python	#56	-anc-toggle 0; +anc-toggle 1; +feature default_mo
 describe	qc_ultra2	python	#56	+feature default_mode 31.4	Python lists default_mode [31.4], which Rust and C++ lack and nothing reads
 describe	qc_ultra2_earbuds	python	#56	+feature default_mode 31.4	Python lists default_mode [31.4], which Rust and C++ lack and nothing reads
 describe	ultra_open	python	#56	-anc-toggle 0; +anc-toggle 1	Python leaves SUPPORTS_ANC_TOGGLE unset (read as true); Rust and C++ say false
+case	qc-prince-set-cnc-preset-refused	cpp	#56	9: err other Current mode is not editable on this device: Quiet	C++ refuses a preset with std::runtime_error instead of unsupported_error

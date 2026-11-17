@@ -28,6 +28,19 @@ import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPLY_TIMEOUT = 10.0
+MAX_TRAILING_LINES = 100
+
+# The implementations, by the names INTERFACE.md and divergences.tsv use.
+ADAPTER_NAMES = ("python", "rust", "cpp")
+
+# Each call's argument count, from INTERFACE.md's table; set_name takes the
+# rest of the line as one argument, which may be empty.
+CALL_ARGS = {
+    "battery": 0, "firmware": 0, "name": 0, "cnc": 0, "eq": 0, "multipoint": 0,
+    "sidetone": 0, "auto_pause": 0, "auto_answer": 0,
+    "set_cnc": 1, "set_eq": 3, "set_multipoint": 1, "set_sidetone": 1,
+    "set_auto_pause": 1, "set_auto_answer": 1, "set_anc": 1,
+}
 
 ANSWER_FORMS = [
     re.compile(r"^ready$"),
@@ -145,6 +158,13 @@ def check_structure(path, steps):
         call = steps[i]
         if call.kind != "request" or not call.text.startswith("call "):
             refuse(call, "expected a 'call' line")
+        words = call.text.split(" ")
+        method = words[1]
+        if method != "set_name":
+            if method not in CALL_ARGS:
+                refuse(call, "INTERFACE.md has no call %r" % method)
+            if len(words) - 2 != CALL_ARGS[method]:
+                refuse(call, "%s takes %d argument(s)" % (method, CALL_ARGS[method]))
         i += 1
         while i < len(steps) and steps[i].kind == "send":
             if i + 1 >= len(steps) or steps[i + 1].kind != "answer":
@@ -204,7 +224,7 @@ class Adapter:
         except (BrokenPipeError, OSError):
             pass
         extra = []
-        while True:
+        while len(extra) < MAX_TRAILING_LINES:
             try:
                 line = self.lines.get(timeout=REPLY_TIMEOUT)
             except queue.Empty:
@@ -268,8 +288,11 @@ def run_case(name, command, steps):
     status, err, extra = adapter.finish()
     if failure is None and extra:
         failure = Mismatch("printed after its last result: %r" % extra[0])
-    if failure is None and status != 0:
-        failure = Mismatch("adapter exited %d" % status)
+    if status != 0:
+        # A crash fails the case even after an expected mismatch, and it has
+        # no signature, so no divergence entry can excuse it.
+        failure = Mismatch("adapter exited %d%s" % (
+            status, " after: %s" % failure if failure else ""))
     if failure is not None and err.strip():
         failure.args = (str(failure) + "\n      stderr: " + err.strip().replace("\n", "\n      stderr: "),)
     return failure
@@ -291,9 +314,15 @@ def describe(name, command, device):
                 break
             check_form(got, DESCRIBE_FORMS, "describe")
             lines.append(got)
-        return sorted(lines)
-    finally:
+    except Mismatch:
         adapter.finish()
+        raise
+    status, _, extra = adapter.finish()
+    if extra:
+        raise Mismatch("printed after 'end': %r" % extra[0])
+    if status != 0:
+        raise Mismatch("adapter exited %d after describe" % status)
+    return sorted(lines)
 
 
 # ── Known divergences ────────────────────────────────────────────────────────
@@ -335,6 +364,8 @@ def load_divergences(path, case_names, devices):
             if len(parts) != 6 or parts[0] not in ("case", "describe") or not parts[3].startswith("#"):
                 raise Refusal("%s: expected KIND NAME ADAPTER #ISSUE WANT NOTE, tab-separated" % where)
             kind, name = parts[0], parts[1]
+            if parts[2] not in ADAPTER_NAMES:
+                raise Refusal("%s: adapter %r is not one of %s" % (where, parts[2], ", ".join(ADAPTER_NAMES)))
             if kind == "case" and name not in case_names:
                 raise Refusal("%s: no case named %s" % (where, name))
             if kind == "describe" and name not in devices:
@@ -382,6 +413,8 @@ def main():
         name, sep, command = spec.partition("=")
         if not sep or not name or not command:
             raise Refusal("--adapter takes NAME=COMMAND, got %r" % spec)
+        if name not in ADAPTER_NAMES:
+            raise Refusal("adapter name %r is not one of %s" % (name, ", ".join(ADAPTER_NAMES)))
         adapters.append((name, command))
     if not adapters:
         raise Refusal("give at least one --adapter NAME=COMMAND")
@@ -449,17 +482,19 @@ def main():
                 views[name] = describe(name, command, device)
             except Mismatch as e:
                 fail("describe %-31s %-7s %s" % (device, name, e))
-        # Adapters with a known divergence for this device do not vote.
+        if len(views) < 2:
+            continue   # one adapter has nothing to compare against
+        # Adapters with a known divergence for this device do not vote. One
+        # voter left is the reference; with none, nothing can judge.
         voters = {n: v for n, v in views.items() if ("describe", device, n) not in known}
-        if len(voters) < 2:
-            if len(adapters) > 1:
-                fail("describe %-31s fewer than two adapters left to compare" % device)
+        if not voters:
+            fail("describe %-31s every adapter has a known divergence; nothing can judge" % device)
             continue
         groups = {}
         for name, lines in voters.items():
             groups.setdefault(tuple(lines), []).append(name)
         reference, agree = max(groups.items(), key=lambda g: len(g[1]))
-        if len(agree) * 2 <= len(voters):
+        if len(voters) > 1 and len(agree) * 2 <= len(voters):
             fail("describe %-31s no majority among %s" % (device, ", ".join(sorted(voters))))
             for view, group in groups.items():
                 print("         %s: %s" % ("+".join(group), describe_signature(list(view), list(reference)) or "(first view)"))

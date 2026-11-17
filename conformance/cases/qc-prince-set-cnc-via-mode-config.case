@@ -1,11 +1,11 @@
-# spec: on a device without a live settings register, set_cnc reads the current mode, fetches every mode config with GetAll (a START whose replies arrive back to back), and rewrites the current editable slot with a 39-byte ModeConfig SETGET; both multi-reply exchanges are drained.
-# source: docs/quietcomfort-headphones-prince.md (GetAll [31.1] returns [31.6] STATUS packets; the 47-byte STATUS and 39-byte SETGET layouts; the Music slot's tail 00 00 00 09 05 00 00 00 00); editable slots 2-3 from the prince config. Synthetic: the prompt IDs and the second mode, built to those layouts.
+# spec: on a device without a live settings register, set_cnc reads the current mode, fetches every mode config with GetAll (a START whose replies arrive back to back), and rewrites the current editable slot with a 39-byte ModeConfig SETGET that keeps its other settings; both multi-reply exchanges are drained.
+# source: docs/quietcomfort-headphones-prince.md: current mode GET [31.3]; GetAll [31.1] returns [31.6] STATUS packets; the 47-byte STATUS and 39-byte SETGET layouts; the observed-modes table (slot, prompt ID, name, editable). Synthetic: Music's spatial and wind set to 1 and CNC to 5, within the table's observed values, so a write that drops them or reads the wrong offset fails.
 device qc_prince
 call set_cnc 3
 send 1f 03 01 00
-recv 1f 03 03 01 02
+recv 1f 03 03 01 03
 send-drain 1f 01 05 00
-recv 1f 06 03 2f 00 00 0a 00 01 00 51 75 69 65 74 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 00 00 00 00 00 1f 06 03 2f 02 00 0c 01 01 00 4d 75 73 69 63 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 05 00 00 00 00
-send-drain 1f 06 02 27 02 00 0c 4d 75 73 69 63 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 00 00
-recv 1f 06 03 2f 02 00 0c 01 01 00 4d 75 73 69 63 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 03 00 00 00 00
+recv 1f 06 03 2f 00 00 01 00 01 00 51 75 69 65 74 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 00 00 00 00 00 1f 06 03 2f 02 00 07 01 01 00 43 6f 6d 6d 75 74 65 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 00 00 00 00 01 1f 06 03 2f 03 00 0c 01 01 00 4d 75 73 69 63 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 05 00 01 00 01
+send-drain 1f 06 02 27 03 00 0c 4d 75 73 69 63 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 01 01
+recv 1f 06 03 2f 03 00 0c 01 01 00 4d 75 73 69 63 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 03 00 01 00 01
 result ok

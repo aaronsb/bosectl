@@ -488,7 +488,7 @@ class BmapConnection:
 
         config = self._current_mode_config()
         if not config.editable:
-            raise BmapError(
+            raise BmapUnsupportedError(
                 "Current mode '%s' is not editable on this device" % config.name
             )
         self._write_mode_from_config(config.mode_idx, config, **overrides)

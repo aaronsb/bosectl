@@ -73,6 +73,19 @@ fn on_off(value: bool) -> String {
     (if value { "on" } else { "off" }).to_string()
 }
 
+/// The number of arguments each call takes, as INTERFACE.md lists them.
+/// set_name is left out: its one argument is the rest of the line.
+fn arity(method: &str) -> Option<usize> {
+    match method {
+        "battery" | "firmware" | "name" | "cnc" | "eq" | "multipoint" | "sidetone"
+        | "auto_pause" | "auto_answer" => Some(0),
+        "set_cnc" | "set_multipoint" | "set_sidetone" | "set_auto_pause"
+        | "set_auto_answer" | "set_anc" => Some(1),
+        "set_eq" => Some(3),
+        _ => None,
+    }
+}
+
 fn arg<'a>(args: &[&'a str], i: usize) -> BmapResult<&'a str> {
     args.get(i).copied().ok_or_else(|| BmapError::InvalidArg("missing argument".into()))
 }
@@ -210,10 +223,13 @@ fn main() {
                     Some(text) if method == "set_name" => vec![text],
                     _ => words[2..].to_vec(),
                 };
-                let answer = match call(d, method, &rest) {
-                    Ok(Some(answer)) => answer,
-                    Ok(None) => "err unknown-request".into(),
-                    Err(e) => error_line(&e),
+                let answer = match arity(method) {
+                    Some(n) if n != rest.len() => "err invalid-arg".into(),
+                    _ => match call(d, method, &rest) {
+                        Ok(Some(answer)) => answer,
+                        Ok(None) => "err unknown-request".into(),
+                        Err(e) => error_line(&e),
+                    },
                 };
                 write_line(&answer);
             }

@@ -1,0 +1,9 @@
+# spec: when the current mode is a preset that is not editable, set_cnc reads the mode configs, then refuses without writing.
+# source: docs/quietcomfort-headphones-prince.md: current mode GET [31.3]; GetAll [31.1] returns [31.6] STATUS packets; the 47-byte STATUS and 39-byte SETGET layouts; the observed-modes table (slot, prompt ID, name, editable). Quiet (slot 0) is not editable.
+device qc_prince
+call set_cnc 3
+send 1f 03 01 00
+recv 1f 03 03 01 00
+send-drain 1f 01 05 00
+recv 1f 06 03 2f 00 00 01 00 01 00 51 75 69 65 74 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 00 00 00 00 00 1f 06 03 2f 02 00 07 01 01 00 43 6f 6d 6d 75 74 65 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 00 00 00 00 01 1f 06 03 2f 03 00 0c 01 01 00 4d 75 73 69 63 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 09 05 00 01 00 01
+result err unsupported

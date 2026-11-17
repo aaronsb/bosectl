@@ -93,10 +93,13 @@ SETTERS = {
 def _error_line(error, sent):
     """Map a library error to an INTERFACE.md error class.
 
-    sent is whether the call sent any packet: a ValueError only counts as a
-    refused argument when the library raised it before sending anything.
+    sent is whether the call sent any packet: pybmap raises ValueError for a
+    rejected argument, so a ValueError only counts as one when the library
+    raised it before sending anything.
     """
-    if isinstance(error, (BmapInvalidArgError, ValueError)) and not sent:
+    if isinstance(error, BmapInvalidArgError):
+        return "err invalid-arg"
+    if isinstance(error, ValueError) and not sent:
         return "err invalid-arg"
     if isinstance(error, BmapTimeoutError):
         return "err timeout"

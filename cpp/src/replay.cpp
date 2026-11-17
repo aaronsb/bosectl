@@ -162,7 +162,7 @@ std::string call(BmapConnection& dev, const std::string& method, const Args& arg
         if (auto g = GETTERS.find(method); g != GETTERS.end()) return "ok " + g->second(dev);
         auto s = SETTERS.find(method);
         if (s == SETTERS.end()) return "err unknown-request";
-        if (args.size() < s->second.first)
+        if (args.size() != s->second.first)
             throw std::invalid_argument(method + " needs " +
                                         std::to_string(s->second.first) + " argument(s)");
         s->second.second(dev, args);
@@ -246,9 +246,12 @@ int main() {
             write_line("err unknown-request");
         } else if (words.size() > 1 && words[0] == "call") {
             Args args(words.begin() + 2, words.end());
-            // set_name's ARG is the rest of the line, spaces included.
-            if (words[1] == "set_name" && words.size() > 2)
-                args = {line.substr(line.find(' ', 5) + 1)};
+            // set_name's ARG is the rest of the line, spaces included, and may
+            // be empty ("call set_name " sets an empty name).
+            if (words[1] == "set_name") {
+                const std::string prefix = "call set_name ";
+                args = {line.size() > prefix.size() ? line.substr(prefix.size()) : std::string()};
+            }
             write_line(call(*dev, words[1], args));
         } else if (line == "describe") {
             describe(dev->config());

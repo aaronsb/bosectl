@@ -38,7 +38,7 @@ result ok on
 | `# spec: TEXT` | Required. What the case checks, in a sentence. |
 | `# source: TEXT` | Required. The evidence its expectations come from (below). |
 | `device NAME` | The first request: the device to build a connection for. |
-| `call METHOD [ARG ...]` | A library call, as INTERFACE.md lists them. |
+| `call METHOD [ARG ...]` | A library call, as INTERFACE.md lists them, with exactly the arguments it takes. |
 | `send HEX` or `send-drain HEX` | A packet the library must send next. Spaces in HEX are ignored. |
 | `recv HEX`, `recv` or `timeout` | The headphones' answer to the packet above it. |
 | `result ok [RESULT]` or `result err CLASS` | What the call must return. |
@@ -76,8 +76,10 @@ case      qc45-set-anc-unsupported   python   #56    5: send 1f030100           
 describe  qc35                       python   #56    -anc-toggle 0; +anc-toggle 1          Python leaves SUPPORTS_ANC_TOGGLE unset ...
 ```
 
-KIND is `case` or `describe`. WANT is the exact failure the entry excuses. For a case it is the case line where the adapter went wrong and the line it printed there. For a describe it is the adapter's difference from the reference, as `-` and `+` lines. A failure that matches WANT prints as `known` and does not fail the run; any other failure of the same case still fails, so an entry cannot hide a second bug or a dead adapter.
+KIND is `case` or `describe`, and ADAPTER is `python`, `rust` or `cpp`; the runner refuses any other name, here and in `--adapter`. WANT is the exact failure the entry excuses. For a case it is the case line where the adapter went wrong and the line it printed there. For a describe it is the adapter's difference from the reference, as `-` and `+` lines. A failure that matches WANT prints as `known` and does not fail the run; any other failure of the same case still fails, so an entry cannot hide a second bug or a dead adapter.
 
 The list cannot go stale. An entry whose case passes, or whose describe agrees, fails the run until the line is removed. An entry the run never reached fails too, unless the run left it out on purpose: its adapter was not given, its case was not asked for, or a single adapter had nothing to compare. An entry that names a case or device that does not exist stops the runner.
 
-For `describe`, adapters with a known divergence for that device don't vote. The reference is the view a strict majority of the remaining adapters print; without one, the runner fails and prints every view.
+For `describe`, adapters with a known divergence for that device don't vote. With one voter left, its view is the reference; with more, the reference is the view a strict majority of them print, and without one the runner fails and prints every view.
+
+An adapter that crashes fails its case even after a mismatch an entry excuses, so an entry never hides a crash.

@@ -43,7 +43,7 @@ HEX is the packet's bytes as lowercase hex digits with no spaces. The transport 
 
 ## The calls
 
-Each call names the library method of the same name. ARGs are separated by single spaces, except `set_name`, whose ARG is the rest of the line. A RESULT is printed exactly as the table gives it.
+Each call names the library method of the same name. ARGs are separated by single spaces, except `set_name`, whose ARG is the rest of the line and may be empty. A call with the wrong number of ARGs answers `err invalid-arg` without calling the library, and the runner refuses a case whose call has the wrong number. A RESULT is printed exactly as the table gives it.
 
 | Call | ARGs | RESULT |
 |---|---|---|
