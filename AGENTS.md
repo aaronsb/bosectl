@@ -21,7 +21,7 @@ make lint          # Python compile check
 make conformance   # the three implementations against the shared cases
 ```
 
-When you report a gate, give its command and its result, or say why it did not run. Watch each new test fail before the change and pass after it. To show that a test catches a defect, plant the defect on a copy of the file (`cp f f.bak`, plant, test, `mv f.bak f`), never by undoing it with `git checkout`, which discards uncommitted work.
+When you report a gate, give its command and its result, or say why it did not run. Watch each new test fail before the change and pass after it. To show that a test catches a defect, plant the defect on a copy of the file (`cp f f.bak`, plant, test, `mv f.bak f`), never by undoing it with `git checkout`, which discards uncommitted work. After restoring a Python file, delete its `__pycache__`: a restore within the same second as the plant, at the same size, leaves Python running the planted bytecode.
 
 `make conformance` plays every case in `conformance/cases/` through each language's adapter and requires the same packets and results from all three; [conformance/README.md](conformance/README.md) says how to write a case. A case's expectations come from captures, NOTES.md or a hardware report, never from an implementation's output, and a change never edits a case to make an implementation pass.
 
