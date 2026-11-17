@@ -221,7 +221,7 @@ pub fn parse_eq(payload: &[u8]) -> Vec<EqBand> {
 }
 
 pub fn parse_multipoint(payload: &[u8]) -> bool {
-    payload.first().map_or(false, |b| b & 0x02 != 0)
+    payload.first().map_or(false, |b| b & 0x01 != 0)
 }
 
 pub fn parse_bool(payload: &[u8]) -> bool {
@@ -726,7 +726,8 @@ mod tests {
     #[test]
     fn test_parse_multipoint() {
         assert!(parse_multipoint(&[0x07]));
-        assert!(!parse_multipoint(&[0x01]));
+        assert!(parse_multipoint(&[0x01]));
+        assert!(!parse_multipoint(&[0x06]));
         assert!(!parse_multipoint(&[]));
     }
 
