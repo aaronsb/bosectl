@@ -275,9 +275,13 @@ Full protocol reference: **[NOTES.md](NOTES.md)** and
 ```bash
 make test                       # All tests (Python, Rust, C++)
 make artifacts                  # Build + strip + SHA256SUMS in dist/
-make release VERSION=vX.Y.Z     # Test → build → gh release create
+make release VERSION=vX.Y.Z     # Test → build → tag main and create the GitHub release
 make clean                      # Remove all build artifacts
 ```
+
+## Contributing
+
+Fixes, new devices and hardware reports are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) says what a pull request needs to show, and pull requests target the `integration` branch. Agents working on the code also read [AGENTS.md](AGENTS.md).
 
 ## License
 

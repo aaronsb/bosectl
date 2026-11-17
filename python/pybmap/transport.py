@@ -233,6 +233,14 @@ else:
 
         def connect(self):
             """Open the RFCOMM socket to the device."""
+            if not hasattr(socket, "AF_BLUETOOTH"):
+                # Some Python builds (uv, pyenv, python-build-standalone)
+                # are compiled without BlueZ headers and lack the constant.
+                raise BmapConnectionError(
+                    "This Python (%s) was built without Bluetooth socket "
+                    "support. Use a Python built against BlueZ, such as "
+                    "the distribution's python3." % sys.executable
+                )
             try:
                 self._sock = socket.socket(
                     socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM
