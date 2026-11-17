@@ -126,7 +126,9 @@ graph LR
         INFO[Device Info<br/>name, codename, platform]
         CHAN[RFCOMM Channel<br/>2 or 8]
         INIT[Init Packet<br/>optional]
+        NOTIF[Notifications Payload<br/>optional, SETGET 9.2]
         FEAT[Feature Map<br/>name → addr + parser + builder]
+        RO[Read-only Addresses<br/>writes not yet checked]
         MODES[Preset Modes<br/>name → index]
         SLOTS[Editable Slots<br/>profile indices]
         CELLS[Battery Metadata<br/>component ID → label<br/>aggregate component ID]
@@ -266,6 +268,8 @@ sequenceDiagram
     Lib-->>App: BmapConnection(transport, config)
 ```
 
+A device that only answers SETGET writes once notifications are on (the Noise Cancelling Headphones 700) carries a notifications payload in its config. The channel probe sends it as SETGET [9.2] on the channel it returns, right after any init packet.
+
 **Discovery** uses `bluetoothctl` to enumerate paired devices, filtering by:
 1. Device class contains `audio-headset` or `audio-headphones`
 2. SDP records contain BMAP UUID `00000000-deca-fade-deca-deafdecacaff`
@@ -388,7 +392,7 @@ a default config since they don't have a tested implementation yet.
 | `0x4062` | edith | QuietComfort Ultra Earbuds (2nd Gen) | `qc_ultra2_earbuds` |
 | `0x4075` | prince | QuietComfort Headphones | `qc_prince` |
 | `0x402F` | lando | QuietComfort Earbuds | `qc_earbuds` |
-| `0x4039` | duran | QuietComfort 45 | `qc45` (inferred, untested) |
+| `0x4039` | duran | QuietComfort 45 | `qc45` (verified on hardware) |
 | `0x4068` | serena | Ultra Open Earbuds | `ultra_open` (partial) |
 | `0x4082` | wolverine | QuietComfort Ultra Headphones (2nd Gen) | `qc_ultra2` |
 | `0x4083` | unconfirmed | QuietComfort Headphones (2nd Gen) | `qc_ultra2` |
@@ -405,9 +409,9 @@ To add support for a new Bose device:
 
 1. **Add to the catalog** — add its PID, codename, and name with `config=None`
 2. **Discover the RFCOMM channel** — `connect()` tries the config's channel, then probes 2, 8, 9 with a firmware GET (`FALLBACK_CHANNELS`). On Linux, a channel that answers EBUSY (the headset is still closing a previous connection) is retried after 0.5, 1 and 2 s before the probe moves on; ECONNREFUSED gets the same retries on the configured channel only. If the configured channel is still busy after its retries, `connect()` fails at once with a "headphones busy" error instead of probing further; a fallback still busy at the end gets the same error instead of "No BMAP channel found". The retry is Linux-only: macOS IOBluetooth errors carry no errno, so they are never retried. Set `RFCOMM_CHANNEL` to whichever answers on your unit
-3. **Check if an init packet is needed** — send GET [0.1] and see if subsequent commands work
+3. **Check if an init packet is needed** — send GET [0.1] and see if subsequent commands work. If a SETGET takes effect but never gets a reply, the device may need notifications enabled first: capture the SETGET [9.2] payload the Bose app sends and put it in the config
 4. **Probe features** — GET on known function addresses to see what responds
-5. **Create a device config** with the discovered addresses and parsers
+5. **Create a device config** with the discovered addresses and parsers. List as read-only every address that answers GET but whose write you have not checked on the hardware; bosectl refuses writes to those
 6. **Register in the device registry** — add to `get_device()` / `DEVICES`
 7. **Set config in catalog** — change `None` to the new config key
 

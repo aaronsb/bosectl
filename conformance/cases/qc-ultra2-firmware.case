@@ -1,0 +1,7 @@
+# spec: GET [0.5] firmware is the payload as ASCII text.
+# source: captures/20260404-173258_wind-block.json, snapshot "before" (QC Ultra 2, firmware 8.2.20), [0.5] = "8.2.20+g34cf029"
+device qc_ultra2
+call firmware
+send 00 05 01 00
+recv 00 05 03 0f 38 2e 32 2e 32 30 2b 67 33 34 63 66 30 32 39
+result ok 8.2.20+g34cf029

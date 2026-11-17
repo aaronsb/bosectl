@@ -1,0 +1,7 @@
+# spec: GET [1.27] auto-answer: 01 is on.
+# source: captures/20260404-173258_wind-block.json, snapshot "before" (QC Ultra 2, firmware 8.2.20), [1.27] = 01
+device qc_ultra2
+call auto_answer
+send 01 1b 01 00
+recv 01 1b 03 01 01
+result ok on

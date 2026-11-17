@@ -26,6 +26,10 @@ class BmapBusyError(BmapConnectionError):
     """
 
 
+class BmapUnsupportedError(BmapError):
+    """The device lacks the feature, or bosectl refuses to write it."""
+
+
 class BmapAuthError(BmapError):
     """Operation requires authentication."""
 

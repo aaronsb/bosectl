@@ -6,7 +6,7 @@
 use crate::protocol::encode_mode_name;
 
 /// A function block address: (fblock_id, function_id).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Addr(pub u8, pub u8);
 
 /// Device identification.
@@ -108,6 +108,11 @@ pub struct DeviceConfig {
     pub rfcomm_channel: u8,
     /// Init packet required before device responds (Some((fblock, func)) for QC35).
     pub init_packet: Option<Addr>,
+    /// SETGET [9.2] NotificationByFblock payload sent on connect. The NC 700
+    /// applies SETGET writes but only answers them once notifications are on.
+    pub notifications: Option<&'static [u8]>,
+    /// `status` shows only settings the device has (NC 700), instead of "off" for the rest.
+    pub status_supported_only: bool,
     pub battery: Option<Addr>,
     /// Component IDs and display labels for multi-cell battery responses.
     pub battery_components: &'static [(u8, &'static str)],
@@ -148,6 +153,9 @@ pub struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     pub cnc_direct_setget: bool,
+    /// Addresses the device can read but bosectl refuses to write, because
+    /// no write to them has been checked on the hardware.
+    pub read_only: &'static [Addr],
 }
 
 // ── Shared Parsers ──────────────────────────────────────────────────────────
@@ -221,7 +229,7 @@ pub fn parse_eq(payload: &[u8]) -> Vec<EqBand> {
 }
 
 pub fn parse_multipoint(payload: &[u8]) -> bool {
-    payload.first().map_or(false, |b| b & 0x02 != 0)
+    payload.first().map_or(false, |b| b & 0x01 != 0)
 }
 
 pub fn parse_bool(payload: &[u8]) -> bool {
@@ -453,7 +461,9 @@ pub fn build_buttons(button_id: u8, event: u8, action: u8) -> Vec<u8> {
 
 /// Parse a 48-byte ModeConfig STATUS response (QC Ultra 2 / newer firmware).
 ///
-/// STATUS offsets: CNC=42, spatial=44, wind=45, anc=47.
+/// STATUS offsets: CNC=42, spatial=44, wind=46, anc=47. Byte 45 mirrors
+/// the editable flag; the firmware inserts it when expanding the 40-byte
+/// SETGET layout into the 48-byte STATUS reply.
 /// This function is passed as `parse_mode_config` in the QC Ultra 2 config.
 pub fn parse_mode_config_qc_ultra2(payload: &[u8]) -> Option<ModeConfig> {
     if payload.len() < 6 {
@@ -476,7 +486,7 @@ pub fn parse_mode_config_qc_ultra2(payload: &[u8]) -> Option<ModeConfig> {
             name,
             cnc_level: payload[42],
             spatial: payload[44],
-            wind_block: payload[45] != 0,
+            wind_block: payload[46] != 0,
             anc_toggle: payload[47] != 0,
             editable,
             configured,
@@ -726,7 +736,8 @@ mod tests {
     #[test]
     fn test_parse_multipoint() {
         assert!(parse_multipoint(&[0x07]));
-        assert!(!parse_multipoint(&[0x01]));
+        assert!(parse_multipoint(&[0x01]));
+        assert!(!parse_multipoint(&[0x06]));
         assert!(!parse_multipoint(&[]));
     }
 
@@ -810,5 +821,34 @@ mod tests {
         assert_eq!(mc.cnc_level, 5);
         assert!(!mc.wind_block);
         assert!(!mc.anc_toggle);
+    }
+
+    /// Empty custom slot as the QC Ultra 2 reports it (firmware 8.2.20):
+    /// byte 45 is 1 on every editable slot, wind block lives at byte 46.
+    fn qc_ultra2_status_48(wind: u8, byte45: u8) -> Vec<u8> {
+        let mut p = vec![0u8; 48];
+        p[0] = 4;
+        p[3] = 1;
+        p[6..10].copy_from_slice(b"None");
+        p[41] = 0x1d;
+        p[45] = byte45;
+        p[46] = wind;
+        p
+    }
+
+    #[test]
+    fn test_parse_mode_config_qc_ultra2_wind_block_offset() {
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(0, 1)).unwrap();
+        assert_eq!(mc.mode_idx, 4);
+        assert!(mc.editable);
+        assert!(!mc.wind_block, "byte 45 must not be read as wind block");
+
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(1, 1)).unwrap();
+        assert!(mc.wind_block);
+
+        // Byte 45 clear and byte 46 set: only a parser reading byte 46
+        // reports wind block on.
+        let mc = parse_mode_config_qc_ultra2(&qc_ultra2_status_48(1, 0)).unwrap();
+        assert!(mc.wind_block, "wind block must be read from byte 46");
     }
 }

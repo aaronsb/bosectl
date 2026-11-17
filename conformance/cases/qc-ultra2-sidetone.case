@@ -1,0 +1,7 @@
+# spec: GET [1.11] sidetone is [persist, mode, supported-modes]; mode 2 is medium (NOTES.md SETGET table: 0 off, 1 high, 2 medium, 3 low).
+# source: captures/20260404-173258_wind-block.json, snapshot "before" (QC Ultra 2, firmware 8.2.20), [1.11] = 01020f
+device qc_ultra2
+call sidetone
+send 01 0b 01 00
+recv 01 0b 03 03 01 02 0f
+result ok medium

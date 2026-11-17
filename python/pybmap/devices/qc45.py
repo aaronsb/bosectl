@@ -1,7 +1,8 @@
 """Bose QC45 device configuration.
 
 Codename "duran", product ID 0x4039, CSR8670 platform.
-RFCOMM channel 8, requires INIT_PACKET (0,1) before responding.
+RFCOMM channel 8. Sends INIT_PACKET (0,1) first; firmware 4.0.4 also
+answers without it. Hardware report: docs/quietcomfort-45-duran.md.
 
 Layout was inferred from the Bose app's BMAP tables (#21) and is now
 confirmed on hardware, firmware 4.0.4-4360+de6a887. The 47-byte STATUS /

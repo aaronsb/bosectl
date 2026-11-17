@@ -18,6 +18,7 @@ namespace bmap {
 struct Addr {
     uint8_t fblock;
     uint8_t func;
+    bool operator==(const Addr& o) const { return fblock == o.fblock && func == o.func; }
 };
 
 struct DeviceInfo {
@@ -103,6 +104,12 @@ struct DeviceConfig {
     uint8_t rfcomm_channel = 2;
     /// Init packet required before device responds (QC35 needs GET [0.1]).
     std::optional<Addr> init_packet;
+    /// SETGET [9.2] NotificationByFblock payload sent on connect (empty: none).
+    /// The NC 700 applies SETGET writes but only answers them once notifications are on.
+    std::vector<uint8_t> notifications;
+    /// `status` shows only settings the device has (NC 700), instead of "off" or
+    /// "custom(0)" for the rest.
+    bool status_supported_only = false;
     std::optional<Addr> battery;
     /// Component IDs and display labels for multi-cell battery responses.
     std::vector<std::pair<uint8_t, std::string>> battery_components;
@@ -139,6 +146,9 @@ struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     bool cnc_direct_setget = false;
+    /// Addresses the device can read but bosectl refuses to write, because
+    /// no write to them has been checked on the hardware.
+    std::vector<Addr> read_only;
 };
 
 // ── Shared Parsers ──────────────────────────────────────────────────────────
@@ -196,7 +206,7 @@ inline std::vector<EqBand> parse_eq(const std::vector<uint8_t>& p) {
 }
 
 inline bool parse_multipoint(const std::vector<uint8_t>& p) {
-    return !p.empty() && (p[0] & 0x02) != 0;
+    return !p.empty() && (p[0] & 0x01) != 0;
 }
 
 inline bool parse_bool(const std::vector<uint8_t>& p) {
@@ -360,7 +370,7 @@ inline std::optional<ModeConfig> parse_mode_config_qc_ultra2(const std::vector<u
                               reinterpret_cast<const char*>(name_end));
         mc.cnc_level = p[42];
         mc.spatial = p[44];
-        mc.wind_block = p[45] != 0;
+        mc.wind_block = p[46] != 0;  // [45] mirrors the editable flag
         mc.anc_toggle = p[47] != 0;
         return mc;
     } else if (p.size() >= 40) {

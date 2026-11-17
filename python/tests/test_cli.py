@@ -50,6 +50,40 @@ def test_status_orders_known_components_and_hides_combined(capsys):
     assert "Combined" not in output
 
 
+class SupportedOnlyStatusDevice(StatusDevice):
+    status_supported_only = True
+
+    def __init__(self, features):
+        self.features = features
+
+    def has_feature(self, name):
+        return name in self.features
+
+
+def test_status_keeps_auto_pause_and_prompts_by_default(capsys):
+    cmd_status(StatusDevice())
+    output = capsys.readouterr().out
+
+    assert "AutoPause" in output
+    assert "Prompts" in output
+
+
+def test_status_supported_only_hides_missing_settings(capsys):
+    cmd_status(SupportedOnlyStatusDevice(set()))
+    output = capsys.readouterr().out
+
+    assert "AutoPause" not in output
+    assert "Prompts" not in output
+
+
+def test_status_supported_only_shows_supported_settings(capsys):
+    cmd_status(SupportedOnlyStatusDevice({"auto_pause", "voice_prompts"}))
+    output = capsys.readouterr().out
+
+    assert "AutoPause    on" in output
+    assert "Prompts      off (US English)" in output
+
+
 def test_device_status_preserves_old_positional_shape():
     status = DeviceStatus(
         80, "quiet", 0, 7, 10, [], "Device", "1.0.0", "off",

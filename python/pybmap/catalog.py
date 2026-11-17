@@ -40,7 +40,7 @@ CATALOG = {
     0x4015: BoseDevice(0x4015, "stetson",    "Hearphones",                           "headphones", None),
     0x4020: BoseDevice(0x4020, "baywolf",    "QuietComfort 35 II",                   "headphones", "qc35"),
     0x4021: BoseDevice(0x4021, "atlas",      "ProFlight",                            "headphones", None),
-    0x4024: BoseDevice(0x4024, "goodyear",   "Noise Cancelling Headphones 700",      "headphones", None),
+    0x4024: BoseDevice(0x4024, "goodyear",   "Noise Cancelling Headphones 700",      "headphones", "nc700"),
     0x402B: BoseDevice(0x402B, "beanie",     "Hearphones II",                        "headphones", None),
     0x4039: BoseDevice(0x4039, "duran",      "QuietComfort 45",                      "headphones", "qc45"),
     0x4066: BoseDevice(0x4066, "lonestarr",  "QuietComfort Ultra Headphones",        "headphones", None),

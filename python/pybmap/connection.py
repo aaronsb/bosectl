@@ -19,7 +19,7 @@ from .constants import (
 from .protocol import bmap_packet, parse_all_responses, fmt_response
 from .errors import (
     BmapError, BmapAuthError, BmapDeviceError, BmapDesyncError,
-    BmapInvalidArgError,
+    BmapInvalidArgError, BmapUnsupportedError,
 )
 from .types import AudioSettings, BatteryStatus, DeviceStatus
 from .devices import parsers
@@ -50,12 +50,26 @@ class BmapConnection:
         """Look up a feature config entry. Raises BmapError if unsupported."""
         features = self._device.FEATURES
         if name not in features:
-            raise BmapError(
+            raise BmapUnsupportedError(
                 "%s does not support '%s'" % (
                     self._device.DEVICE_INFO.get("name", "Device"), name
                 )
             )
         return features[name]
+
+    def _writable_feature(self, name):
+        """Look up a feature to write. Raises BmapError if it is read-only.
+
+        A device config marks a feature read-only when the device answers
+        reads of it but no write to it has been checked on the hardware.
+        """
+        feat = self._feature(name)
+        if feat.get("read_only"):
+            raise BmapUnsupportedError(
+                "%s can read '%s' but bosectl does not write it yet: no write "
+                "has been checked on this device" % (
+                    self._device.DEVICE_INFO.get("name", "Device"), name))
+        return feat
 
     def _select_reply(self, data, fblock, func):
         """Pick the frame answering [fblock.func] out of a received buffer.
@@ -115,7 +129,7 @@ class BmapConnection:
 
     def _setget(self, feature_name, payload):
         """Send a SETGET request and return the parsed response."""
-        feat = self._feature(feature_name)
+        feat = self._writable_feature(feature_name)
         fblock, func = feat["addr"]
         resp = self._transport.send_recv(
             bmap_packet(fblock, func, OP_SETGET, payload)
@@ -431,7 +445,7 @@ class BmapConnection:
 
     def set_eq(self, bass=0, mid=0, treble=0):
         """Set 3-band equalizer (-10 to +10 each)."""
-        feat = self._feature("eq")
+        feat = self._writable_feature("eq")
         builder = feat.get("builder")
         for band_id, val in enumerate([bass, mid, treble]):
             if not -10 <= val <= 10:
@@ -466,15 +480,15 @@ class BmapConnection:
     def _update_current_mode_config(self, **overrides):
         """Fallback live audio update through the current ModeConfig."""
         if not self.has_feature("mode_config"):
-            raise BmapError("Device does not support direct audio settings")
+            raise BmapUnsupportedError("Device does not support direct audio settings")
 
         if ("anc_toggle" in overrides and
                 not getattr(self._device, "SUPPORTS_ANC_TOGGLE", True)):
-            raise BmapError("Device does not expose an ANC on/off toggle")
+            raise BmapUnsupportedError("Device does not expose an ANC on/off toggle")
 
         config = self._current_mode_config()
         if not config.editable:
-            raise BmapError(
+            raise BmapUnsupportedError(
                 "Current mode '%s' is not editable on this device" % config.name
             )
         self._write_mode_from_config(config.mode_idx, config, **overrides)
@@ -492,14 +506,14 @@ class BmapConnection:
         level_lower = level.lower()
         if level_lower not in SIDETONE_VALUES:
             raise ValueError("Sidetone must be off, low, medium, or high")
-        feat = self._feature("sidetone")
+        feat = self._writable_feature("sidetone")
         builder = feat.get("builder")
         payload = builder(SIDETONE_VALUES[level_lower])
         self._setget("sidetone", payload)
 
     def set_multipoint(self, enabled):
         """Toggle multipoint connection (bool)."""
-        feat = self._feature("multipoint")
+        feat = self._writable_feature("multipoint")
         builder = feat.get("builder")
         self._setget("multipoint", builder(enabled))
 
@@ -543,7 +557,7 @@ class BmapConnection:
         feat = self._feature("buttons")
         builder = feat.get("builder")
         if not builder:
-            raise BmapError("Button remapping not supported on this device")
+            raise BmapUnsupportedError("Button remapping not supported on this device")
         payload = builder(button_id, event, action)
         resp = self._setget("buttons", payload)
         parser = feat.get("parser")
@@ -685,6 +699,11 @@ class BmapConnection:
         """Preset mode definitions dict (name -> {idx, description})."""
         return self._device.PRESET_MODES
 
+    @property
+    def status_supported_only(self):
+        """Whether `status` should show only settings the device has."""
+        return getattr(self._device, "STATUS_SUPPORTED_ONLY", False)
+
     def has_feature(self, name):
         """Check if the connected device supports a feature."""
         return name in self._device.FEATURES
@@ -756,7 +775,7 @@ class BmapConnection:
         feat = self._feature("mode_config")
         builder = feat.get("builder")
         if not builder:
-            raise BmapError("Device does not support mode configuration")
+            raise BmapUnsupportedError("Device does not support mode configuration")
         payload = builder(
             mode_idx=slot, name=name, cnc_level=cnc_level,
             spatial=spatial, wind_block=wind_block, anc_toggle=anc_toggle,

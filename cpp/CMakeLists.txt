@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(bmap VERSION 0.5.0 LANGUAGES CXX)
+project(bmap VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +31,14 @@ if(APPLE)
     target_link_libraries(bmapctl PRIVATE bmap)
 else()
     target_link_libraries(bmapctl PRIVATE bmap bluetooth)
+endif()
+
+# Conformance adapter for conformance/run.py
+add_executable(bmap_replay src/replay.cpp)
+if(APPLE)
+    target_link_libraries(bmap_replay PRIVATE bmap)
+else()
+    target_link_libraries(bmap_replay PRIVATE bmap bluetooth)
 endif()
 
 # Tests

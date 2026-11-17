@@ -1,0 +1,7 @@
+# spec: SETGET [1.10] multipoint takes one byte, 0 for off; the headphones answer with the new state.
+# source: NOTES.md SETGET table ([1.10] 1 byte: 0=off, 1=on); the reply 06 is the state PR #47's hardware report read back after SETGET 00
+device qc_ultra2
+call set_multipoint off
+send 01 0a 02 01 00
+recv 01 0a 03 01 06
+result ok

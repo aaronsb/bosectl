@@ -140,8 +140,10 @@ inline DeviceConfig qc_earbuds() {
 }
 
 /// Bose QuietComfort 45 — codename duran, CSR8670.
-/// Layout inferred from the Bose app (#21); unverified on hardware. Shares
-/// the prince 47/39-byte ModeConfig format. Needs GET [0.1] before responding.
+/// Layout inferred from the Bose app (#21) and confirmed on hardware
+/// (firmware 4.0.4-4360+de6a887). Shares the prince 47/39-byte ModeConfig
+/// format. Sends GET [0.1] first; firmware 4.0.4 also answers without it.
+/// See docs/quietcomfort-45-duran.md.
 inline DeviceConfig qc45() {
     DeviceConfig c;
     c.info = {"Bose QuietComfort 45", "duran", "CSR8670"};
@@ -197,6 +199,33 @@ inline DeviceConfig ultra_open() {
     return c;
 }
 
+/// Bose Noise Cancelling Headphones 700 — codename goodyear, firmware
+/// 1.8.2-11524+e0f7590. BMAP on channel 8, no init packet, no AudioModes
+/// block. CNC is direct SETGET [1.5], answered only once notifications [9.2]
+/// are enabled (payload as the Bose app sends it).
+inline DeviceConfig nc700() {
+    DeviceConfig c;
+    c.info = {"Bose Noise Cancelling Headphones 700", "goodyear", ""};
+    c.rfcomm_channel = 8;
+    c.notifications = {0x01, 0x00, 0x05, 0x02, 0x37};
+    c.status_supported_only = true;
+    c.battery = Addr{2, 2};
+    c.firmware = Addr{0, 5};
+    c.product_name = Addr{1, 2};
+    c.cnc = Addr{1, 5};
+    c.eq = Addr{1, 7};
+    c.buttons = Addr{1, 9};
+    c.multipoint = Addr{1, 10};
+    c.sidetone = Addr{1, 11};
+    c.supports_anc_toggle = false;
+    c.cnc_direct_setget = true;
+    // Product name, EQ, multipoint and sidetone read correctly, but no write
+    // to them has been checked on a 700. Once one has, drop it from this
+    // list; with all four checked, delete the line.
+    c.read_only = {Addr{1, 2}, Addr{1, 7}, Addr{1, 10}, Addr{1, 11}};
+    return c;
+}
+
 inline std::optional<DeviceConfig> get_device(const std::string& name) {
     if (name == "qc_ultra2") return qc_ultra2();
     if (name == "qc_ultra2_earbuds") return qc_ultra2_earbuds();
@@ -205,6 +234,7 @@ inline std::optional<DeviceConfig> get_device(const std::string& name) {
     if (name == "qc_earbuds") return qc_earbuds();
     if (name == "qc45") return qc45();
     if (name == "ultra_open") return ultra_open();
+    if (name == "nc700") return nc700();
     return std::nullopt;
 }
 

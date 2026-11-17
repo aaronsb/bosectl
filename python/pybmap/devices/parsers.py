@@ -161,9 +161,9 @@ def build_buttons(button_id, event, action):
 
 
 def parse_multipoint(payload):
-    """Parse multipoint GET. Bit 1 (0x02) = enabled."""
+    """Parse multipoint GET. Bit 0 (0x01) = enabled, bit 1 (0x02) = supported."""
     if payload:
-        return bool(payload[0] & 0x02)
+        return bool(payload[0] & 0x01)
     return False
 
 
@@ -287,9 +287,14 @@ def parse_mode_config_48(payload):
         [42]    cncLevel
         [43]    autoCNC
         [44]    spatialAudio
-        [45]    windBlock
-        [46]    unknown
+        [45]    mirrors the editable flag (1 on custom slots)
+        [46]    windBlock
         [47]    ancToggle
+
+    The 40-byte SETGET payload carries only five trailing bytes (cnc, auto,
+    spatial, wind, anc); the firmware inserts [45] itself in the STATUS
+    reply, so wind lands at [46], not [45]. Verified on QC Ultra 2
+    firmware 8.2.20 by toggling wind alone: only [46] moved.
     """
     if len(payload) < 6:
         return None
@@ -307,7 +312,7 @@ def parse_mode_config_48(payload):
             mode_idx=mode_idx, prompt=prompt_name,
             prompt_bytes=(prompt_b1, prompt_b2), name=name,
             cnc_level=payload[42], auto_cnc=bool(payload[43]),
-            spatial=payload[44], wind_block=bool(payload[45]),
+            spatial=payload[44], wind_block=bool(payload[46]),
             anc_toggle=bool(payload[47]),
             editable=editable, configured=configured, flags=flags, raw=payload,
         )

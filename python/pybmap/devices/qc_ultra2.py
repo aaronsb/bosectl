@@ -155,6 +155,6 @@ STATUS_OFFSETS = {
     "cnc_level": 42,
     "auto_cnc": 43,
     "spatial": 44,
-    "wind_block": 45,
+    "wind_block": 46,
     "anc_toggle": 47,
 }

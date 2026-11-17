@@ -1,0 +1,5 @@
+# spec: a sidetone level other than off, low, medium or high is refused before anything is sent.
+# source: NOTES.md SETGET table ([1.11] mode: 0=off, 1=high, 2=med, 3=low)
+device qc_ultra2
+call set_sidetone loud
+result err invalid-arg

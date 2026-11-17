@@ -1,0 +1,21 @@
+# Known differences, each owned by an open issue: KIND NAME ADAPTER ISSUE WANT NOTE, separated by tabs.
+# WANT is the exact failure excused: "LINE: what the adapter printed" for a case, the -/+ lines against the reference for a describe.
+# Any other failure of the same case still fails, and an entry that stops failing fails the run until it is removed.
+case	qc45-set-anc-unsupported	python	#56	5: send 1f030100	Python writes the ANC byte through the QC45 ModeConfig; SUPPORTS_ANC_TOGGLE is unset there
+case	qc45-set-anc-unsupported	cpp	#56	5: err other ANC on/off toggle not supported on this device	C++ refuses before sending, but throws std::runtime_error instead of unsupported_error
+case	qc-ultra2-eq-out-of-range	cpp	#56	5: send 010702020b00	C++ set_eq sends a level outside -10..+10 instead of refusing it
+case	qc-ultra2-set-cnc-out-of-range	cpp	#56	5: err other CNC level must be 0-10	C++ throws std::runtime_error instead of std::invalid_argument
+case	qc-ultra2-set-sidetone-invalid	cpp	#56	5: err other Sidetone: off, low, medium, high	C++ throws std::runtime_error instead of std::invalid_argument
+case	qc-ultra2-sidetone-unknown	rust	#56	7: ok unknown	Rust's parse_sidetone returns "unknown" without the byte
+case	qc-ultra2-sidetone-unknown	cpp	#56	7: ok off	C++ reads an unknown sidetone mode as off
+case	qc-ultra2-battery-empty-reply	rust	#56	7: err device-error 0	Rust reports an unusable reply as Device { code: 0 }, which reads as BMAP error 0
+case	qc-ultra2-battery-empty-reply	cpp	#56	7: err device-error 0	C++ reports an unusable reply as device_error code 0, which reads as BMAP error 0
+case	qc-ultra2-battery-timeout	cpp	#56	7: err other No response: timeout from the conformance runner	C++ has no timeout error type; its transport throws std::runtime_error
+describe	nc700	python	#56	-anc-toggle 0; +anc-toggle 1	Python leaves SUPPORTS_ANC_TOGGLE unset (read as true); Rust and C++ say false
+describe	qc35	python	#56	-anc-toggle 0; +anc-toggle 1	Python leaves SUPPORTS_ANC_TOGGLE unset (read as true); Rust and C++ say false
+describe	qc45	python	#56	-anc-toggle 0; +anc-toggle 1; +feature default_mode 31.4	SUPPORTS_ANC_TOGGLE unset in Python; Python also lists default_mode [31.4], which Rust and C++ lack
+describe	qc_earbuds	python	#56	-anc-toggle 0; +anc-toggle 1; +feature default_mode 31.4	SUPPORTS_ANC_TOGGLE unset in Python; Python also lists default_mode [31.4], which Rust and C++ lack
+describe	qc_ultra2	python	#56	+feature default_mode 31.4	Python lists default_mode [31.4], which Rust and C++ lack and nothing reads
+describe	qc_ultra2_earbuds	python	#56	+feature default_mode 31.4	Python lists default_mode [31.4], which Rust and C++ lack and nothing reads
+describe	ultra_open	python	#56	-anc-toggle 0; +anc-toggle 1	Python leaves SUPPORTS_ANC_TOGGLE unset (read as true); Rust and C++ say false
+case	qc-prince-set-cnc-preset-refused	cpp	#56	9: err other Current mode is not editable on this device: Quiet	C++ refuses a preset with std::runtime_error instead of unsupported_error

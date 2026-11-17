@@ -5,8 +5,9 @@ codename `prince`, product ID `0x4075`, firmware
 `1.0.6-80+f5f219b`.
 
 This is not the same catalog entry as QuietComfort 45 (`duran`, `0x4039`).
-The protocol may be related, but `duran` should remain unclaimed until it is
-verified on real hardware.
+The protocols are related — `duran` reuses the prince 47/39-byte ModeConfig
+parsers — and `duran` is now verified on real hardware in its own report; see
+[docs/quietcomfort-45-duran.md](quietcomfort-45-duran.md).
 
 ## Transport
 
@@ -23,10 +24,12 @@ Mode switches via `START [31.3]` are acked with `PROCESSING` (7) rather than
 `RESULT` and applied asynchronously; `set_mode()` treats both as success.
 
 Open question: the two units disagreed on sidetone (`off` vs `medium`) and
-multipoint (`off` vs `on`) read from the same device seconds apart. The unit
-reporting `medium` had sidetone set to medium earlier in that session, which
-points at the `[1.11]`/`[1.10]` parsers' offsets being worth re-checking
-against a capture.
+multipoint (`off` vs `on`) read from the same device seconds apart. The
+`[1.10]` multipoint reader used to treat bit 1 as "enabled"; it now reads bit
+0, with bit 1 meaning "supported" (see NOTES.md). That may explain the
+multipoint disagreement, but nobody has re-checked it on a prince unit. The
+unit reporting `medium` had sidetone set to medium earlier in that session, so
+the `[1.11]` sidetone parser is still worth re-checking against a capture.
 
 BMAP framing is unchanged:
 

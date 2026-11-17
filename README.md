@@ -37,6 +37,7 @@ the desktop through BlueZ. On Arch it's in the AUR as `bosectl-qt`.
 | **QuietComfort Earbuds**    | CNC 0-10 via direct SETGET            | 3-band | —              | 4 fixed modes         | Remap                  | Verified (`lando`) |
 | **QuietComfort 45**         | CNC 0-10 via ModeConfig               | 3-band | —              | 2 user slots          | Remap                  | Verified (`duran`) |
 | **Ultra Open Earbuds**      | — (open-ear)                          | 3-band | —              | switch only           | —                      | Partial (`serena`), from device report |
+| **Noise Cancelling Headphones 700** | CNC 0-10 via direct SETGET    | read   | —              | —                     | —                      | Verified (`goodyear`) |
 
 ### Device Roadmap
 
@@ -46,7 +47,6 @@ product ID but don't have tested configurations yet — contributions welcome:
 
 | Device                          | Codename  | Category   | PID      |
 | ------------------------------- | --------- | ---------- | -------- |
-| Noise Cancelling Headphones 700 | goodyear  | Headphones | `0x4024` |
 | QuietComfort Ultra Headphones   | lonestarr | Headphones | `0x4066` |
 | QuietComfort Earbuds II         | smalls    | Earbuds    | `0x4064` |
 | QuietComfort Ultra Earbuds      | scotty    | Earbuds    | `0x4072` |
@@ -248,8 +248,9 @@ ECDH authentication, **SETGET** (operator 2) and **START** (operator 5)
 are unauthenticated on the Settings and AudioModes blocks. This gives
 full control over every user-facing setting.
 
-Full protocol reference: **[NOTES.md](NOTES.md)** and
-**[QuietComfort Headphones notes](docs/quietcomfort-headphones-prince.md)**.
+Full protocol reference: **[NOTES.md](NOTES.md)**,
+**[QuietComfort Headphones notes](docs/quietcomfort-headphones-prince.md)**, and
+**[QuietComfort 45 notes](docs/quietcomfort-45-duran.md)**.
 
 ### How We Found This
 

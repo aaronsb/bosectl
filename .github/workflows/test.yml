@@ -41,3 +41,6 @@ jobs:
 
       - name: C++
         run: make cpp-test
+
+      - name: Conformance
+        run: make conformance
