@@ -1,0 +1,7 @@
+# spec: GET [1.7] EQ is one [min, max, current, band] group per band; bands 0, 1, 2 are bass, mid and treble, and current is signed.
+# source: captures/20260404-173258_wind-block.json, snapshot "before" (QC Ultra 2, firmware 8.2.20), [1.7] = f60a0000 f60afe01 f60afa02 (bass 0, mid -2, treble -6)
+device qc_ultra2
+call eq
+send 01 07 01 00
+recv 01 07 03 0c f6 0a 00 00 f6 0a fe 01 f6 0a fa 02
+result ok 0 -2 -6

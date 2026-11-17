@@ -1,0 +1,11 @@
+# spec: SETGET [1.7] EQ writes one band at a time as [value, band]; flat is three writes of 0, bands 0, 1, 2 in order.
+# source: NOTES.md SETGET table ([1.7] 2 bytes: [value, bandId]); the replies are synthetic, the captured [1.7] layout with each band at 0
+device qc_ultra2
+call set_eq 0 0 0
+send 01 07 02 02 00 00
+recv 01 07 03 0c f6 0a 00 00 f6 0a fe 01 f6 0a fa 02
+send 01 07 02 02 00 01
+recv 01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a fa 02
+send 01 07 02 02 00 02
+recv 01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02
+result ok

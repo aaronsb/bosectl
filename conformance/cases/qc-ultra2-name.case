@@ -1,0 +1,7 @@
+# spec: GET [1.2] product name is a leading 00 byte, then the name as UTF-8 (NOTES.md, Fargo's read table).
+# source: captures/20260404-173258_wind-block.json, snapshot "before" (QC Ultra 2, firmware 8.2.20), [1.2] = 00 "Fargo"
+device qc_ultra2
+call name
+send 01 02 01 00
+recv 01 02 03 06 00 46 61 72 67 6f
+result ok Fargo

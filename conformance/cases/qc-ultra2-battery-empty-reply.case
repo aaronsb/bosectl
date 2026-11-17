@@ -1,0 +1,7 @@
+# spec: a reply with no bytes is unusable but carries no BMAP error code, so it fails as device-error -.
+# source: synthetic; INTERFACE.md's error classes (device-error - for an empty or malformed reply)
+device qc_ultra2
+call battery
+send 02 02 01 00
+recv
+result err device-error -

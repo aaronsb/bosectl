@@ -9,6 +9,7 @@ bosectl implements the same library three times, in Python, Rust and C++. [docs/
 bosectl talks to headphones the maintainer mostly does not own, so a change is judged by evidence that anyone can rerun or read:
 
 - **The unit tests**, in all three languages. `make test` runs them, and CI runs them on Ubuntu and macOS for every pull request.
+- **The conformance cases.** `make conformance` plays each case in `conformance/cases/` through all three libraries and requires the same packets and results from each, so a change in one language that the others lack fails. [conformance/README.md](conformance/README.md) describes the cases.
 - **Captured bytes.** A request and the reply a real device gave, as hex in a test or as a file under [fixtures/](fixtures/README.md). A parser is only as right as the bytes it was checked against.
 - **A hardware report.** For a device's first support or a change in how bosectl drives it: the device, its firmware version, the OS, the commands you ran and what each returned. [docs/quietcomfort-headphones-prince.md](docs/quietcomfort-headphones-prince.md) is an example.
 

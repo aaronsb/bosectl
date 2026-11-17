@@ -1,0 +1,7 @@
+# spec: a sidetone mode outside 0-3 reads as unknown(N), keeping the byte so the reader can see what the headphones sent.
+# source: synthetic; the captured [1.11] layout (01 02 0f) with mode 7; the result text is INTERFACE.md's for sidetone
+device qc_ultra2
+call sidetone
+send 01 0b 01 00
+recv 01 0b 03 03 01 07 0f
+result ok unknown(7)

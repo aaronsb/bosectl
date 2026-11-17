@@ -1,0 +1,5 @@
+# spec: an EQ level outside -10..+10 is refused before anything is sent.
+# source: NOTES.md SETGET table ([1.7] value=-10..+10)
+device qc_ultra2
+call set_eq 11 0 0
+result err invalid-arg

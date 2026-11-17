@@ -19,7 +19,7 @@ from .constants import (
 from .protocol import bmap_packet, parse_all_responses, fmt_response
 from .errors import (
     BmapError, BmapAuthError, BmapDeviceError, BmapDesyncError,
-    BmapInvalidArgError,
+    BmapInvalidArgError, BmapUnsupportedError,
 )
 from .types import AudioSettings, BatteryStatus, DeviceStatus
 from .devices import parsers
@@ -50,7 +50,7 @@ class BmapConnection:
         """Look up a feature config entry. Raises BmapError if unsupported."""
         features = self._device.FEATURES
         if name not in features:
-            raise BmapError(
+            raise BmapUnsupportedError(
                 "%s does not support '%s'" % (
                     self._device.DEVICE_INFO.get("name", "Device"), name
                 )
@@ -65,7 +65,7 @@ class BmapConnection:
         """
         feat = self._feature(name)
         if feat.get("read_only"):
-            raise BmapError(
+            raise BmapUnsupportedError(
                 "%s can read '%s' but bosectl does not write it yet: no write "
                 "has been checked on this device" % (
                     self._device.DEVICE_INFO.get("name", "Device"), name))
@@ -480,15 +480,15 @@ class BmapConnection:
     def _update_current_mode_config(self, **overrides):
         """Fallback live audio update through the current ModeConfig."""
         if not self.has_feature("mode_config"):
-            raise BmapError("Device does not support direct audio settings")
+            raise BmapUnsupportedError("Device does not support direct audio settings")
 
         if ("anc_toggle" in overrides and
                 not getattr(self._device, "SUPPORTS_ANC_TOGGLE", True)):
-            raise BmapError("Device does not expose an ANC on/off toggle")
+            raise BmapUnsupportedError("Device does not expose an ANC on/off toggle")
 
         config = self._current_mode_config()
         if not config.editable:
-            raise BmapError(
+            raise BmapUnsupportedError(
                 "Current mode '%s' is not editable on this device" % config.name
             )
         self._write_mode_from_config(config.mode_idx, config, **overrides)
@@ -557,7 +557,7 @@ class BmapConnection:
         feat = self._feature("buttons")
         builder = feat.get("builder")
         if not builder:
-            raise BmapError("Button remapping not supported on this device")
+            raise BmapUnsupportedError("Button remapping not supported on this device")
         payload = builder(button_id, event, action)
         resp = self._setget("buttons", payload)
         parser = feat.get("parser")
@@ -775,7 +775,7 @@ class BmapConnection:
         feat = self._feature("mode_config")
         builder = feat.get("builder")
         if not builder:
-            raise BmapError("Device does not support mode configuration")
+            raise BmapUnsupportedError("Device does not support mode configuration")
         payload = builder(
             mode_idx=slot, name=name, cnc_level=cnc_level,
             spatial=spatial, wind_block=wind_block, anc_toggle=anc_toggle,

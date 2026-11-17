@@ -1,0 +1,7 @@
+# spec: GET [1.10] multipoint with bit 0 clear and bit 1 set (supported, not enabled) reads as off.
+# source: PR #47 hardware report, QC Ultra 2 firmware 10.12.12: GET reads 06 after SETGET [1.10] 00
+device qc_ultra2
+call multipoint
+send 01 0a 01 00
+recv 01 0a 03 01 06
+result ok off

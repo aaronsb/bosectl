@@ -21,3 +21,8 @@ libc = "0.2"
 [[bin]]
 name = "bmapctl"
 path = "src/main.rs"
+
+# Conformance adapter for conformance/run.py (see conformance/INTERFACE.md).
+[[bin]]
+name = "bmap-replay"
+path = "src/bin/bmap-replay.rs"
