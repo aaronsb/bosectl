@@ -1,0 +1,7 @@
+# spec: the 700 writes CNC directly with SETGET [1.5] [step, 1], without authentication.
+# source: PR #51 hardware report (NC 700 firmware 1.8.2): SETGET [1.5] [step, 0x01] works, and its test's reply 0b0501
+device nc700
+call set_cnc 5
+send 01 05 02 02 05 01
+recv 01 05 03 03 0b 05 01
+result ok

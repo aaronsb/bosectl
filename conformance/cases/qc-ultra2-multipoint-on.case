@@ -1,0 +1,7 @@
+# spec: GET [1.10] multipoint: bit 0 is enabled and bit 1 is supported, so 07 reads as on.
+# source: captures/20260404-173258_wind-block.json, snapshot "before" (QC Ultra 2, firmware 8.2.20), [1.10] = 07; bit layout from PR #47 (vendor app's isEnabled/isSupported)
+device qc_ultra2
+call multipoint
+send 01 0a 01 00
+recv 01 0a 03 01 07
+result ok on

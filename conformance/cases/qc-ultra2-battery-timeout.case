@@ -1,0 +1,7 @@
+# spec: a GET that gets no reply fails as a timeout.
+# source: synthetic; the transport's timeout path
+device qc_ultra2
+call battery
+send 02 02 01 00
+timeout
+result err timeout

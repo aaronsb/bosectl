@@ -1,0 +1,5 @@
+# spec: the 700's product name reads but no write to it has been checked on hardware, so the library refuses the write and sends nothing.
+# source: PR #51 review and NOTES.md, NC 700 section ("Writes checked: only CNC [1.5]")
+device nc700
+call set_name Desk
+result err unsupported

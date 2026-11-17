@@ -1,0 +1,1 @@
+case	qc45-set-anc-unsupported	python	#56	Python writes the ANC byte through the QC45 ModeConfig; SUPPORTS_ANC_TOGGLE is unset there

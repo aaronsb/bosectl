@@ -1,0 +1,7 @@
+# spec: GET [2.2] battery reads the first payload byte as the percentage (0x50 = 80).
+# source: captures/20260404-173258_wind-block.json, snapshot "before" (QC Ultra 2, firmware 8.2.20), [2.2] = 50ffff00
+device qc_ultra2
+call battery
+send 02 02 01 00
+recv 02 02 03 04 50 ff ff 00
+result ok 80

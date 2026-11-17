@@ -1,0 +1,5 @@
+# spec: the QC45 uses the prince's 47-byte ModeConfig layout, which has no ANC toggle byte, so switching ANC is refused before anything is sent.
+# source: qc_prince config and its docstring (the 47/39-byte layout lacks the ancToggle byte); qc45 shares that layout (docs/quietcomfort-45-duran.md)
+device qc45
+call set_anc off
+result err unsupported

@@ -1,0 +1,7 @@
+# spec: an ERROR reply surfaces as a device error carrying its code (4 = FuncNotSupp).
+# source: synthetic; BMAP ERROR framing and codes from NOTES.md (operator 4, payload = error code)
+device qc_ultra2
+call battery
+send 02 02 01 00
+recv 02 02 04 01 04
+result err device-error 4
