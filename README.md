@@ -248,8 +248,9 @@ ECDH authentication, **SETGET** (operator 2) and **START** (operator 5)
 are unauthenticated on the Settings and AudioModes blocks. This gives
 full control over every user-facing setting.
 
-Full protocol reference: **[NOTES.md](NOTES.md)** and
-**[QuietComfort Headphones notes](docs/quietcomfort-headphones-prince.md)**.
+Full protocol reference: **[NOTES.md](NOTES.md)**,
+**[QuietComfort Headphones notes](docs/quietcomfort-headphones-prince.md)**, and
+**[QuietComfort 45 notes](docs/quietcomfort-45-duran.md)**.
 
 ### How We Found This
 
