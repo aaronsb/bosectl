@@ -106,6 +106,16 @@ class TestNotificationsOnConnect:
         dev = pybmap.connect(mac="00:11:22:33:44:55", device_type="nc700")
         assert dev._transport.sent == [bmap_packet(9, 2, 2, nc700.NOTIFICATIONS)]
 
+    def test_failed_notifications_close_the_channel(self, patch_transport, monkeypatch):  # noqa: F811
+        f = patch_transport({8: "bmap"})
+
+        def fail(transport, device):
+            raise BmapError("no reply to [9.2]")
+        monkeypatch.setattr(pybmap, "_enable_notifications", fail)
+        with pytest.raises(BmapError, match=r"\[9\.2\]"):
+            pybmap.connect(mac="00:11:22:33:44:55", device_type="nc700")
+        assert f.closed == [8]
+
     def test_other_devices_send_nothing_extra(self, patch_transport):  # noqa: F811
         patch_transport({8: "bmap"})
         dev = pybmap.connect(mac="00:11:22:33:44:55", device_type="qc_prince")

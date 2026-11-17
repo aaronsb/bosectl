@@ -19,9 +19,9 @@ Capabilities confirmed on hardware:
     (the levels the headphones' button cycles through, 0/5/10 by default)
   - EQ [1.7]: GET works (3-band, -10 to +10)
   - Buttons [1.9]: GET works (Shortcut, press and hold; Battery level, Alexa
-    wake word, Spotify Tap and mode 13 supported). SETGET not tried
+    wake word, Spotify Tap and WindMode supported). SETGET not tried
   - Multipoint [1.10], sidetone [1.11]: GET works
-  - No AudioModes block [31] (ERROR BlockNotSupp) and no ANR [1.6] (ERROR FuncNotSupp)
+  - No AudioModes block [31] (ERROR FblockNotSupp) and no ANR [1.6] (ERROR FuncNotSupp)
 """
 
 from . import parsers

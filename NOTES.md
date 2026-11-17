@@ -57,7 +57,7 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
 - **Channel:** BMAP on RFCOMM channel 8 (its SPP record). No init packet. The
   BMAP UUID's own SDP record leads to a channel that only repeats a status
   beacon (`ff 55 02 00 ee 10`) and ignores commands.
-- **No AudioModes block:** GET [31.0] returns ERROR `03` (BlockNotSupp), and
+- **No AudioModes block:** GET [31.0] returns ERROR `03` (FblockNotSupp), and
   [1.6] ANR returns ERROR `04`. Noise cancelling is [1.5] only.
 - **CNC [1.5]:** GET returns `[steps, step, flags]`, e.g. `0b 00 01` = 11
   steps, step 0. As on other models, step 0 is the most cancelling (the Bose

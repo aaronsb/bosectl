@@ -75,7 +75,11 @@ def connect(mac=None, device_type=None):
     device = get_device(device_type)
     channel = getattr(device, "RFCOMM_CHANNEL", 2)
     transport = _open_transport(mac, channel, device)
-    _enable_notifications(transport, device)
+    try:
+        _enable_notifications(transport, device)
+    except BaseException:
+        transport.close()
+        raise
     return BmapConnection(transport, device)
 
 
