@@ -56,7 +56,7 @@ layout on duran:
 ```
 TX: 1f 01 05 00
 RX: [31.1] PROCESSING
-    [31.2] STATUS  02 02 00 00 00 09      (name index: 2 modes configured)
+    [31.2] STATUS  02 02 00 00 00 09      (not decoded)
     [31.3] STATUS  00                     (current mode = Quiet)
     [31.6] STATUS  idx0 "Quiet"  47 bytes, editable flag 0, cnc 0
     [31.6] STATUS  idx1 "Aware"  47 bytes, editable flag 0, cnc 10
@@ -85,10 +85,9 @@ passthrough, the Quiet frame restored full ANC.
 
 ## EQ
 
-EQ **read** `[1.7]` works (above). EQ **write** (SETGET `[1.7]`) was rejected
-on every payload shape tried from macOS/IOBluetooth, each returning a BMAP
-**ERROR with code 6 (InvalidData)** and leaving the EQ unchanged at
-`[0, 0, 0]`:
+EQ **read** `[1.7]` works (above). The EQ **write** attempts below (SETGET
+`[1.7]`, from macOS/IOBluetooth) each returned a BMAP **ERROR with code 6
+(InvalidData)** and left the EQ unchanged at `[0, 0, 0]`:
 
 | Attempt                                   | Result        |
 |-------------------------------------------|---------------|
@@ -96,10 +95,13 @@ on every payload shape tried from macOS/IOBluetooth, each returning a BMAP
 | `[min, max, value, band_id]` (4-byte)     | error 6       |
 | three full bands at once (12-byte)        | error 6       |
 
-The error is InvalidData (6) rather than auth (5), so the payload format may
-differ from what was tried here. The config's `eq` builder is left in place;
-on this unit and firmware, callers should expect EQ writes to be rejected and
-treat EQ as effectively read-only until the write format is captured.
+None of these is the payload bosectl sends. bosectl's EQ builder sends two
+bytes in the order `[value, band_id]` (see NOTES.md), the reverse of the first
+attempt, and an earlier check on the same firmware recorded EQ SETGET working
+(the module docstring of `python/pybmap/devices/qc45.py`). InvalidData (6)
+rather than an auth error (5) fits a payload in the wrong order. So these
+results do not show that EQ is read-only. `bosectl eq` on this unit would
+settle it.
 
 ## Unsupported or Not Yet Verified
 
