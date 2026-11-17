@@ -356,7 +356,7 @@ def main():
         groups = {}
         for name, lines in views.items():
             groups.setdefault(tuple(lines), []).append(name)
-        reference = max(groups, key=len)
+        reference = max(groups, key=lambda view: len(groups[view]))
         for name, lines in views.items():
             key = ("describe", device, name)
             differs = tuple(lines) != reference

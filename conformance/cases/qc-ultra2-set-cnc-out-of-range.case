@@ -1,0 +1,5 @@
+# spec: a CNC level outside 0-10 is refused before anything is sent.
+# source: NOTES.md read table ([1.5] 11 steps, so levels 0-10)
+device qc_ultra2
+call set_cnc 11
+result err invalid-arg
