@@ -161,7 +161,12 @@ def build_buttons(button_id, event, action):
 
 
 def parse_multipoint(payload):
-    """Parse multipoint GET. Bit 0 (0x01) = enabled, bit 1 (0x02) = supported."""
+    """Parse multipoint GET [1.10]: whether multipoint is on (bit 0).
+
+    The byte holds three flags, as the Bose app reads them: bit 0 (0x01) on,
+    bit 1 (0x02) supported, bit 2 (0x04) can be turned off. The Bose app
+    shows its multipoint switch only when bit 2 is set. See NOTES.md.
+    """
     if payload:
         return bool(payload[0] & 0x01)
     return False

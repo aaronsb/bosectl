@@ -77,6 +77,11 @@ TEST(parse_multipoint_off) {
     ASSERT_FALSE(parse_multipoint({0x06}));
 }
 
+TEST(parse_multipoint_on_but_cannot_be_turned_off) {
+    // The 700: bits 0 and 1 set, bit 2 (can be turned off) clear
+    ASSERT_TRUE(parse_multipoint({0x03}));
+}
+
 TEST(parse_sidetone_medium) {
     ASSERT_EQ(parse_sidetone({0x01, 0x02, 0x0f}), "medium");
 }

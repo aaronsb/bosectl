@@ -20,7 +20,10 @@ Capabilities confirmed on hardware:
   - EQ [1.7]: GET works (3-band, -10 to +10)
   - Buttons [1.9]: GET works (Shortcut, press and hold; Battery level, Alexa
     wake word, Spotify Tap and WindMode supported). SETGET not tried
-  - Multipoint [1.10], sidetone [1.11]: GET works
+  - Multipoint [1.10]: GET returns 03: supported and on, but bit 2 (can be
+    turned off) is clear, and the Bose app shows no multipoint switch for
+    the 700. bosectl doesn't write it
+  - Sidetone [1.11]: GET works
   - No AudioModes block [31] (ERROR FblockNotSupp) and no ANR [1.6] (ERROR FuncNotSupp)
 """
 
@@ -70,8 +73,8 @@ FEATURES = {
         "addr": (0, 5),
         "parser": parsers.parse_firmware,
     },
-    # Product name, EQ, multipoint and sidetone read correctly, but no write to
-    # them has been checked on a 700, so they are read-only. Once a write has
+    # Product name, EQ and sidetone read correctly, but no write to them has
+    # been checked on a 700, so they are read-only. Once a write has
     # been checked, drop its "read_only" line and restore its builder.
     "product_name": {
         "addr": (1, 2),
@@ -94,11 +97,12 @@ FEATURES = {
         "addr": (1, 9),
         "parser": parse_buttons,
     },
+    # Multipoint stays read-only even once the other writes are checked:
+    # the 700 reports that it can't be turned off (see the docstring).
     "multipoint": {
         "addr": (1, 10),
         "parser": parsers.parse_multipoint,
         "read_only": True,
-        # "builder": parsers.build_toggle,
     },
     "sidetone": {
         "addr": (1, 11),

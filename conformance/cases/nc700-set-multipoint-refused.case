@@ -1,0 +1,5 @@
+# spec: the 700 reports that multipoint can't be turned off and the vendor app offers no switch for it, so the library refuses a multipoint write and sends nothing.
+# source: NOTES.md, NC 700 section (multipoint [1.10] answers 03; bit 2 clear)
+device nc700
+call set_multipoint off
+result err unsupported
