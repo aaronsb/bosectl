@@ -66,25 +66,35 @@ TEST(status_leaves_mode_empty_when_mode_read_fails) {
     ASSERT_TRUE(dev.status().mode.empty());
 }
 
-TEST(nc700_refuses_unchecked_writes_before_sending) {
+TEST(nc700_refuses_multipoint_write_before_sending) {
     auto raw = new MockTransport();
     BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
-    std::vector<std::function<void()>> writes = {
-        [&] { dev.set_name("Desk"); },
-        [&] { dev.set_eq(1, 0, 0); },
-        [&] { dev.set_multipoint(true); },
-        [&] { dev.set_sidetone("low"); },
-    };
-    for (auto& write : writes) {
-        bool refused = false;
-        try { write(); }
-        catch (const unsupported_error& error) {
-            refused = std::string(error.what()).find("does not write it yet") != std::string::npos;
-        }
-        catch (...) {}  // any other outcome, such as a sent write's device error, fails below
-        ASSERT_TRUE(refused);
+    bool refused = false;
+    try { dev.set_multipoint(true); }
+    catch (const unsupported_error& error) {
+        refused = std::string(error.what()).find("does not write it yet") != std::string::npos;
     }
+    catch (...) {}  // any other outcome, such as a sent write's device error, fails below
+    ASSERT_TRUE(refused);
     ASSERT_TRUE(raw->sent.empty());
+}
+
+// Writes checked on the 700 with bosectl; each reply is the 700's own.
+TEST(nc700_writes_send_the_checked_packets) {
+    auto raw = new MockTransport();
+    raw->add(1, 2, 0x03, {0x00, 'T', 'e', 's', 't', ' ', '7', '0', '0'});
+    raw->add(1, 7, 0x03, {0xf6,0x0a,0x01,0x00, 0xf6,0x0a,0x00,0x01, 0xf6,0x0a,0x00,0x02});
+    raw->add(1, 11, 0x03, {0x01, 0x03, 0x0f});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_name("Test 700");
+    dev.set_eq(1, 0, 0);
+    dev.set_sidetone("low");
+    std::vector<std::vector<uint8_t>> expected = {
+        {1, 2, 2, 8, 'T', 'e', 's', 't', ' ', '7', '0', '0'},
+        {1, 7, 2, 2, 1, 0}, {1, 7, 2, 2, 0, 1}, {1, 7, 2, 2, 0, 2},
+        {1, 11, 2, 2, 1, 3},
+    };
+    ASSERT_TRUE(raw->sent == expected);
 }
 
 TEST(battery_empty_response) {
@@ -838,4 +848,54 @@ TEST(probe_sends_no_notifications_for_other_devices) {
             ASSERT_FALSE(packet[0] == 0x09 && packet[1] == 0x02);
         }
     }
+}
+
+// The Bose app's name check. The owner of a 700 tried these in the Bose app:
+// 27 digits were too long, and so were 14 "é" (28 bytes).
+// In a separate test, the Bose app refused a name with an emoji.
+static std::string repeat(const std::string& s, int n) {
+    std::string out;
+    for (int i = 0; i < n; ++i) out += s;
+    return out;
+}
+
+TEST(nc700_names_the_bose_app_accepts_are_sent) {
+    for (const std::string& name : {repeat("1", 26), repeat("\u00e9", 13),
+                                    std::string("User's NC-700"), std::string("User\u2019s NC-700")}) {
+        auto raw = new MockTransport();
+        std::vector<uint8_t> reply = {0x00};
+        reply.insert(reply.end(), name.begin(), name.end());
+        raw->add(1, 2, 0x03, reply);
+        BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+        dev.set_name(name);
+        ASSERT_EQ(raw->sent.size(), size_t{1});
+    }
+}
+
+TEST(nc700_names_the_bose_app_refuses_are_not_sent) {
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {repeat("1", 27), "at most 26 bytes"},
+        {repeat("\u00e9", 14), "at most 26 bytes"},
+        {"\U0001F601", "letters, digits"},
+        {"Mine!", "letters, digits"},
+        {"a\tb", "letters, digits"},
+        {"\u65e5\u672c", "letters, digits"},
+        {std::string("\xC3", 1), "letters, digits"},
+        {"   ", "empty"},
+        {"", "empty"},
+    };
+    for (const auto& [name, problem] : cases) {
+        auto raw = new MockTransport();
+        BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+        ASSERT_TRUE(throws_with<std::invalid_argument>([&] { dev.set_name(name); }, problem));
+        ASSERT_TRUE(raw->sent.empty());
+    }
+}
+
+TEST(other_devices_keep_31_bytes_and_any_character) {
+    auto raw = new MockTransport();
+    raw->add(1, 2, 0x03, {0x00, 'P', 'a', 'r', 't', 'y', '!', ' ', '#', '1'});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra2());
+    dev.set_name("Party! #1");
+    ASSERT_EQ(raw->sent.size(), size_t{1});
 }

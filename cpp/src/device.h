@@ -110,6 +110,8 @@ struct DeviceConfig {
     /// `status` shows only settings the device has (NC 700), instead of "off" or
     /// "custom(0)" for the rest.
     bool status_supported_only = false;
+    /// New names must pass the Bose app's check (NC 700); see check_bose_music_name.
+    bool bose_music_names = false;
     std::optional<Addr> battery;
     /// Component IDs and display labels for multi-cell battery responses.
     std::vector<std::pair<uint8_t, std::string>> battery_components;
@@ -205,6 +207,11 @@ inline std::vector<EqBand> parse_eq(const std::vector<uint8_t>& p) {
     return bands;
 }
 
+// Multipoint GET [1.10]: whether multipoint is on (bit 0).
+//
+// The byte holds three flags, as the Bose app reads them: bit 0 (0x01) on,
+// bit 1 (0x02) supported, bit 2 (0x04) can be turned off. The Bose app
+// shows its multipoint switch only when bit 2 is set. See NOTES.md.
 inline bool parse_multipoint(const std::vector<uint8_t>& p) {
     return !p.empty() && (p[0] & 0x01) != 0;
 }

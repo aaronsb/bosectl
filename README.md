@@ -37,7 +37,7 @@ the desktop through BlueZ. On Arch it's in the AUR as `bosectl-qt`.
 | **QuietComfort Earbuds**    | CNC 0-10 via direct SETGET            | 3-band | —              | 4 fixed modes         | Remap                  | Verified (`lando`) |
 | **QuietComfort 45**         | CNC 0-10 via ModeConfig               | 3-band | —              | 2 user slots          | Remap                  | Verified (`duran`) |
 | **Ultra Open Earbuds**      | — (open-ear)                          | 3-band | —              | switch only           | —                      | Partial (`serena`), from device report |
-| **Noise Cancelling Headphones 700** | CNC 0-10 via direct SETGET    | read   | —              | —                     | —                      | Verified (`goodyear`) |
+| **Noise Cancelling Headphones 700** | CNC 0-10 via direct SETGET    | 3-band | —              | —                     | —                      | Verified (`goodyear`) |
 
 ### Device Roadmap
 

@@ -1,0 +1,5 @@
+# spec: the 700 takes names the Bose app accepts, at most 26 bytes of UTF-8; 14 "é" are 28 bytes, so the library refuses the name and sends nothing.
+# source: the Bose app's validateProductName (byte limit 26), and the owner of a 700 seeing 14 "é" refused as too long in the Bose app
+device nc700
+call set_name éééééééééééééé
+result err invalid-arg

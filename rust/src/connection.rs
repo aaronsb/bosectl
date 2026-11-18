@@ -10,6 +10,40 @@ use crate::transport::Transport;
 /// The device name field is 32 bytes on every BMAP device seen so far.
 pub const MAX_NAME_BYTES: usize = 31;
 
+/// The Bose app (validateProductName) allows at most 26 bytes of UTF-8 and only
+/// letters, digits, spaces and these four symbols.
+pub const BOSE_MUSIC_MAX_NAME_BYTES: usize = 26;
+pub const BOSE_MUSIC_NAME_SYMBOLS: [char; 4] = ['-', '\'', '\u{2018}', '\u{2019}'];
+
+/// Whether the Bose app allows `c` in a name, from a subset of its rule.
+///
+/// The Bose app allows any Unicode letter or digit. bosectl allows ASCII
+/// letters and digits and the Latin-1 and Latin Extended-A letters
+/// (U+00C0-U+017F without the signs × and ÷), the same in all three
+/// languages, so it never sends a name the Bose app would refuse.
+fn is_bose_music_name_char(c: char) -> bool {
+    c.is_ascii_alphanumeric()
+        || c == ' '
+        || BOSE_MUSIC_NAME_SYMBOLS.contains(&c)
+        || (('\u{C0}'..='\u{17F}').contains(&c) && c != '\u{D7}' && c != '\u{F7}')
+}
+
+/// Refuse a name the Bose app would not accept.
+pub fn check_bose_music_name(name: &str) -> BmapResult<()> {
+    if name.trim_matches(' ').is_empty() {
+        return Err(BmapError::InvalidArg("Name must not be empty".into()));
+    }
+    if !name.chars().all(is_bose_music_name_char) {
+        return Err(BmapError::InvalidArg(
+            "Name may only have letters, digits, spaces and - ' \u{2018} \u{2019}".into()));
+    }
+    if name.len() > BOSE_MUSIC_MAX_NAME_BYTES {
+        return Err(BmapError::InvalidArg(format!(
+            "Name must be at most {} bytes of UTF-8", BOSE_MUSIC_MAX_NAME_BYTES)));
+    }
+    Ok(())
+}
+
 /// Fall back to `default` for an optional status field, except on a desync:
 /// every later read on the same socket would be wrong too, so a snapshot
 /// built from defaults would hide it.
@@ -532,8 +566,12 @@ impl<T: Transport> BmapConnection<T> {
         Ok(())
     }
 
-    /// Set device name.
+    /// Set device name. A device with `bose_music_names` takes only names the
+    /// Bose app accepts (`check_bose_music_name`).
     pub fn set_name(&self, name: &str) -> BmapResult<()> {
+        if self.config.bose_music_names {
+            check_bose_music_name(name)?;
+        }
         if name.len() > MAX_NAME_BYTES {
             return Err(BmapError::InvalidArg(format!(
                 "Name must be at most {} bytes of UTF-8", MAX_NAME_BYTES)));
@@ -793,19 +831,77 @@ mod tests {
     }
 
     #[test]
-    fn test_nc700_refuses_unchecked_writes_before_sending() {
+    fn test_nc700_refuses_multipoint_write_before_sending() {
         let dev = BmapConnection::new(MockTransport::new(), devices::nc700());
-        let results = [
-            dev.set_name("Desk"),
-            dev.set_eq(1, 0, 0),
-            dev.set_multipoint(true),
-            dev.set_sidetone("low"),
-        ];
-        for r in results {
-            assert!(matches!(r, Err(BmapError::Unsupported(ref m)) if m.contains("does not write it yet")),
-                    "{:?}", r);
-        }
+        let r = dev.set_multipoint(true);
+        assert!(matches!(r, Err(BmapError::Unsupported(ref m)) if m.contains("does not write it yet")),
+                "{:?}", r);
         assert!(dev.transport.sent.borrow().is_empty());
+    }
+
+    // Writes checked on the 700 with bosectl; each reply is the 700's own.
+    #[test]
+    fn test_nc700_writes_send_the_checked_packets() {
+        let mut t = MockTransport::new();
+        t.add(1, 2, 0x03, b"\x00Test 700");
+        t.add(1, 7, 0x03, &[0xf6,0x0a,0x01,0x00, 0xf6,0x0a,0x00,0x01, 0xf6,0x0a,0x00,0x02]);
+        t.add(1, 11, 0x03, &[0x01, 0x03, 0x0f]);
+        let dev = BmapConnection::new(t, devices::nc700());
+        dev.set_name("Test 700").unwrap();
+        dev.set_eq(1, 0, 0).unwrap();
+        dev.set_sidetone("low").unwrap();
+        let mut name = vec![1, 2, 2, 8];
+        name.extend_from_slice(b"Test 700");
+        assert_eq!(*dev.transport.sent.borrow(), vec![
+            name,
+            vec![1, 7, 2, 2, 1, 0], vec![1, 7, 2, 2, 0, 1], vec![1, 7, 2, 2, 0, 2],
+            vec![1, 11, 2, 2, 1, 3],
+        ]);
+    }
+
+    // The Bose app's name check. The owner of a 700 tried these in the Bose
+    // app: 27 digits were too long, and so were 14 "é" (28 bytes).
+    // In a separate test, the Bose app refused a name with an emoji.
+    #[test]
+    fn test_nc700_names_the_bose_app_accepts_are_sent() {
+        for name in ["1".repeat(26), "é".repeat(13), "User's NC-700".into(), "User\u{2019}s NC-700".into()] {
+            let mut t = MockTransport::new();
+            let mut reply = vec![0];
+            reply.extend_from_slice(name.as_bytes());
+            t.add(1, 2, 0x03, &reply);
+            let dev = BmapConnection::new(t, devices::nc700());
+            dev.set_name(&name).unwrap();
+            assert_eq!(dev.transport.sent.borrow().len(), 1, "{}", name);
+        }
+    }
+
+    #[test]
+    fn test_nc700_names_the_bose_app_refuses_are_not_sent() {
+        let cases = [
+            ("1".repeat(27), "at most 26 bytes"),
+            ("é".repeat(14), "at most 26 bytes"),
+            ("\u{1F601}".into(), "letters, digits"),
+            ("Mine!".into(), "letters, digits"),
+            ("a\tb".into(), "letters, digits"),
+            ("\u{65e5}\u{672c}".into(), "letters, digits"),
+            ("   ".into(), "empty"),
+            ("".into(), "empty"),
+        ];
+        for (name, problem) in cases {
+            let dev = BmapConnection::new(MockTransport::new(), devices::nc700());
+            let r = dev.set_name(&name);
+            assert!(matches!(r, Err(BmapError::InvalidArg(ref m)) if m.contains(problem)), "{:?}: {:?}", name, r);
+            assert!(dev.transport.sent.borrow().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_other_devices_keep_31_bytes_and_any_character() {
+        let mut t = MockTransport::new();
+        t.add(1, 2, 0x03, b"\x00Party! #1");
+        let dev = BmapConnection::new(t, devices::qc_ultra2());
+        dev.set_name("Party! #1").unwrap();
+        assert_eq!(dev.transport.sent.borrow().len(), 1);
     }
 
     #[test]

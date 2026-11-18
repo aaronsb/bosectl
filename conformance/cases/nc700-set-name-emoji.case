@@ -1,0 +1,5 @@
+# spec: the 700 takes names the Bose app accepts, only letters, digits, spaces and - ' ‘ ’. A name with an emoji is refused, and nothing is sent.
+# source: the Bose app's validateProductName, and the owner of a 700 seeing an emoji refused in the Bose app
+device nc700
+call set_name 😁
+result err invalid-arg

@@ -1,0 +1,7 @@
+# spec: SETGET [1.2] on the 700 sends the name as UTF-8 with no flag byte; the 700 answers STATUS with a 00 byte and the new name, twice in one read.
+# source: NC 700 fw 1.8.2-11524+e0f7590, bosectl on Linux (BlueZ), notifications on (NOTES.md, NC 700 section)
+device nc700
+call set_name Test 700
+send 01 02 02 08 54 65 73 74 20 37 30 30
+recv 01 02 03 09 00 54 65 73 74 20 37 30 30 01 02 03 09 00 54 65 73 74 20 37 30 30
+result ok

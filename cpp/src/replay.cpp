@@ -209,6 +209,7 @@ void describe(const DeviceConfig& c) {
         if (*addr) write_line(std::string("feature ") + name + " " + addr_text(**addr));
     for (const auto& a : c.read_only) write_line("read-only " + addr_text(a));
     write_line(std::string("status-supported-only ") + (c.status_supported_only ? "1" : "0"));
+    write_line(std::string("bose-music-names ") + (c.bose_music_names ? "1" : "0"));
     write_line(std::string("anc-toggle ") + (c.supports_anc_toggle ? "1" : "0"));
     std::string slots;
     for (auto s : c.editable_slots) slots += " " + std::to_string(s);

@@ -90,6 +90,7 @@ A call that fails answers `err CLASS`, where CLASS says what happened. The adapt
 | `feature NAME F.N` | One line for each feature the config gives an address, by the feature names of the Python configs (`battery`, `cnc`, `mode_config` and so on). |
 | `read-only F.N` | One line for each address whose writes the library refuses. |
 | `status-supported-only 0` or `1` | Whether `status` shows only the settings the device has. |
+| `bose-music-names 0` or `1` | Whether `set_name` takes only names the Bose app accepts. |
 | `anc-toggle 0` or `1` | The config's ANC-toggle flag, as the library reads it (Python's `SUPPORTS_ANC_TOGGLE`, which counts as 1 when a device module leaves it out). |
 | `editable-slots N N ...` or `editable-slots -` | The profile slots a user may edit, in the config's order. |
 | `preset NAME N` | One line for each preset mode and its index. |

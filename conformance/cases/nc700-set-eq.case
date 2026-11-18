@@ -1,0 +1,11 @@
+# spec: set_eq on the 700 sends one SETGET [1.7] [value, band] per band; each STATUS reply holds all three bands.
+# source: NC 700 fw 1.8.2-11524+e0f7590, bosectl on Linux (BlueZ), notifications on (NOTES.md, NC 700 section)
+device nc700
+call set_eq 1 0 0
+send 01 07 02 02 01 00
+recv 01 07 03 0c f6 0a 01 00 f6 0a 00 01 f6 0a 00 02
+send 01 07 02 02 00 01
+recv 01 07 03 0c f6 0a 01 00 f6 0a 00 01 f6 0a 00 02
+send 01 07 02 02 00 02
+recv 01 07 03 0c f6 0a 01 00 f6 0a 00 01 f6 0a 00 02
+result ok

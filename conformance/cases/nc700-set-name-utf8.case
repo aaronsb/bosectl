@@ -1,0 +1,7 @@
+# spec: set_name on the 700 sends the name as UTF-8 (é as c3 a9); the 700 answers STATUS with a 00 byte and the same bytes, twice in one read.
+# source: NC 700 fw 1.8.2-11524+e0f7590, bosectl on Linux (BlueZ), notifications on; the 700's Bluetooth name then read back as the same UTF-8 bytes (NOTES.md, NC 700 section)
+device nc700
+call set_name Café 700
+send 01 02 02 09 43 61 66 c3 a9 20 37 30 30
+recv 01 02 03 0a 00 43 61 66 c3 a9 20 37 30 30 01 02 03 0a 00 43 61 66 c3 a9 20 37 30 30
+result ok

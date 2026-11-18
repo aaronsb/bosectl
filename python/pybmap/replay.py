@@ -151,6 +151,7 @@ def _describe(device):
         if feat.get("read_only"):
             lines.append("read-only %d.%d" % tuple(feat["addr"]))
     lines.append("status-supported-only %d" % bool(getattr(device, "STATUS_SUPPORTED_ONLY", False)))
+    lines.append("bose-music-names %d" % bool(getattr(device, "BOSE_MUSIC_NAMES", False)))
     lines.append("anc-toggle %d" % bool(getattr(device, "SUPPORTS_ANC_TOGGLE", True)))
     slots = list(getattr(device, "EDITABLE_SLOTS", None) or [])
     lines.append("editable-slots %s" % (" ".join(map(str, slots)) if slots else "-"))

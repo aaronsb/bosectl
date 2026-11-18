@@ -1,0 +1,7 @@
+# spec: GET [1.10] multipoint on the 700 answers 03: bit 0 (on) and bit 1 (supported) set, bit 2 (can be turned off) clear, so it reads as on.
+# source: NC 700 fw 1.8.2-11524+e0f7590, GET [1.10] = 03 (NOTES.md, NC 700 section); bit layout from the vendor app's isEnabled/isSupported/isDisableSupported
+device nc700
+call multipoint
+send 01 0a 01 00
+recv 01 0a 03 01 03
+result ok on
