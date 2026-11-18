@@ -78,13 +78,18 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
   hold, BatteryLevel. The supported-actions bitmap (`00 01 20 88`) is
   big-endian, as the Bose app reads it: BatteryLevel, ToggleWakeWord,
   WindMode, SpotifyGo, which includes the current action.
+- **Multipoint [1.10]:** GET returns `03`: supported (bit 1) and on (bit 0),
+  but bit 2, "can be turned off", is clear. The Bose app reads the same three
+  bits and shows its multipoint switch only when bit 2 is set, so it offers
+  no switch for the 700. bosectl doesn't write [1.10] on the 700.
 - **Also answering GET:** battery [2.2], firmware [0.5], product name [1.2]
   (`00` + "NC 700"), EQ [1.7] (3-band), buttons [1.9], multipoint [1.10],
   sidetone [1.11], standby timer [1.4] (`b4` = 180 min), CNC persistence
   [1.14], auto play/pause [1.20], audio source [5.1].
 - **Writes checked:** only CNC [1.5]. bosectl treats product name [1.2], EQ
-  [1.7], multipoint [1.10] and sidetone [1.11] as read-only on the 700 and
-  refuses to write them until a write to each has been checked on hardware.
+  [1.7] and sidetone [1.11] as read-only on the 700 and refuses to write them
+  until a write to each has been checked on hardware. Multipoint [1.10] stays
+  read-only for the reason above.
 
 ## BMAP Protocol
 - Version: 1.1.0
@@ -268,7 +273,7 @@ All of these use `[1, FUNC, 0x02, LEN, ...PAYLOAD]` (block 1, operator SETGET):
 | [1.5]  | CNC          | —                            | **AUTH REQUIRED** (use [31.6] instead) |
 | [1.7]  | EQ/Range     | 2 bytes: [value, bandId]     | value=-10..+10, band=0/1/2 |
 | [1.9]  | Buttons      | 3 bytes: [btnId, evt, mode]  | See button tables below |
-| [1.10] | Multipoint   | 1 byte: 0=off, 1=on         | |
+| [1.10] | Multipoint   | 1 byte: 0=off, 1=on         | Only where GET bit 2 (can be turned off) is set; see [Settings Functions](#settings-functions-block-1) |
 | [1.11] | Sidetone     | 2 bytes: [persist, mode]     | mode: 0=off,1=high,2=med,3=low |
 | [1.24] | AutoPlayPause| 1 byte: 0=off, 1=on         | Pause on ear removal |
 | [1.27] | AutoAnswer   | 1 byte: 0=off, 1=on         | Auto-answer calls |
@@ -471,7 +476,7 @@ Serial:  T5333020XXXXXXXXXXXXX
 | 5    | CNC              | 0b0003     | [numSteps=11, step=0, flags=3] |
 | 7    | RangeControl/EQ  | f60a0000f60a0001f60a0002 | 3-band EQ, all at 0 |
 | 9    | Buttons          | 80090e00094002 | |
-| 10   | Multipoint       | 07         | Bit 0 = enabled, bit 1 = supported (as the vendor app reads it); bit 2 unknown. QC Ultra 2 fw 10.12.12 reads 06 after SETGET [1.10] 00 |
+| 10   | Multipoint       | 07         | Bit 0 = enabled, bit 1 = supported, bit 2 = can be turned off (the vendor app's `isEnabled`, `isSupported` and `isDisableSupported`). The vendor app shows its multipoint switch only when bit 2 is set. QC Ultra 2 fw 10.12.12 reads 06 after SETGET [1.10] 00. The NC 700 reads 03 (see its section) |
 | 11   | Sidetone         | 01020f     | |
 | 12   | SetupComplete    | 01         | |
 | 24   | AutoPlayPause    | 01         | |
