@@ -12,18 +12,20 @@ payload is the one the Bose app sends: mask 0x01, then a 4-byte big-endian
 bitmap of function blocks (0x00050237 = blocks 0, 1, 2, 4, 5, 9, 16, 18).
 
 Capabilities confirmed on hardware:
-  - Battery, firmware, product name: GET works
+  - Battery, firmware: GET works
+  - Product name [1.2]: GET + SETGET work. bosectl checks a new name the way
+    the Bose app does (BOSE_MUSIC_NAMES below)
   - CNC [1.5]: GET + SETGET works without auth (11 steps; step 0 = most
     cancelling, as on other models). SETGET replies only with notifications on
   - CNC presets [1.15]: GET returns [selected index, step, step, step]
     (the levels the headphones' button cycles through, 0/5/10 by default)
-  - EQ [1.7]: GET works (3-band, -10 to +10)
+  - EQ [1.7]: GET + SETGET work (3-band, -10 to +10)
   - Buttons [1.9]: GET works (Shortcut, press and hold; Battery level, Alexa
     wake word, Spotify Tap and WindMode supported). SETGET not tried
   - Multipoint [1.10]: GET returns 03: supported and on, but bit 2 (can be
     turned off) is clear, and the Bose app shows no multipoint switch for
     the 700. bosectl doesn't write it
-  - Sidetone [1.11]: GET works
+  - Sidetone [1.11]: GET + SETGET work
   - No AudioModes block [31] (ERROR FblockNotSupp) and no ANR [1.6] (ERROR FuncNotSupp)
 """
 
@@ -36,6 +38,10 @@ INIT_PACKET = None
 
 # Show only the settings this device has in `status`, instead of "off" for the rest.
 STATUS_SUPPORTED_ONLY = True
+
+# Check new names as the Bose app does: at most 26 bytes of UTF-8; letters,
+# digits, spaces and - ' ‘ ’ only. See BmapConnection.set_name.
+BOSE_MUSIC_NAMES = True
 
 # SETGET [9.2] payload sent on connect; see the module docstring.
 NOTIFICATIONS = bytes([0x01, 0x00, 0x05, 0x02, 0x37])
@@ -73,14 +79,10 @@ FEATURES = {
         "addr": (0, 5),
         "parser": parsers.parse_firmware,
     },
-    # Product name, EQ and sidetone read correctly, but no write to them has
-    # been checked on a 700, so they are read-only. Once a write has
-    # been checked, drop its "read_only" line and restore its builder.
     "product_name": {
         "addr": (1, 2),
         "parser": parsers.parse_product_name,
-        "read_only": True,
-        # "builder": lambda name: name.encode("utf-8"),
+        "builder": lambda name: name.encode("utf-8"),
     },
     "cnc": {
         "addr": (1, 5),
@@ -90,8 +92,7 @@ FEATURES = {
     "eq": {
         "addr": (1, 7),
         "parser": parsers.parse_eq,
-        "read_only": True,
-        # "builder": parsers.build_eq_band,
+        "builder": parsers.build_eq_band,
     },
     "buttons": {
         "addr": (1, 9),
@@ -107,8 +108,7 @@ FEATURES = {
     "sidetone": {
         "addr": (1, 11),
         "parser": parsers.parse_sidetone,
-        "read_only": True,
-        # "builder": parsers.build_sidetone,
+        "builder": parsers.build_sidetone,
     },
 }
 

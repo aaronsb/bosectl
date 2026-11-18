@@ -113,6 +113,8 @@ pub struct DeviceConfig {
     pub notifications: Option<&'static [u8]>,
     /// `status` shows only settings the device has (NC 700), instead of "off" for the rest.
     pub status_supported_only: bool,
+    /// New names must pass the Bose app's check (NC 700); see `check_bose_music_name`.
+    pub bose_music_names: bool,
     pub battery: Option<Addr>,
     /// Component IDs and display labels for multi-cell battery responses.
     pub battery_components: &'static [(u8, &'static str)],

@@ -19,6 +19,68 @@ namespace bmap {
 /// The device name field is 32 bytes on every BMAP device seen so far.
 inline constexpr size_t MAX_NAME_BYTES = 31;
 
+/// The Bose app (validateProductName) allows at most 26 bytes of UTF-8 and only
+/// letters, digits, spaces and the symbols - ' \u2018 \u2019.
+inline constexpr size_t BOSE_MUSIC_MAX_NAME_BYTES = 26;
+
+namespace detail {
+
+/// Whether the Bose app allows code point c in a name, from a subset of its rule.
+///
+/// The Bose app allows any Unicode letter or digit. bosectl allows ASCII
+/// letters and digits and the Latin-1 and Latin Extended-A letters
+/// (U+00C0-U+017F without the signs U+00D7 and U+00F7), the same in all three
+/// languages, so it never sends a name the Bose app would refuse.
+inline bool is_bose_music_name_char(char32_t c) {
+    return (c >= U'0' && c <= U'9') || (c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z') || c == U' ' ||
+           c == U'-' || c == U'\'' || c == 0x2018 || c == 0x2019 ||
+           (c >= 0xC0 && c <= 0x17F && c != 0xD7 && c != 0xF7);
+}
+
+/// Decode UTF-8 into code points; returns false for invalid or overlong UTF-8.
+inline bool decode_utf8(const std::string& s, std::vector<char32_t>& out) {
+    static constexpr char32_t smallest[] = {0, 0x80, 0x800, 0x10000};
+    for (size_t i = 0; i < s.size();) {
+        const auto lead = static_cast<unsigned char>(s[i]);
+        size_t extra;
+        if (lead < 0x80) extra = 0;
+        else if ((lead & 0xE0) == 0xC0) extra = 1;
+        else if ((lead & 0xF0) == 0xE0) extra = 2;
+        else if ((lead & 0xF8) == 0xF0) extra = 3;
+        else return false;
+        if (s.size() - i <= extra) return false;
+        char32_t c = lead & (extra == 0 ? 0x7F : 0x7F >> (extra + 1));
+        for (size_t k = 1; k <= extra; ++k) {
+            const auto cont = static_cast<unsigned char>(s[i + k]);
+            if ((cont & 0xC0) != 0x80) return false;
+            c = (c << 6) | (cont & 0x3F);
+        }
+        if (c < smallest[extra]) return false;
+        out.push_back(c);
+        i += extra + 1;
+    }
+    return true;
+}
+
+}  // namespace detail
+
+/// Refuse a name the Bose app would not accept.
+inline void check_bose_music_name(const std::string& name) {
+    if (name.find_first_not_of(' ') == std::string::npos) {
+        throw std::invalid_argument("Name must not be empty");
+    }
+    std::vector<char32_t> chars;
+    if (!detail::decode_utf8(name, chars) ||
+        !std::all_of(chars.begin(), chars.end(), detail::is_bose_music_name_char)) {
+        throw std::invalid_argument(
+            "Name may only have letters, digits, spaces and - ' \u2018 \u2019");
+    }
+    if (name.size() > BOSE_MUSIC_MAX_NAME_BYTES) {
+        throw std::invalid_argument("Name must be at most " +
+            std::to_string(BOSE_MUSIC_MAX_NAME_BYTES) + " bytes of UTF-8");
+    }
+}
+
 namespace detail {
 
 inline std::string trim_lower(const std::string& s) {
@@ -240,7 +302,10 @@ public:
         }
     }
 
+    /// A device with bose_music_names takes only names the Bose app accepts
+    /// (check_bose_music_name).
     void set_name(const std::string& new_name) {
+        if (config_.bose_music_names) check_bose_music_name(new_name);
         if (new_name.size() > MAX_NAME_BYTES) {
             throw std::invalid_argument("Name must be at most " +
                 std::to_string(MAX_NAME_BYTES) + " bytes of UTF-8");

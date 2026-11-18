@@ -1,0 +1,7 @@
+# spec: SETGET [1.11] on the 700 takes [persist, level] with low = 3; the 700 answers STATUS [persist, level, offered levels].
+# source: NC 700 fw 1.8.2-11524+e0f7590, bosectl on Linux (BlueZ), notifications on (NOTES.md, NC 700 section)
+device nc700
+call set_sidetone low
+send 01 0b 02 02 01 03
+recv 01 0b 03 03 01 03 0f
+result ok

@@ -192,6 +192,7 @@ fn describe(c: &DeviceConfig) -> Vec<String> {
         lines.push(format!("read-only {}", addr(a)));
     }
     lines.push(format!("status-supported-only {}", c.status_supported_only as u8));
+    lines.push(format!("bose-music-names {}", c.bose_music_names as u8));
     lines.push(format!("anc-toggle {}", c.supports_anc_toggle as u8));
     let slots = c.editable_slots.to_vec();
     lines.push(format!(

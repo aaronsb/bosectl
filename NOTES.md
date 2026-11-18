@@ -86,10 +86,27 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
   (`00` + "NC 700"), EQ [1.7] (3-band), buttons [1.9], multipoint [1.10],
   sidetone [1.11], standby timer [1.4] (`b4` = 180 min), CNC persistence
   [1.14], auto play/pause [1.20], audio source [5.1].
-- **Writes checked:** only CNC [1.5]. bosectl treats product name [1.2], EQ
-  [1.7] and sidetone [1.11] as read-only on the 700 and refuses to write them
-  until a write to each has been checked on hardware. Multipoint [1.10] stays
-  read-only for the reason above.
+- **Writes checked:** CNC [1.5], product name [1.2], EQ [1.7] and sidetone
+  [1.11]. Each write was read back and then undone. With notifications on,
+  the 700 answers each one directly: a name SETGET with STATUS [1.2] twice in
+  one read, each EQ band SETGET with STATUS [1.7] holding all three bands,
+  and a sidetone SETGET with STATUS `[persist, level, offered levels]`.
+  Multipoint [1.10] stays read-only for the reason above.
+- **Names are UTF-8.** After SETGET [1.2] `43 61 66 c3 a9 20 37 30 30`
+  ("Café 700", é as UTF-8 `c3 a9`), a Bluetooth remote name request to the
+  700 returns the same 9 bytes, so the 700 broadcasts the name as UTF-8. If
+  it treated the bytes as single-byte characters, é would come back
+  re-encoded as `c3 83 c2 a9` ("CafÃ©"). An ASCII name can't show the
+  difference.
+- **Names:** bosectl checks a new name the way the Bose app's
+  `validateProductName` does for every product: at most 26 bytes of UTF-8;
+  letters, digits, spaces and `- ' ‘ ’` only; not empty or only spaces. In
+  the Bose app on a 700, 27 digits are too long, and so are 14 "é" (28
+  bytes). In a separate test, the Bose app refuses a name with an
+  emoji. The Bose app allows a letter or digit in any script;
+  bosectl allows only ASCII letters and digits and the letters U+00C0-U+017F,
+  so all three languages agree without a Unicode library. What the 700 does
+  with a name the Bose app refuses is unknown.
 
 ## BMAP Protocol
 - Version: 1.1.0
@@ -268,7 +285,7 @@ All of these use `[1, FUNC, 0x02, LEN, ...PAYLOAD]` (block 1, operator SETGET):
 
 | Func | Name           | Payload (SETGET)              | Notes |
 |------|----------------|-------------------------------|-------|
-| [1.2]  | ProductName  | UTF-8 string (no flag byte)  | Free-form device name |
+| [1.2]  | ProductName  | UTF-8 string (no flag byte)  | Free-form device name; limited on the NC 700 |
 | [1.3]  | VoicePrompts | 1 byte: (enabled<<5)\|lang   | See language table below |
 | [1.5]  | CNC          | —                            | **AUTH REQUIRED** (use [31.6] instead) |
 | [1.7]  | EQ/Range     | 2 bytes: [value, bandId]     | value=-10..+10, band=0/1/2 |

@@ -28,6 +28,37 @@ from .devices import parsers
 # The device name field is 32 bytes on every BMAP device seen so far.
 MAX_NAME_BYTES = 31
 
+# The Bose app (validateProductName) allows at most 26 bytes of UTF-8 and only
+# letters, digits, spaces and these four symbols.
+BOSE_MUSIC_MAX_NAME_BYTES = 26
+BOSE_MUSIC_NAME_SYMBOLS = "-'\u2018\u2019"
+
+
+def _is_bose_music_name_char(char):
+    """Whether the Bose app allows char in a name, from a subset of its rule.
+
+    The Bose app allows any Unicode letter or digit. bosectl allows ASCII
+    letters and digits and the Latin-1 and Latin Extended-A letters
+    (U+00C0-U+017F without the signs \u00d7 and \u00f7), the same in all three
+    languages, so it never sends a name the Bose app would refuse.
+    """
+    code = ord(char)
+    return (char.isascii() and char.isalnum()) or char == " " \
+        or char in BOSE_MUSIC_NAME_SYMBOLS \
+        or (0xC0 <= code <= 0x17F and code not in (0xD7, 0xF7))
+
+
+def check_bose_music_name(name):
+    """Raise BmapInvalidArgError unless the Bose app would accept name."""
+    if not name.strip(" "):
+        raise BmapInvalidArgError("Name must not be empty")
+    if not all(_is_bose_music_name_char(c) for c in name):
+        raise BmapInvalidArgError(
+            "Name may only have letters, digits, spaces and - ' \u2018 \u2019")
+    if len(name.encode("utf-8")) > BOSE_MUSIC_MAX_NAME_BYTES:
+        raise BmapInvalidArgError(
+            "Name must be at most %d bytes of UTF-8" % BOSE_MUSIC_MAX_NAME_BYTES)
+
 
 class BmapConnection:
     """High-level connection to a BMAP device.
@@ -494,7 +525,13 @@ class BmapConnection:
         self._write_mode_from_config(config.mode_idx, config, **overrides)
 
     def set_name(self, new_name):
-        """Set device Bluetooth name (UTF-8, at most MAX_NAME_BYTES bytes)."""
+        """Set device Bluetooth name (UTF-8, at most MAX_NAME_BYTES bytes).
+
+        A device with BOSE_MUSIC_NAMES takes only names the Bose app accepts
+        (check_bose_music_name).
+        """
+        if getattr(self._device, "BOSE_MUSIC_NAMES", False):
+            check_bose_music_name(new_name)
         data = new_name.encode("utf-8")
         if len(data) > MAX_NAME_BYTES:
             raise ValueError(

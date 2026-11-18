@@ -18,6 +18,7 @@ pub fn qc_ultra2() -> DeviceConfig {
         init_packet: None,
         notifications: None,
         status_supported_only: false,
+        bose_music_names: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -86,6 +87,7 @@ pub fn qc_prince() -> DeviceConfig {
         init_packet: None,
         notifications: None,
         status_supported_only: false,
+        bose_music_names: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -138,6 +140,7 @@ pub fn qc35() -> DeviceConfig {
         init_packet: Some(Addr(0, 1)),  // GET [0.1] required before QC35 responds
         notifications: None,
         status_supported_only: false,
+        bose_music_names: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -191,6 +194,7 @@ pub fn qc_earbuds() -> DeviceConfig {
         init_packet: None,
         notifications: None,
         status_supported_only: false,
+        bose_music_names: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -244,6 +248,7 @@ pub fn qc45() -> DeviceConfig {
         init_packet: Some(Addr(0, 1)),
         notifications: None,
         status_supported_only: false,
+        bose_music_names: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -296,6 +301,7 @@ pub fn ultra_open() -> DeviceConfig {
         init_packet: None,
         notifications: None,
         status_supported_only: false,
+        bose_music_names: false,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -345,6 +351,7 @@ pub fn nc700() -> DeviceConfig {
         init_packet: None,
         notifications: Some(&[0x01, 0x00, 0x05, 0x02, 0x37]),
         status_supported_only: true,
+        bose_music_names: true,
         battery: Some(Addr(2, 2)),
         battery_components: &[],
         battery_aggregate_id: None,
@@ -375,12 +382,10 @@ pub fn nc700() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: true,
-        // Product name, EQ and sidetone read correctly, but no write to them
-        // has been checked on a 700. Once one has, drop it from this list.
-        // Multipoint [1.10] stays: the 700 answers 03, so it reports that
-        // multipoint can't be turned off (bit 2 clear), and the Bose app shows
-        // no multipoint switch for it.
-        read_only: &[Addr(1, 2), Addr(1, 7), Addr(1, 10), Addr(1, 11)],
+        // Multipoint [1.10]: the 700 answers 03, so it reports that multipoint
+        // can't be turned off (bit 2 clear), and the Bose app shows no
+        // multipoint switch for it.
+        read_only: &[Addr(1, 10)],
     }
 }
 

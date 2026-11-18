@@ -110,6 +110,8 @@ struct DeviceConfig {
     /// `status` shows only settings the device has (NC 700), instead of "off" or
     /// "custom(0)" for the rest.
     bool status_supported_only = false;
+    /// New names must pass the Bose app's check (NC 700); see check_bose_music_name.
+    bool bose_music_names = false;
     std::optional<Addr> battery;
     /// Component IDs and display labels for multi-cell battery responses.
     std::vector<std::pair<uint8_t, std::string>> battery_components;

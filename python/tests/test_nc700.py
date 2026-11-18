@@ -10,7 +10,7 @@ import pytest
 import pybmap
 from pybmap.catalog import CATALOG
 from pybmap.connection import BmapConnection
-from pybmap.errors import BmapError
+from pybmap.errors import BmapError, BmapInvalidArgError
 from pybmap.constants import OP_STATUS
 from pybmap.devices import nc700, parsers, DEVICES, PRODUCT_IDS
 from pybmap.protocol import bmap_packet
@@ -87,17 +87,73 @@ class TestNC700Writes:
         BmapConnection(transport, nc700).set_cnc(5)
         assert transport.sent == [bmap_packet(1, 5, 2, bytes([5, 1]))]
 
-    @pytest.mark.parametrize("write", [
-        lambda dev: dev.set_name("Desk"),
-        lambda dev: dev.set_eq(1, 0, 0),
-        lambda dev: dev.set_multipoint(True),
-        lambda dev: dev.set_sidetone("low"),
-    ], ids=["name", "eq", "multipoint", "sidetone"])
-    def test_unchecked_writes_are_refused_before_sending(self, write):
+    # Writes checked on the 700 with bosectl; each reply is the 700's own.
+    def test_set_name_sends_the_name(self):
+        transport = MockTransport()
+        transport.add_response(1, 2, OP_STATUS, b"\x00Test 700")
+        BmapConnection(transport, nc700).set_name("Test 700")
+        assert transport.sent == [bmap_packet(1, 2, 2, b"Test 700")]
+
+    def test_set_eq_sends_each_band(self):
+        transport = MockTransport()
+        transport.add_response(1, 7, OP_STATUS, bytes.fromhex("f60a0100f60a0001f60a0002"))
+        BmapConnection(transport, nc700).set_eq(1, 0, 0)
+        assert transport.sent == [bmap_packet(1, 7, 2, bytes([1, 0])),
+                                  bmap_packet(1, 7, 2, bytes([0, 1])),
+                                  bmap_packet(1, 7, 2, bytes([0, 2]))]
+
+    def test_set_sidetone_sends_level(self):
+        transport = MockTransport()
+        transport.add_response(1, 11, OP_STATUS, bytes.fromhex("01030f"))
+        BmapConnection(transport, nc700).set_sidetone("low")
+        assert transport.sent == [bmap_packet(1, 11, 2, bytes([1, 3]))]
+
+    def test_multipoint_write_is_refused_before_sending(self):
         transport = MockTransport()
         with pytest.raises(BmapError, match="does not write it yet"):
-            write(BmapConnection(transport, nc700))
+            BmapConnection(transport, nc700).set_multipoint(True)
         assert transport.sent == []
+
+
+class TestNC700Names:
+    """The Bose app's name check. The owner of a 700 tried these in the Bose app:
+    27 digits were too long, and so were 14 "é" (28 bytes).
+    In a separate test, the Bose app refused a name with an emoji."""
+
+    @pytest.mark.parametrize("name", [
+        "1" * 26,
+        "\u00e9" * 13,
+        "User's NC-700",
+        "User\u2019s NC-700",
+    ], ids=["26 digits", "13 e-acute", "apostrophe", "curly apostrophe"])
+    def test_accepted(self, name):
+        transport = MockTransport()
+        transport.add_response(1, 2, OP_STATUS, b"\x00" + name.encode("utf-8"))
+        BmapConnection(transport, nc700).set_name(name)
+        assert transport.sent == [bmap_packet(1, 2, 2, name.encode("utf-8"))]
+
+    @pytest.mark.parametrize("name, problem", [
+        ("1" * 27, "at most 26 bytes"),
+        ("\u00e9" * 14, "at most 26 bytes"),
+        ("\U0001F601", "letters, digits"),
+        ("Mine!", "letters, digits"),
+        ("a\tb", "letters, digits"),
+        ("\u65e5\u672c", "letters, digits"),
+        ("   ", "empty"),
+        ("", "empty"),
+    ], ids=["27 digits", "14 e-acute", "emoji", "exclamation", "tab", "outside the subset", "spaces only", "empty"])
+    def test_refused_before_sending(self, name, problem):
+        transport = MockTransport()
+        with pytest.raises(BmapInvalidArgError, match=problem):
+            BmapConnection(transport, nc700).set_name(name)
+        assert transport.sent == []
+
+    def test_other_devices_keep_31_bytes_and_any_character(self):
+        from pybmap.devices import qc_ultra2
+        transport = MockTransport()
+        transport.add_response(1, 2, OP_STATUS, b"\x00Party! #1")
+        BmapConnection(transport, qc_ultra2).set_name("Party! #1")
+        assert transport.sent == [bmap_packet(1, 2, 2, b"Party! #1")]
 
 
 class TestNotificationsOnConnect:
