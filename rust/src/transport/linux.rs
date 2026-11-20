@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! RFCOMM Bluetooth socket transport for BMAP devices.
 //!
 //! Uses raw Linux AF_BLUETOOTH sockets via libc — no external
