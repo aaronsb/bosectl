@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bose Control
+Comment=Control gráfico para auriculares Bose
+Exec=@APP_DIR@/bose-gui
+Icon=audio-headphones
+Terminal=false
+Categories=AudioVideo;Audio;Settings;
+Keywords=Bose;Bluetooth;Headphones;ANC;
