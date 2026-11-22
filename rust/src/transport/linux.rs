@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! RFCOMM Bluetooth socket transport for BMAP devices.
 //!
 //! Uses raw Linux AF_BLUETOOTH sockets via libc — no external
@@ -5,9 +6,10 @@
 //! does under the hood.
 
 use std::io;
-use std::os::fd::{FromRawFd, OwnedFd, AsRawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::time::Duration;
 
+use super::{ConnectError, Transport};
 use crate::error::{BmapError, BmapResult};
 
 const AF_BLUETOOTH: i32 = 31;
@@ -15,9 +17,6 @@ const BTPROTO_RFCOMM: i32 = 3;
 
 /// Upper bound on chunks discarded before a send.
 const MAX_STALE_CHUNKS: usize = 64;
-
-/// RFCOMM channel for BMAP protocol.
-pub const BMAP_CHANNEL: u8 = 2;
 
 /// Kernel sockaddr_rc structure (matches `struct sockaddr_rc` in bluetooth.h).
 ///
@@ -46,43 +45,9 @@ fn parse_mac(mac: &str) -> BmapResult<[u8; 6]> {
     Ok(addr)
 }
 
-/// Transport abstraction for sending/receiving BMAP packets.
-///
-/// Implemented by `RfcommTransport` for real Bluetooth. Can be mocked for testing.
-pub trait Transport {
-    fn send_recv(&self, packet: &[u8]) -> BmapResult<Vec<u8>>;
-    fn send_recv_drain(&self, packet: &[u8]) -> BmapResult<Vec<u8>>;
-}
-
 /// Raw RFCOMM Bluetooth socket transport.
 pub struct RfcommTransport {
     fd: OwnedFd,
-}
-
-/// A failed connect together with the OS error code, when there is one.
-///
-/// The channel probe retries EBUSY/ECONNREFUSED, so it needs the errno
-/// rather than just the formatted message.
-#[derive(Debug)]
-pub(crate) struct ConnectError {
-    pub error: BmapError,
-    pub errno: Option<i32>,
-}
-
-impl ConnectError {
-    fn os(context: String) -> Self {
-        let err = io::Error::last_os_error();
-        Self {
-            error: BmapError::Connection(format!("{}: {}", context, err)),
-            errno: err.raw_os_error(),
-        }
-    }
-}
-
-impl From<BmapError> for ConnectError {
-    fn from(error: BmapError) -> Self {
-        Self { error, errno: None }
-    }
 }
 
 impl RfcommTransport {
@@ -139,8 +104,12 @@ impl RfcommTransport {
         let mut buf = [0u8; 4096];
         for _ in 0..MAX_STALE_CHUNKS {
             let n = unsafe {
-                libc::recv(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(),
-                           libc::MSG_DONTWAIT)
+                libc::recv(
+                    fd,
+                    buf.as_mut_ptr() as *mut libc::c_void,
+                    buf.len(),
+                    libc::MSG_DONTWAIT,
+                )
             };
             if n <= 0 {
                 break;
@@ -154,11 +123,17 @@ impl RfcommTransport {
 
         // Send — use libc::send directly to avoid fd ownership issues.
         let sent = unsafe {
-            libc::send(fd, packet.as_ptr() as *const libc::c_void, packet.len(), 0)
+            libc::send(
+                fd,
+                packet.as_ptr() as *const libc::c_void,
+                packet.len(),
+                0,
+            )
         };
         if sent < 0 {
             return Err(BmapError::Connection(format!(
-                "Send failed: {}", io::Error::last_os_error()
+                "Send failed: {}",
+                io::Error::last_os_error()
             )));
         }
 
@@ -172,7 +147,8 @@ impl RfcommTransport {
         };
         if n <= 0 {
             return Err(BmapError::Timeout(format!(
-                "No response: {}", io::Error::last_os_error()
+                "No response: {}",
+                io::Error::last_os_error()
             )));
         }
         let mut data = buf[..n as usize].to_vec();
@@ -215,7 +191,8 @@ unsafe fn set_sock_timeout(fd: i32, opt: i32, duration: Duration) -> BmapResult<
     );
     if ret < 0 {
         return Err(BmapError::Connection(format!(
-            "setsockopt failed: {}", io::Error::last_os_error()
+            "setsockopt failed: {}",
+            io::Error::last_os_error()
         )));
     }
     Ok(())
