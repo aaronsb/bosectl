@@ -332,6 +332,21 @@ class BmapConnection:
             anc_toggle=config.anc_toggle,
         )
 
+    def cnc_presets(self):
+        """The three CNC steps the headphones' button cycles through.
+
+        NC 700 [1.15]: [selected index, step, step, step]. Steps use the CNC
+        scale (0 = most cancelling).
+        """
+        payload = self._get_payload("cnc_presets")
+        if len(payload) < 4:
+            raise BmapDeviceError("Invalid or empty response")
+        return list(payload[1:4])
+
+    def cnc_persist(self):
+        """Whether the headphones remember the last CNC level (NC 700 [1.14])."""
+        return self._get("cnc_persist")
+
     def prompts(self):
         """Voice prompts (enabled, language_name) tuple."""
         enabled, lang_id = self._get("voice_prompts")
@@ -478,6 +493,39 @@ class BmapConnection:
                 raise ValueError("EQ value must be -10 to +10")
             payload = builder(val, band_id) if builder else bytes([val & 0xFF, band_id])
             self._setget("eq", payload)
+
+    def set_cnc_presets(self, first, second, third):
+        """Set the three CNC steps the button cycles through (0-10 each).
+
+        Writing [1.15] makes the headphones switch to the selected preset, so
+        the selected index is the preset equal to the current CNC step (else
+        the first), and [1.5] is then written back to keep CNC as it was.
+        The NC 700 refuses a [1.15] write while ANC is off (ERROR InvalidData),
+        so ANC is switched on for the write. The 700 ignores the step of a
+        [1.5] write that switches ANC on or off, so the step is written back
+        while ANC is on and ANC is then switched off again.
+        """
+        steps = [first, second, third]
+        for step in steps:
+            if not 0 <= step <= 10:
+                raise ValueError("CNC preset must be 0-10, got %d" % step)
+        self._writable_feature("cnc_presets")
+        current = self._get_payload("cnc")
+        if len(current) < 3:
+            raise BmapDeviceError("Invalid or empty response")
+        step, enabled = current[1], current[2]
+        selected = steps.index(step) if step in steps else 0
+        if not enabled:
+            self._setget("cnc", bytes([step, 1]))
+        self._setget("cnc_presets", bytes([selected] + steps))
+        self._setget("cnc", bytes([step, 1]))
+        if not enabled:
+            self._setget("cnc", bytes([step, 0]))
+
+    def set_cnc_persist(self, enabled):
+        """Set whether the headphones remember the last CNC level (bool)."""
+        builder = self._writable_feature("cnc_persist")["builder"]
+        self._setget("cnc_persist", builder(enabled))
 
     def set_spatial(self, mode):
         """Set spatial audio mode ("off", "room", or "head")."""

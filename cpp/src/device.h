@@ -127,6 +127,10 @@ struct DeviceConfig {
     std::optional<Addr> sidetone;
     std::optional<Addr> auto_pause;
     std::optional<Addr> auto_answer;
+    /// CNC presets the button cycles through: [selected, step, step, step] (NC 700 [1.15]).
+    std::optional<Addr> cnc_presets;
+    /// Remember the last CNC level, bool (NC 700 [1.14]).
+    std::optional<Addr> cnc_persist;
     /// ANR mode address (QC35: off/high/wind/low at [1.6]).
     std::optional<Addr> anr;
     std::optional<Addr> pairing;

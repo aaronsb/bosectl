@@ -1,0 +1,11 @@
+# spec: set_cnc_presets reads CNC [1.5], writes [1.15] with all four bytes, selecting the preset equal to the current step, then writes [1.5] back as it was, because a [1.15] write switches CNC to the selected preset.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: with [1.5] = 0b0001, SETGET [1.15] 0000030a returned 0000030a and left [1.5] at 0b0001; SETGET 0100050a switched [1.5] to 0b0501. The [1.5] reply to the write back is synthetic, following the [steps, step, enabled] layout.
+device nc700
+call set_cnc_presets 0 3 10
+send 01 05 01 00
+recv 01 05 03 03 0b 00 01
+send 01 0f 02 04 00 00 03 0a
+recv 01 0f 03 04 00 00 03 0a
+send 01 05 02 02 00 01
+recv 01 05 03 03 0b 00 01
+result ok

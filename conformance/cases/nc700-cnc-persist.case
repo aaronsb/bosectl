@@ -1,0 +1,7 @@
+# spec: GET [1.14] is the Bose app's "Remember my last setting": 00 reads as off.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: switching "Remember my last setting" off in the Bose app changed [1.14] from 01 to 00 and nothing else.
+device nc700
+call cnc_persist
+send 01 0e 01 00
+recv 01 0e 03 01 00
+result ok off

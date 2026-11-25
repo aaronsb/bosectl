@@ -17,8 +17,12 @@ Capabilities confirmed on hardware:
     cancelling, as on other models). SETGET replies only with notifications on.
     The third byte is ANC on/off: SETGET [step, 0] turns ANC off (the Bose app
     shows noise cancelling off), [step, 1] turns it back on
-  - CNC presets [1.15]: GET returns [selected index, step, step, step]
-    (the levels the headphones' button cycles through, 0/5/10 by default)
+  - CNC presets [1.15]: GET + SETGET works: [selected index, step, step, step]
+    (the levels the headphones' button cycles through, 0/5/10 by default; the
+    Bose app's noise cancelling favorites). SETGET must carry all 4 bytes
+    (3 bytes: ERROR Length) and switches CNC to the selected preset
+  - CNC persistence [1.14]: GET + SETGET works (the Bose app's "Remember my
+    last setting", 1 = on)
   - EQ [1.7]: GET + SETGET works (3-band, -10 to +10). SETGET [value, band]
     is answered with the new [1.7] state
   - Buttons [1.9]: GET works (Shortcut, press and hold; Battery level, Alexa
@@ -91,6 +95,17 @@ FEATURES = {
         "addr": (1, 5),
         "parser": parsers.parse_cnc,
         "builder": parsers.build_cnc,
+    },
+    # The three CNC steps the button cycles through ("noise cancelling
+    # favorites" in the Bose app): [selected index, step, step, step].
+    "cnc_presets": {
+        "addr": (1, 15),
+    },
+    # "Remember my last setting" in the Bose app: 1 = on, 0 = off.
+    "cnc_persist": {
+        "addr": (1, 14),
+        "parser": parsers.parse_bool,
+        "builder": parsers.build_toggle,
     },
     "eq": {
         "addr": (1, 7),

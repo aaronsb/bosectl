@@ -76,6 +76,8 @@ CALLS = {
     "sidetone": (lambda d: d.sidetone(), str),
     "auto_pause": (lambda d: d.auto_pause(), _on_off),
     "auto_answer": (lambda d: d.auto_answer(), _on_off),
+    "cnc_presets": (lambda d: d.cnc_presets(), lambda r: " ".join(map(str, r))),
+    "cnc_persist": (lambda d: d.cnc_persist(), _on_off),
 }
 # Each setter: (arguments it takes, library call).
 SETTERS = {
@@ -87,6 +89,8 @@ SETTERS = {
     "set_auto_pause": (1, lambda d, a: d.set_auto_pause(_flag(a[0]))),
     "set_auto_answer": (1, lambda d, a: d.set_auto_answer(_flag(a[0]))),
     "set_anc": (1, lambda d, a: d.set_anc(_flag(a[0]))),
+    "set_cnc_presets": (3, lambda d, a: d.set_cnc_presets(int(a[0]), int(a[1]), int(a[2]))),
+    "set_cnc_persist": (1, lambda d, a: d.set_cnc_persist(_flag(a[0]))),
 }
 
 

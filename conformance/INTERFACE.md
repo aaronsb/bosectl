@@ -56,6 +56,8 @@ Each call names the library method of the same name. ARGs are separated by singl
 | `sidetone` | | `off`, `low`, `medium`, `high`, or `unknown(N)` |
 | `auto_pause` | | `on` or `off` |
 | `auto_answer` | | `on` or `off` |
+| `cnc_presets` | | the three CNC preset steps in order, separated by spaces, such as `0 5 10` |
+| `cnc_persist` | | `on` or `off` |
 | `set_cnc` | `LEVEL` | none |
 | `set_eq` | `BASS MID TREBLE` | none |
 | `set_name` | `TEXT` | none |
@@ -64,6 +66,8 @@ Each call names the library method of the same name. ARGs are separated by singl
 | `set_auto_pause` | `on` or `off` | none |
 | `set_auto_answer` | `on` or `off` | none |
 | `set_anc` | `on` or `off` | none |
+| `set_cnc_presets` | `A B C` | none |
+| `set_cnc_persist` | `on` or `off` | none |
 
 ## Errors
 

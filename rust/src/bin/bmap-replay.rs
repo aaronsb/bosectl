@@ -78,10 +78,10 @@ fn on_off(value: bool) -> String {
 fn arity(method: &str) -> Option<usize> {
     match method {
         "battery" | "firmware" | "name" | "cnc" | "eq" | "multipoint" | "sidetone"
-        | "auto_pause" | "auto_answer" => Some(0),
+        | "auto_pause" | "auto_answer" | "cnc_presets" | "cnc_persist" => Some(0),
         "set_cnc" | "set_multipoint" | "set_sidetone" | "set_auto_pause"
-        | "set_auto_answer" | "set_anc" => Some(1),
-        "set_eq" => Some(3),
+        | "set_auto_answer" | "set_anc" | "set_cnc_persist" => Some(1),
+        "set_eq" | "set_cnc_presets" => Some(3),
         _ => None,
     }
 }
@@ -134,6 +134,8 @@ fn call(dev: &BmapConnection<StdioTransport>, method: &str, args: &[&str]) -> Bm
         "sidetone" => Some(dev.sidetone()?.to_string()),
         "auto_pause" => Some(on_off(dev.auto_pause()?)),
         "auto_answer" => Some(on_off(dev.auto_answer()?)),
+        "cnc_presets" => Some(dev.cnc_presets()?.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(" ")),
+        "cnc_persist" => Some(on_off(dev.cnc_persist()?)),
         "set_cnc" => { dev.set_cnc(num(args, 0)?)?; None }
         "set_eq" => { dev.set_eq(num(args, 0)?, num(args, 1)?, num(args, 2)?)?; None }
         "set_name" => { dev.set_name(arg(args, 0)?)?; None }
@@ -142,6 +144,8 @@ fn call(dev: &BmapConnection<StdioTransport>, method: &str, args: &[&str]) -> Bm
         "set_auto_pause" => { dev.set_auto_pause(flag(args, 0)?)?; None }
         "set_auto_answer" => { dev.set_auto_answer(flag(args, 0)?)?; None }
         "set_anc" => { dev.set_anc(flag(args, 0)?)?; None }
+        "set_cnc_presets" => { dev.set_cnc_presets(num(args, 0)?, num(args, 1)?, num(args, 2)?)?; None }
+        "set_cnc_persist" => { dev.set_cnc_persist(flag(args, 0)?)?; None }
         _ => return Ok(None),
     };
     Ok(Some(match result {
@@ -172,6 +176,8 @@ fn describe(c: &DeviceConfig) -> Vec<String> {
         ("sidetone", c.sidetone),
         ("auto_pause", c.auto_pause),
         ("auto_answer", c.auto_answer),
+        ("cnc_presets", c.cnc_presets),
+        ("cnc_persist", c.cnc_persist),
         ("anr", c.anr),
         ("pairing", c.pairing),
         ("routing", c.routing),

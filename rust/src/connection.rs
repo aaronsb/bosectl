@@ -290,6 +290,22 @@ impl<T: Transport> BmapConnection<T> {
         Ok(parse_bool(&payload))
     }
 
+    /// The three CNC steps the headphones' button cycles through
+    /// (NC 700 [1.15]: [selected index, step, step, step]).
+    pub fn cnc_presets(&self) -> BmapResult<[u8; 3]> {
+        let p = self.get(self.addr(self.config.cnc_presets)?)?;
+        if p.len() < 4 {
+            return Err(BmapError::Device { message: "Invalid or empty response".into(), code: 0 });
+        }
+        Ok([p[1], p[2], p[3]])
+    }
+
+    /// Whether the headphones remember the last CNC level (NC 700 [1.14]).
+    pub fn cnc_persist(&self) -> BmapResult<bool> {
+        let payload = self.get(self.addr(self.config.cnc_persist)?)?;
+        Ok(parse_bool(&payload))
+    }
+
     /// Voice prompts (enabled, language_name).
     pub fn prompts(&self) -> BmapResult<(bool, &'static str)> {
         let addr = self.addr(self.config.voice_prompts)?;
@@ -371,6 +387,8 @@ impl<T: Transport> BmapConnection<T> {
             "sidetone" => self.config.sidetone.is_some(),
             "auto_pause" => self.config.auto_pause.is_some(),
             "auto_answer" => self.config.auto_answer.is_some(),
+            "cnc_presets" => self.config.cnc_presets.is_some(),
+            "cnc_persist" => self.config.cnc_persist.is_some(),
             "anr" => self.config.anr.is_some(),
             "routing" => self.config.routing.is_some(),
             "source" => self.config.source.is_some(),
@@ -437,6 +455,46 @@ impl<T: Transport> BmapConnection<T> {
             return Ok(());
         }
         self.update_audio_settings(Some(level), None, None, None)
+    }
+
+    /// Set the three CNC steps the button cycles through (0-10 each).
+    ///
+    /// Writing [1.15] makes the headphones switch to the selected preset, so
+    /// the selected index is the preset equal to the current CNC step (else
+    /// the first), and [1.5] is then written back to keep CNC as it was.
+    /// The NC 700 refuses a [1.15] write while ANC is off (ERROR InvalidData),
+    /// so ANC is switched on for the write. The 700 ignores the step of a
+    /// [1.5] write that switches ANC on or off, so the step is written back
+    /// while ANC is on and ANC is then switched off again.
+    pub fn set_cnc_presets(&self, first: u8, second: u8, third: u8) -> BmapResult<()> {
+        let steps = [first, second, third];
+        if steps.iter().any(|&s| s > 10) {
+            return Err(BmapError::InvalidArg("CNC preset must be 0-10".into()));
+        }
+        let presets = self.addr(self.config.cnc_presets)?;
+        let cnc = self.addr(self.config.cnc)?;
+        let cur = self.get(cnc)?;
+        if cur.len() < 3 {
+            return Err(BmapError::Device { message: "Invalid or empty response".into(), code: 0 });
+        }
+        let (step, enabled) = (cur[1], cur[2]);
+        let selected = steps.iter().position(|&s| s == step).unwrap_or(0) as u8;
+        if enabled == 0 {
+            self.setget(cnc, &[step, 1])?;
+        }
+        self.setget(presets, &[selected, first, second, third])?;
+        self.setget(cnc, &[step, 1])?;
+        if enabled == 0 {
+            self.setget(cnc, &[step, 0])?;
+        }
+        Ok(())
+    }
+
+    /// Set whether the headphones remember the last CNC level.
+    pub fn set_cnc_persist(&self, enabled: bool) -> BmapResult<()> {
+        let addr = self.addr(self.config.cnc_persist)?;
+        self.setget(addr, &[if enabled { 1 } else { 0 }])?;
+        Ok(())
     }
 
     /// Set spatial audio mode ("off"=0, "room"=1, "head"=2).

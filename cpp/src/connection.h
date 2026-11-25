@@ -90,6 +90,15 @@ public:
     bool multipoint()                     { return parse_multipoint(get(require(config_.multipoint, "multipoint"))); }
     bool auto_pause()                     { return parse_bool(get(require(config_.auto_pause, "auto_pause"))); }
     bool auto_answer()                    { return parse_bool(get(require(config_.auto_answer, "auto_answer"))); }
+    bool cnc_persist()                    { return parse_bool(get(require(config_.cnc_persist, "cnc_persist"))); }
+
+    // The three CNC steps the headphones' button cycles through
+    // (NC 700 [1.15]: [selected index, step, step, step]).
+    std::array<uint8_t, 3> cnc_presets() {
+        auto p = get(require(config_.cnc_presets, "cnc_presets"));
+        if (p.size() < 4) throw device_error("Invalid or empty response");
+        return {p[1], p[2], p[3]};
+    }
     std::pair<bool, std::string> prompts(){ return parse_voice_prompts(get(require(config_.voice_prompts, "voice_prompts"))); }
     AudioSource source()                 { return parse_source(get(require(config_.source, "source"))); }
     std::string anr()                    { return parse_anr(get(require(config_.anr, "anr"))); }
@@ -131,6 +140,8 @@ public:
         if (name == "sidetone") return config_.sidetone.has_value();
         if (name == "auto_pause") return config_.auto_pause.has_value();
         if (name == "auto_answer") return config_.auto_answer.has_value();
+        if (name == "cnc_presets") return config_.cnc_presets.has_value();
+        if (name == "cnc_persist") return config_.cnc_persist.has_value();
         if (name == "anr") return config_.anr.has_value();
         if (name == "routing") return config_.routing.has_value();
         if (name == "source") return config_.source.has_value();
@@ -265,6 +276,36 @@ public:
 
     void set_auto_pause(bool on) {
         setget(require(config_.auto_pause, "auto_pause"), {static_cast<uint8_t>(on ? 1 : 0)});
+    }
+
+    // Set the three CNC steps the button cycles through (0-10 each).
+    // Writing [1.15] makes the headphones switch to the selected preset, so
+    // the selected index is the preset equal to the current CNC step (else
+    // the first), and [1.5] is then written back to keep CNC as it was.
+    // The NC 700 refuses a [1.15] write while ANC is off (ERROR InvalidData),
+    // so ANC is switched on for the write. The 700 ignores the step of a
+    // [1.5] write that switches ANC on or off, so the step is written back
+    // while ANC is on and ANC is then switched off again.
+    void set_cnc_presets(uint8_t first, uint8_t second, uint8_t third) {
+        const std::array<uint8_t, 3> steps = {first, second, third};
+        for (auto s : steps)
+            if (s > 10) throw std::invalid_argument("CNC preset must be 0-10");
+        auto presets = require(config_.cnc_presets, "cnc_presets");
+        auto cnc = require(config_.cnc, "cnc");
+        auto cur = get(cnc);
+        if (cur.size() < 3) throw device_error("Invalid or empty response");
+        uint8_t step = cur[1], enabled = cur[2];
+        uint8_t selected = 0;
+        for (uint8_t i = 0; i < 3; i++)
+            if (steps[i] == step) { selected = i; break; }
+        if (!enabled) setget(cnc, {step, 1});
+        setget(presets, {selected, first, second, third});
+        setget(cnc, {step, 1});
+        if (!enabled) setget(cnc, {step, 0});
+    }
+
+    void set_cnc_persist(bool on) {
+        setget(require(config_.cnc_persist, "cnc_persist"), {static_cast<uint8_t>(on ? 1 : 0)});
     }
 
     void set_auto_answer(bool on) {

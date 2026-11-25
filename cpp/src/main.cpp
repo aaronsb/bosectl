@@ -21,6 +21,8 @@ static void usage() {
               << "  name [TEXT]         Show/set device name\n"
               << "  sidetone [MODE]     Show/set sidetone (off/low/medium/high)\n"
               << "  multipoint [on|off] Toggle multipoint\n"
+              << "  cnc-presets [A B C] CNC levels the button cycles through (0-10)\n"
+              << "  remember [on|off]   Remember the last CNC level\n"
               << "  autopause [on|off]  Toggle auto play/pause\n"
               << "  prompts             Show voice prompt status\n"
               << "  buttons             Show button mapping\n"
@@ -177,6 +179,19 @@ int main(int argc, char** argv) {
         } else if (cmd == "multipoint") {
             if (argc > 2) dev.set_multipoint(is_on(argv[2]));
             std::cout << (dev.multipoint() ? "on" : "off") << "\n";
+        } else if (cmd == "cnc-presets") {
+            if (argc == 5) {
+                dev.set_cnc_presets(static_cast<uint8_t>(std::stoi(argv[2])),
+                                    static_cast<uint8_t>(std::stoi(argv[3])),
+                                    static_cast<uint8_t>(std::stoi(argv[4])));
+            } else if (argc > 2) {
+                throw std::invalid_argument("Usage: cnc-presets [A B C]  (each 0-10, 0=max ANC)");
+            }
+            auto p = dev.cnc_presets();
+            std::cout << int(p[0]) << " " << int(p[1]) << " " << int(p[2]) << "\n";
+        } else if (cmd == "remember") {
+            if (argc > 2) dev.set_cnc_persist(is_on(argv[2]));
+            std::cout << (dev.cnc_persist() ? "on" : "off") << "\n";
         } else if (cmd == "autopause") {
             if (argc > 2) dev.set_auto_pause(is_on(argv[2]));
             std::cout << (dev.auto_pause() ? "on" : "off") << "\n";

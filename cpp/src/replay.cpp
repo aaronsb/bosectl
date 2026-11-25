@@ -130,6 +130,11 @@ const std::map<std::string, Getter> GETTERS = {
     {"sidetone",    [](BmapConnection& d) { return d.sidetone(); }},
     {"auto_pause",  [](BmapConnection& d) { return std::string(on_off(d.auto_pause())); }},
     {"auto_answer", [](BmapConnection& d) { return std::string(on_off(d.auto_answer())); }},
+    {"cnc_presets", [](BmapConnection& d) {
+        auto p = d.cnc_presets();
+        return std::to_string(p[0]) + " " + std::to_string(p[1]) + " " + std::to_string(p[2]);
+    }},
+    {"cnc_persist", [](BmapConnection& d) { return std::string(on_off(d.cnc_persist())); }},
 };
 
 // Each setter: (number of ARGs it needs, library call).
@@ -148,6 +153,12 @@ const std::map<std::string, std::pair<size_t, Setter>> SETTERS = {
     {"set_auto_pause",  {1, [](BmapConnection& d, const Args& a) { d.set_auto_pause(flag(a[0])); }}},
     {"set_auto_answer", {1, [](BmapConnection& d, const Args& a) { d.set_auto_answer(flag(a[0])); }}},
     {"set_anc",         {1, [](BmapConnection& d, const Args& a) { d.set_anc(flag(a[0])); }}},
+    {"set_cnc_presets", {3, [](BmapConnection& d, const Args& a) {
+        d.set_cnc_presets(static_cast<uint8_t>(number(a[0], 0, 255)),
+                          static_cast<uint8_t>(number(a[1], 0, 255)),
+                          static_cast<uint8_t>(number(a[2], 0, 255)));
+    }}},
+    {"set_cnc_persist", {1, [](BmapConnection& d, const Args& a) { d.set_cnc_persist(flag(a[0])); }}},
 };
 
 std::string one_line(std::string text) {
@@ -199,6 +210,7 @@ void describe(const DeviceConfig& c) {
         {"buttons", &c.buttons},             {"multipoint", &c.multipoint},
         {"sidetone", &c.sidetone},           {"auto_pause", &c.auto_pause},
         {"auto_answer", &c.auto_answer},     {"anr", &c.anr},
+        {"cnc_presets", &c.cnc_presets},     {"cnc_persist", &c.cnc_persist},
         {"pairing", &c.pairing},             {"routing", &c.routing},
         {"source", &c.source},               {"power", &c.power},
         {"get_all_modes", &c.get_all_modes}, {"current_mode", &c.current_mode},

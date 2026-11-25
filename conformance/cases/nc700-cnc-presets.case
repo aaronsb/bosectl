@@ -1,0 +1,7 @@
+# spec: GET [1.15] returns [selected index, step, step, step]; cnc_presets answers the three steps in order.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: after the Bose app set its noise cancelling favorites to 7, 6, 1, GET [1.15] = 00030409 (steps 3, 4, 9 on the 0 = most cancelling scale).
+device nc700
+call cnc_presets
+send 01 0f 01 00
+recv 01 0f 03 04 00 03 04 09
+result ok 3 4 9

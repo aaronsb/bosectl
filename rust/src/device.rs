@@ -130,6 +130,10 @@ pub struct DeviceConfig {
     pub sidetone: Option<Addr>,
     pub auto_pause: Option<Addr>,
     pub auto_answer: Option<Addr>,
+    /// CNC presets the button cycles through: [selected, step, step, step] (NC 700 [1.15]).
+    pub cnc_presets: Option<Addr>,
+    /// Remember the last CNC level, bool (NC 700 [1.14]).
+    pub cnc_persist: Option<Addr>,
     /// ANR mode address (QC35: off/high/wind/low at [1.6]).
     pub anr: Option<Addr>,
     pub pairing: Option<Addr>,

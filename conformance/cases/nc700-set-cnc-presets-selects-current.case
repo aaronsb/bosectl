@@ -1,0 +1,15 @@
+# spec: when the current CNC step is one of the new presets, set_cnc_presets selects that preset's index. While ANC is off it switches ANC on first, since the 700 refuses a [1.15] write then; it writes the step back while ANC is on, because a [1.5] write that switches ANC on or off ignores its step, and then switches ANC off.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: with [1.5] = 0b0000, SETGET [1.15] answered ERROR 06 InvalidData; SETGET [1.5] 0001 on 0b0000 returned 0b0301 (the selected preset), and 0000 on 0b0501 returned 0b0500. The sequence on, [1.15], step back, off on 0b0200 ended at 0b0200. The replies are synthetic, following those layouts.
+device nc700
+call set_cnc_presets 0 5 10
+send 01 05 01 00
+recv 01 05 03 03 0b 05 00
+send 01 05 02 02 05 01
+recv 01 05 03 03 0b 00 01
+send 01 0f 02 04 01 00 05 0a
+recv 01 0f 03 04 01 00 05 0a
+send 01 05 02 02 05 01
+recv 01 05 03 03 0b 05 01
+send 01 05 02 02 05 00
+recv 01 05 03 03 0b 05 00
+result ok
