@@ -206,6 +206,11 @@ public:
 
     void set_cnc(uint8_t level) {
         if (level > 10) throw std::runtime_error("CNC level must be 0-10");
+        if (anc_in_cnc()) {
+            // ANC stays as it was; see cnc_write_with_anc_on.
+            cnc_write_with_anc_on(level, cnc_step_and_flag().second, [] {});
+            return;
+        }
         if (config_.cnc_direct_setget) {
             setget(require(config_.cnc, "cnc"), {level, 1});
             return;
@@ -224,8 +229,7 @@ public:
 
     void set_anc(bool enabled) {
         if (anc_in_cnc()) {
-            auto [step, flag] = cnc_step_and_flag();
-            (void)flag;
+            uint8_t step = cnc_step_and_flag().first;
             setget(require(config_.cnc, "cnc"), {step, static_cast<uint8_t>(enabled ? 1 : 0)});
             return;
         }
@@ -245,8 +249,8 @@ public:
             return out;
         }
         if (anc_in_cnc()) {
-            auto [step, flag] = cnc_step_and_flag();
-            return {step, 0, 0, 0, flag};
+            auto [step, enabled] = cnc_step_and_flag();
+            return {step, 0, 0, 0, static_cast<uint8_t>(enabled ? 1 : 0)};
         }
         auto mc = current_mode_config();
         return {mc.cnc_level, 0, mc.spatial,
@@ -283,25 +287,19 @@ public:
     // the selected index is the preset equal to the current CNC step (else
     // the first), and [1.5] is then written back to keep CNC as it was.
     // The NC 700 refuses a [1.15] write while ANC is off (ERROR InvalidData),
-    // so ANC is switched on for the write. The 700 ignores the step of a
-    // [1.5] write that switches ANC on or off, so the step is written back
-    // while ANC is on and ANC is then switched off again.
+    // so the write runs with ANC on (see cnc_write_with_anc_on).
     void set_cnc_presets(uint8_t first, uint8_t second, uint8_t third) {
         const std::array<uint8_t, 3> steps = {first, second, third};
         for (auto s : steps)
             if (s > 10) throw std::invalid_argument("CNC preset must be 0-10");
         auto presets = require(config_.cnc_presets, "cnc_presets");
-        auto cnc = require(config_.cnc, "cnc");
-        auto cur = get(cnc);
-        if (cur.size() < 3) throw device_error("Invalid or empty response");
-        uint8_t step = cur[1], enabled = cur[2];
+        auto [step, enabled] = cnc_step_and_flag();
         uint8_t selected = 0;
         for (uint8_t i = 0; i < 3; i++)
             if (steps[i] == step) { selected = i; break; }
-        if (!enabled) setget(cnc, {step, 1});
-        setget(presets, {selected, first, second, third});
-        setget(cnc, {step, 1});
-        if (!enabled) setget(cnc, {step, 0});
+        cnc_write_with_anc_on(step, enabled, [&] {
+            setget(presets, {selected, first, second, third});
+        });
     }
 
     void set_cnc_persist(bool on) {
@@ -402,18 +400,37 @@ private:
     std::unique_ptr<Transport> transport_;
     DeviceConfig config_;
 
-    // Whether ANC on/off is the enabled byte of direct CNC [1.5]
-    // ([steps, step, enabled]), as on the NC 700.
-    bool anc_in_cnc() const {
-        return config_.cnc_direct_setget && !config_.audio_settings &&
-               config_.supports_anc_toggle;
-    }
+    // Whether ANC on/off is bit 0 of CNC [1.5]'s flags byte
+    // ([steps, step, flags]), as on the NC 700 (config anc_in_cnc).
+    bool anc_in_cnc() const { return config_.anc_in_cnc; }
 
-    // Current CNC step and ANC enabled byte from direct CNC [1.5].
-    std::pair<uint8_t, uint8_t> cnc_step_and_flag() {
+    // Current CNC step and ANC enabled (flags bit 0) from CNC [1.5].
+    std::pair<uint8_t, bool> cnc_step_and_flag() {
         auto p = get(require(config_.cnc, "cnc"));
         if (p.size() < 3) throw device_error("Invalid or empty response");
-        return {p[1], p[2]};
+        return {p[1], (p[2] & 0x01) != 0};
+    }
+
+    // Run write with ANC on, then leave CNC at step and ANC as enabled.
+    // A [1.5] write that switches ANC on or off ignores its step: switching
+    // on recalls the selected preset, switching off keeps the step. So with
+    // ANC off, ANC is switched on first, the step is written while ANC is on,
+    // and ANC is switched off again, also when write throws.
+    template <typename F>
+    void cnc_write_with_anc_on(uint8_t step, bool enabled, F write) {
+        auto cnc = require(config_.cnc, "cnc");
+        auto restore = [&] {
+            setget(cnc, {step, 1});
+            if (!enabled) setget(cnc, {step, 0});
+        };
+        try {
+            if (!enabled) setget(cnc, {step, 1});
+            write();
+        } catch (...) {
+            try { restore(); } catch (...) {}
+            throw;
+        }
+        restore();
     }
 
     static Addr require(const std::optional<Addr>& opt, const char* name) {

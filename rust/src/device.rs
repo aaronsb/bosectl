@@ -157,6 +157,8 @@ pub struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     pub cnc_direct_setget: bool,
+    /// ANC on/off is bit 0 of CNC [1.5]'s flags byte: [steps, step, flags] (NC 700).
+    pub anc_in_cnc: bool,
     /// Addresses the device can read but bosectl refuses to write, because
     /// no write to them has been checked on the hardware.
     pub read_only: &'static [Addr],

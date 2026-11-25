@@ -55,6 +55,7 @@ pub fn qc_ultra2() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_40),
         supports_anc_toggle: true,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -123,6 +124,7 @@ pub fn qc_prince() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_39),
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -178,6 +180,7 @@ pub fn qc35() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -232,6 +235,7 @@ pub fn qc_earbuds() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: true,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -287,6 +291,7 @@ pub fn qc45() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_39),
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -338,6 +343,7 @@ pub fn ultra_open() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -388,6 +394,7 @@ pub fn nc700() -> DeviceConfig {
         parse_mode_config: None,
         build_mode_config: None,
         cnc_direct_setget: true,
+        anc_in_cnc: true,
         // ANC on/off is the enabled byte of [1.5]: SETGET [step, 0] turns it
         // off and the Bose app then shows noise cancelling off.
         supports_anc_toggle: true,

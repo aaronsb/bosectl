@@ -1,0 +1,15 @@
+# spec: when the [1.15] write fails with ANC off, set_cnc_presets still writes the step back and switches ANC off again before it reports the device error.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: a 3-byte [1.15] SETGET answered ERROR 01 Length. Synthetic: an error after ANC was switched on, following the [1.5] layout.
+device nc700
+call set_cnc_presets 0 5 10
+send 01 05 01 00
+recv 01 05 03 03 0b 02 00
+send 01 05 02 02 02 01
+recv 01 05 03 03 0b 00 01
+send 01 0f 02 04 00 00 05 0a
+recv 01 0f 04 01 06
+send 01 05 02 02 02 01
+recv 01 05 03 03 0b 02 01
+send 01 05 02 02 02 00
+recv 01 05 03 03 0b 02 00
+result err device-error 6

@@ -95,5 +95,6 @@ A call that fails answers `err CLASS`, where CLASS says what happened. The adapt
 | `read-only F.N` | One line for each address whose writes the library refuses. |
 | `status-supported-only 0` or `1` | Whether `status` shows only the settings the device has. |
 | `anc-toggle 0` or `1` | The config's ANC-toggle flag, as the library reads it (Python's `SUPPORTS_ANC_TOGGLE`, which counts as 1 when a device module leaves it out). |
+| `anc-in-cnc 0` or `1` | Whether ANC on/off is bit 0 of CNC [1.5]'s flags byte (Python's `ANC_IN_CNC`, 0 when left out). |
 | `editable-slots N N ...` or `editable-slots -` | The profile slots a user may edit, in the config's order. |
 | `preset NAME N` | One line for each preset mode and its index. |

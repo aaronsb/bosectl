@@ -222,6 +222,7 @@ void describe(const DeviceConfig& c) {
     for (const auto& a : c.read_only) write_line("read-only " + addr_text(a));
     write_line(std::string("status-supported-only ") + (c.status_supported_only ? "1" : "0"));
     write_line(std::string("anc-toggle ") + (c.supports_anc_toggle ? "1" : "0"));
+    write_line(std::string("anc-in-cnc ") + (c.anc_in_cnc ? "1" : "0"));
     std::string slots;
     for (auto s : c.editable_slots) slots += " " + std::to_string(s);
     write_line("editable-slots" + (slots.empty() ? std::string(" -") : slots));

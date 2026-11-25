@@ -449,6 +449,11 @@ impl<T: Transport> BmapConnection<T> {
         if level > 10 {
             return Err(BmapError::InvalidArg("CNC level must be 0-10".into()));
         }
+        if self.anc_in_cnc() {
+            // ANC stays as it was; see cnc_write_with_anc_on.
+            let (_, enabled) = self.cnc_step_and_flag()?;
+            return self.cnc_write_with_anc_on(level, enabled, || Ok(()));
+        }
         if self.config.cnc_direct_setget {
             let addr = self.addr(self.config.cnc)?;
             self.setget(addr, &[level, 1])?;
@@ -463,31 +468,18 @@ impl<T: Transport> BmapConnection<T> {
     /// the selected index is the preset equal to the current CNC step (else
     /// the first), and [1.5] is then written back to keep CNC as it was.
     /// The NC 700 refuses a [1.15] write while ANC is off (ERROR InvalidData),
-    /// so ANC is switched on for the write. The 700 ignores the step of a
-    /// [1.5] write that switches ANC on or off, so the step is written back
-    /// while ANC is on and ANC is then switched off again.
+    /// so the write runs with ANC on (see cnc_write_with_anc_on).
     pub fn set_cnc_presets(&self, first: u8, second: u8, third: u8) -> BmapResult<()> {
         let steps = [first, second, third];
         if steps.iter().any(|&s| s > 10) {
             return Err(BmapError::InvalidArg("CNC preset must be 0-10".into()));
         }
         let presets = self.addr(self.config.cnc_presets)?;
-        let cnc = self.addr(self.config.cnc)?;
-        let cur = self.get(cnc)?;
-        if cur.len() < 3 {
-            return Err(BmapError::Device { message: "Invalid or empty response".into(), code: 0 });
-        }
-        let (step, enabled) = (cur[1], cur[2]);
+        let (step, enabled) = self.cnc_step_and_flag()?;
         let selected = steps.iter().position(|&s| s == step).unwrap_or(0) as u8;
-        if enabled == 0 {
-            self.setget(cnc, &[step, 1])?;
-        }
-        self.setget(presets, &[selected, first, second, third])?;
-        self.setget(cnc, &[step, 1])?;
-        if enabled == 0 {
-            self.setget(cnc, &[step, 0])?;
-        }
-        Ok(())
+        self.cnc_write_with_anc_on(step, enabled, || {
+            self.setget(presets, &[selected, first, second, third]).map(|_| ())
+        })
     }
 
     /// Set whether the headphones remember the last CNC level.
@@ -519,21 +511,41 @@ impl<T: Transport> BmapConnection<T> {
         self.update_audio_settings(None, None, None, Some(enabled))
     }
 
-    /// Whether ANC on/off is the enabled byte of direct CNC [1.5]
-    /// ([steps, step, enabled]), as on the NC 700.
+    /// Whether ANC on/off is bit 0 of CNC [1.5]'s flags byte
+    /// ([steps, step, flags]), as on the NC 700 (config `anc_in_cnc`).
     fn anc_in_cnc(&self) -> bool {
-        self.config.cnc_direct_setget
-            && self.config.audio_settings.is_none()
-            && self.config.supports_anc_toggle
+        self.config.anc_in_cnc
     }
 
-    /// Current CNC step and ANC enabled byte from direct CNC [1.5].
-    fn cnc_step_and_flag(&self) -> BmapResult<(u8, u8)> {
+    /// Current CNC step and ANC enabled (flags bit 0) from CNC [1.5].
+    fn cnc_step_and_flag(&self) -> BmapResult<(u8, bool)> {
         let p = self.get(self.addr(self.config.cnc)?)?;
         if p.len() < 3 {
             return Err(BmapError::Device { message: "Invalid or empty response".into(), code: 0 });
         }
-        Ok((p[1], p[2]))
+        Ok((p[1], p[2] & 0x01 != 0))
+    }
+
+    /// Run `write` with ANC on, then leave CNC at `step` and ANC as `enabled`.
+    ///
+    /// A [1.5] write that switches ANC on or off ignores its step: switching
+    /// on recalls the selected preset, switching off keeps the step. So with
+    /// ANC off, ANC is switched on first, the step is written while ANC is on,
+    /// and ANC is switched off again, also when `write` fails.
+    fn cnc_write_with_anc_on<F>(&self, step: u8, enabled: bool, write: F) -> BmapResult<()>
+    where
+        F: FnOnce() -> BmapResult<()>,
+    {
+        let cnc = self.addr(self.config.cnc)?;
+        let result = if enabled {
+            write()
+        } else {
+            self.setget(cnc, &[step, 1]).map(|_| ()).and_then(|_| write())
+        };
+        let restored = self.setget(cnc, &[step, 1]).map(|_| ()).and_then(|_| {
+            if enabled { Ok(()) } else { self.setget(cnc, &[step, 0]).map(|_| ()) }
+        });
+        result.and(restored)
     }
 
     /// Toggle Wind Block on/off.
@@ -554,7 +566,7 @@ impl<T: Transport> BmapConnection<T> {
             ))
         } else if self.anc_in_cnc() {
             let (step, enabled) = self.cnc_step_and_flag()?;
-            Ok((step, 0, 0, 0, enabled))
+            Ok((step, 0, 0, 0, enabled as u8))
         } else {
             let mc = self.current_mode_config()?;
             Ok((
@@ -874,6 +886,100 @@ mod tests {
     #[test]
     fn test_battery() {
         assert_eq!(mock_qc_ultra2().battery().unwrap(), 80);
+    }
+
+    fn nc700_with(responses: &[(u8, u8, &[u8])]) -> BmapConnection<MockTransport> {
+        let mut t = MockTransport::new();
+        for &(fblock, func, payload) in responses {
+            t.add(fblock, func, 0x03, payload);
+        }
+        BmapConnection::new(t, devices::nc700())
+    }
+
+    fn get_pkt(fblock: u8, func: u8) -> Vec<u8> {
+        bmap_packet(fblock, func, Operator::Get, &[])
+    }
+
+    fn setget_pkt(fblock: u8, func: u8, payload: &[u8]) -> Vec<u8> {
+        bmap_packet(fblock, func, Operator::SetGet, payload)
+    }
+
+    #[test]
+    fn test_nc700_set_cnc_with_anc_on_is_one_write() {
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x05, 0x01])]);
+        dev.set_cnc(5).unwrap();
+        assert_eq!(*dev.transport.sent.borrow(), vec![get_pkt(1, 5), setget_pkt(1, 5, &[5, 1])]);
+    }
+
+    #[test]
+    fn test_nc700_set_cnc_with_anc_off_keeps_anc_off() {
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x02, 0x00])]);
+        dev.set_cnc(4).unwrap();
+        assert_eq!(*dev.transport.sent.borrow(), vec![
+            get_pkt(1, 5),
+            setget_pkt(1, 5, &[4, 1]),
+            setget_pkt(1, 5, &[4, 1]),
+            setget_pkt(1, 5, &[4, 0]),
+        ]);
+    }
+
+    #[test]
+    fn test_nc700_anc_state_masks_flags_bit_0() {
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x05, 0x02])]);
+        assert_eq!(dev.audio_settings().unwrap(), (5, 0, 0, 0, 0));
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x05, 0x03])]);
+        assert_eq!(dev.audio_settings().unwrap().4, 1);
+    }
+
+    #[test]
+    fn test_nc700_set_anc_writes_current_step_and_flag() {
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x03, 0x01])]);
+        dev.set_anc(false).unwrap();
+        assert_eq!(*dev.transport.sent.borrow(), vec![get_pkt(1, 5), setget_pkt(1, 5, &[3, 0])]);
+    }
+
+    #[test]
+    fn test_nc700_set_cnc_presets_with_anc_on_selects_current_step() {
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x05, 0x01]), (1, 15, &[1, 0, 5, 10])]);
+        dev.set_cnc_presets(0, 5, 10).unwrap();
+        assert_eq!(*dev.transport.sent.borrow(), vec![
+            get_pkt(1, 5),
+            setget_pkt(1, 15, &[1, 0, 5, 10]),
+            setget_pkt(1, 5, &[5, 1]),
+        ]);
+    }
+
+    #[test]
+    fn test_nc700_set_cnc_presets_restores_anc_off_when_the_write_fails() {
+        // No [1.15] mock: the write fails with a device error.
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x02, 0x00])]);
+        assert!(matches!(dev.set_cnc_presets(0, 5, 10), Err(BmapError::Device { .. })));
+        let sent = dev.transport.sent.borrow();
+        assert_eq!(sent[sent.len() - 2..], [setget_pkt(1, 5, &[2, 1]), setget_pkt(1, 5, &[2, 0])]);
+    }
+
+    #[test]
+    fn test_nc700_set_cnc_presets_refuses_out_of_range_before_sending() {
+        let dev = nc700_with(&[]);
+        assert!(matches!(dev.set_cnc_presets(0, 5, 11), Err(BmapError::InvalidArg(_))));
+        assert!(dev.transport.sent.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_nc700_cnc_presets_and_persist() {
+        let dev = nc700_with(&[(1, 15, &[0, 3, 4, 9]), (1, 14, &[0])]);
+        assert_eq!(dev.cnc_presets().unwrap(), [3, 4, 9]);
+        assert!(!dev.cnc_persist().unwrap());
+        dev.set_cnc_persist(true).unwrap();
+        assert_eq!(dev.transport.sent.borrow().last().unwrap(), &setget_pkt(1, 14, &[1]));
+    }
+
+    #[test]
+    fn test_anc_in_cnc_only_on_nc700() {
+        for name in ["qc_ultra2", "qc_ultra2_earbuds", "qc35", "qc_prince", "qc_earbuds", "qc45", "ultra_open"] {
+            assert!(!devices::get_device(name).unwrap().anc_in_cnc, "{}", name);
+        }
+        assert!(devices::nc700().anc_in_cnc);
     }
 
     #[test]

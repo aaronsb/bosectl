@@ -12,7 +12,7 @@ from pybmap.catalog import CATALOG
 from pybmap.connection import BmapConnection
 from pybmap.errors import BmapError
 from pybmap.constants import OP_STATUS
-from pybmap.devices import nc700, parsers, DEVICES, PRODUCT_IDS
+from pybmap.devices import nc700, parsers, qc35, qc_earbuds, ultra_open, DEVICES, PRODUCT_IDS
 from pybmap.protocol import bmap_packet
 from tests.test_channel_probe import patch_transport, sleeps  # noqa: F401 (fixtures)
 from tests.test_connection import MockTransport
@@ -92,13 +92,95 @@ class TestNC700Writes:
         transport = MockTransport()
         transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
         BmapConnection(transport, nc700).set_cnc(5)
-        assert transport.sent == [bmap_packet(1, 5, 2, bytes([5, 1]))]
+        assert transport.sent == [bmap_packet(1, 5, 1), bmap_packet(1, 5, 2, bytes([5, 1]))]
+
+    def test_set_cnc_with_anc_off_keeps_anc_off(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        BmapConnection(transport, nc700).set_cnc(4)
+        assert transport.sent == [
+            bmap_packet(1, 5, 1),
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # on: recalls the preset
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # the step, while on
+            bmap_packet(1, 5, 2, bytes([4, 0])),  # off again
+        ]
 
     def test_anc_state_is_the_cnc_enabled_byte(self):
         transport = MockTransport()
         transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0300"))
         settings = BmapConnection(transport, nc700).audio_settings()
         assert (settings.cnc_level, settings.anc_toggle) == (3, False)
+
+    def test_anc_state_masks_flags_bit_0(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0502"))
+        assert BmapConnection(transport, nc700).audio_settings().anc_toggle is False
+
+    @pytest.mark.parametrize("enabled, flag", [(True, 1), (False, 0)])
+    def test_set_anc_writes_current_step_and_flag(self, enabled, flag):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0301"))
+        BmapConnection(transport, nc700).set_anc(enabled)
+        assert transport.sent == [bmap_packet(1, 5, 1), bmap_packet(1, 5, 2, bytes([3, flag]))]
+
+    def test_set_cnc_presets_with_anc_on_selects_current_step(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
+        transport.add_response(1, 15, OP_STATUS, bytes.fromhex("0100050a"))
+        BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent == [
+            bmap_packet(1, 5, 1),
+            bmap_packet(1, 15, 2, bytes([1, 0, 5, 10])),
+            bmap_packet(1, 5, 2, bytes([5, 1])),
+        ]
+
+    def test_set_cnc_presets_restores_anc_off_when_the_write_fails(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        # no [1.15] response: the mock answers ERROR FuncNotSupp
+        with pytest.raises(BmapError):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent[-2:] == [
+            bmap_packet(1, 5, 2, bytes([2, 1])),
+            bmap_packet(1, 5, 2, bytes([2, 0])),
+        ]
+
+    def test_set_cnc_presets_refuses_out_of_range_before_sending(self):
+        transport = MockTransport()
+        with pytest.raises(ValueError):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 11)
+        assert transport.sent == []
+
+    def test_cnc_presets_and_persist_read(self):
+        transport = MockTransport()
+        transport.add_response(1, 15, OP_STATUS, bytes.fromhex("00030409"))
+        transport.add_response(1, 14, OP_STATUS, bytes.fromhex("00"))
+        dev = BmapConnection(transport, nc700)
+        assert dev.cnc_presets() == [3, 4, 9]
+        assert dev.cnc_persist() is False
+
+    def test_set_cnc_persist(self):
+        transport = MockTransport()
+        transport.add_response(1, 14, OP_STATUS, bytes.fromhex("01"))
+        BmapConnection(transport, nc700).set_cnc_persist(True)
+        assert transport.sent == [bmap_packet(1, 14, 2, bytes([1]))]
+
+
+class TestAncInCncStaysOnTheNC700:
+    """Devices without ANC_IN_CNC keep their ModeConfig path for ANC."""
+
+    @pytest.mark.parametrize("device", [ultra_open, qc35, qc_earbuds],
+                             ids=["ultra_open", "qc35", "qc_earbuds"])
+    @pytest.mark.parametrize("call", [
+        lambda dev: dev.set_anc(True),
+        lambda dev: dev.audio_settings(),
+    ], ids=["set_anc", "audio_settings"])
+    def test_other_devices_do_not_read_cnc_for_anc(self, device, call):
+        transport = MockTransport()
+        with pytest.raises(BmapError) as raised:
+            call(BmapConnection(transport, device))
+        assert "'cnc'" not in str(raised.value)
+        assert bmap_packet(1, 5, 1) not in transport.sent
 
     @pytest.mark.parametrize("write", [
         lambda dev: dev.set_name("Desk"),

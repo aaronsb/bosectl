@@ -156,6 +156,7 @@ def _describe(device):
             lines.append("read-only %d.%d" % tuple(feat["addr"]))
     lines.append("status-supported-only %d" % bool(getattr(device, "STATUS_SUPPORTED_ONLY", False)))
     lines.append("anc-toggle %d" % bool(getattr(device, "SUPPORTS_ANC_TOGGLE", True)))
+    lines.append("anc-in-cnc %d" % bool(getattr(device, "ANC_IN_CNC", False)))
     slots = list(getattr(device, "EDITABLE_SLOTS", None) or [])
     lines.append("editable-slots %s" % (" ".join(map(str, slots)) if slots else "-"))
     for name, preset in (getattr(device, "PRESET_MODES", None) or {}).items():

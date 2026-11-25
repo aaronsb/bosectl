@@ -221,6 +221,7 @@ inline DeviceConfig nc700() {
     // ANC on/off is the enabled byte of [1.5]: SETGET [step, 0] turns it off
     // and the Bose app then shows noise cancelling off.
     c.supports_anc_toggle = true;
+    c.anc_in_cnc = true;
     c.cnc_presets = Addr{1, 15};
     c.cnc_persist = Addr{1, 14};
     // Product name, multipoint and sidetone read correctly, but no write

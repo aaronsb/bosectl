@@ -60,6 +60,7 @@ DESCRIBE_FORMS = [
     re.compile(r"^read-only \d+\.\d+$"),
     re.compile(r"^status-supported-only [01]$"),
     re.compile(r"^anc-toggle [01]$"),
+    re.compile(r"^anc-in-cnc [01]$"),
     re.compile(r"^editable-slots (-|\d+( \d+)*)$"),
     re.compile(r"^preset [a-z_0-9]+ \d+$"),
 ]

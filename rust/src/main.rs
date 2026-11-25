@@ -131,7 +131,11 @@ fn main() {
         }
         "remember" => {
             if args.len() > 2 {
-                let on = matches!(args[2].as_str(), "on" | "1" | "true" | "yes");
+                let on = match args[2].as_str() {
+                    "on" | "1" | "true" | "yes" => true,
+                    "off" | "0" | "false" | "no" => false,
+                    _ => return err_exit(&BmapError::InvalidArg("Usage: remember [on|off]".into())),
+                };
                 if let Err(e) = dev.set_cnc_persist(on) {
                     return err_exit(&e);
                 }

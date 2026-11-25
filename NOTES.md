@@ -79,6 +79,9 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
   on recalls the selected preset: `[00 01]` on `0b 00 00` with presets
   `00 03 04 09` returned `0b 03 01`. Switching off keeps the step: `[00 00]`
   on `0b 05 01` returned `0b 05 00`. The step can only be set while ANC is on.
+  bosectl's `cnc N` therefore keeps ANC as it was: with ANC off it writes
+  `[N 01]`, `[N 01]`, `[N 00]` (on, the step, off again). The ANC state is
+  bit 0 of the flags byte (device configs set `ANC_IN_CNC` / `anc_in_cnc`).
 - **CNC persistence [1.14]:** the Bose app's "Remember my last setting".
   Switching it off in the app changed [1.14] from `01` to `00`; SETGET `01`
   and `00` work and are answered with the new value (`bosectl remember`).

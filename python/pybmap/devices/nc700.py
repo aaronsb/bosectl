@@ -42,10 +42,11 @@ INIT_PACKET = None
 # Show only the settings this device has in `status`, instead of "off" for the rest.
 STATUS_SUPPORTED_ONLY = True
 
-# ANC on/off is the enabled byte of CNC [1.5]: [steps, step, enabled]. SETGET
-# [step, 0] turns ANC off and keeps the step; the Bose app then shows noise
-# cancelling as off.
+# ANC can be switched on and off ...
 SUPPORTS_ANC_TOGGLE = True
+# ... through bit 0 of CNC [1.5]'s flags byte: [steps, step, flags]. SETGET
+# [step, 0] turns ANC off; the Bose app then shows noise cancelling as off.
+ANC_IN_CNC = True
 
 # SETGET [9.2] payload sent on connect; see the module docstring.
 NOTIFICATIONS = bytes([0x01, 0x00, 0x05, 0x02, 0x37])
