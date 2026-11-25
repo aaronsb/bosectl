@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
                 uint8_t steps[3];
                 for (int i = 0; i < 3; i++) {
                     std::string a = argv[2 + i];
-                    if (a.empty() || a.size() > 2 ||
+                    if (a.empty() || a.size() > 9 ||  // 9 digits cannot overflow stoi
                         a.find_first_not_of("0123456789") != std::string::npos)
                         throw std::invalid_argument("CNC preset must be 0-10");
                     int v = std::stoi(a);

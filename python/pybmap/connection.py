@@ -500,7 +500,7 @@ class BmapConnection:
                 self._setget("cnc", bytes([step, 1]))
             if write is not None:
                 write()
-        except Exception:
+        except BaseException:  # also Ctrl-C: ANC must not stay switched on
             try:
                 restore()
             except Exception:

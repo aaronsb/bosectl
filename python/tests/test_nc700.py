@@ -179,6 +179,22 @@ class TestNC700Writes:
         assert raised.value.error_code == 4
         assert transport.sent[-1] == bmap_packet(1, 5, 2, bytes([5, 1]))
 
+    def test_set_cnc_presets_restores_anc_off_on_ctrl_c(self):
+        class Interrupted(MockTransport):
+            def send_recv(self, packet, drain=False):
+                if packet[:2] == bytes([1, 15]):
+                    raise KeyboardInterrupt
+                return super().send_recv(packet, drain)
+
+        transport = Interrupted()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        with pytest.raises(KeyboardInterrupt):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent[-2:] == [
+            bmap_packet(1, 5, 2, bytes([2, 1])),
+            bmap_packet(1, 5, 2, bytes([2, 0])),
+        ]
+
     def test_set_cnc_presets_refuses_out_of_range_before_sending(self):
         transport = MockTransport()
         with pytest.raises(ValueError):
@@ -199,6 +215,27 @@ class TestNC700Writes:
         BmapConnection(transport, nc700).set_cnc_persist(True)
         assert transport.sent == [bmap_packet(1, 14, 2, bytes([1]))]
 
+    @pytest.mark.parametrize("write", [
+        lambda dev: dev.set_name("Desk"),
+        lambda dev: dev.set_multipoint(True),
+        lambda dev: dev.set_sidetone("low"),
+    ], ids=["name", "multipoint", "sidetone"])
+    def test_unchecked_writes_are_refused_before_sending(self, write):
+        transport = MockTransport()
+        with pytest.raises(BmapError, match="does not write it yet"):
+            write(BmapConnection(transport, nc700))
+        assert transport.sent == []
+
+    def test_set_cnc_presets_refuses_read_only_before_sending(self, monkeypatch):
+        features = dict(nc700.FEATURES)
+        features["cnc_presets"] = dict(features["cnc_presets"], read_only=True)
+        monkeypatch.setattr(nc700, "FEATURES", features)
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        with pytest.raises(BmapError, match="does not write it yet"):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent == []
+
 
 class TestAncInCncStaysOnTheNC700:
     """Devices without ANC_IN_CNC keep their ModeConfig path for ANC."""
@@ -215,17 +252,6 @@ class TestAncInCncStaysOnTheNC700:
             call(BmapConnection(transport, device))
         assert "'cnc'" not in str(raised.value)
         assert bmap_packet(1, 5, 1) not in transport.sent
-
-    @pytest.mark.parametrize("write", [
-        lambda dev: dev.set_name("Desk"),
-        lambda dev: dev.set_multipoint(True),
-        lambda dev: dev.set_sidetone("low"),
-    ], ids=["name", "multipoint", "sidetone"])
-    def test_unchecked_writes_are_refused_before_sending(self, write):
-        transport = MockTransport()
-        with pytest.raises(BmapError, match="does not write it yet"):
-            write(BmapConnection(transport, nc700))
-        assert transport.sent == []
 
 
 class TestNotificationsOnConnect:
