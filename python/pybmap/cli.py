@@ -8,7 +8,7 @@ import pybmap
 from pybmap.constants import SPATIAL_NAMES, SIDETONE_NAMES, VOICE_LANGUAGES
 from pybmap.errors import (
     BmapError, BmapConnectionError, BmapInvalidArgError, BmapBusyError,
-    BmapAuthError, BmapDeviceError, BmapTimeoutError,
+    BmapAuthError, BmapDeviceError, BmapTimeoutError, BmapUnsupportedError,
 )
 from pybmap.protocol import fmt_response
 
@@ -282,6 +282,8 @@ def usage():
     section("Settings")
     cmd("cnc <0-10>", "CNC level (0=max ANC, 10=most ambient)")
     cmd("anc on|off", "Toggle Active Noise Cancellation")
+    cmd("cnc-presets [A B C]", "CNC levels the button cycles through (0-10)")
+    cmd("remember on|off", "Remember the last CNC level")
     cmd("wind on|off", "Toggle Wind Block")
     cmd("eq B M T", "Set EQ (-10 to +10), or 'eq flat'")
     cmd("spatial MODE", "Spatial audio: off, room, head")
@@ -418,6 +420,8 @@ def main():
                 print("on" if settings.anc_toggle else "off")
         elif cmd == "wind":
             val = _parse_bool_arg(sys.argv[2:], "wind")
+            if dev._anc_in_cnc():
+                raise BmapUnsupportedError("Wind Block not supported on this device")
             if val is not None:
                 dev.set_wind(val)
             settings = dev.audio_settings()
@@ -431,6 +435,20 @@ def main():
             if val is not None:
                 dev.set_multipoint(val)
             print("on" if dev.multipoint() else "off")
+        elif cmd == "cnc-presets":
+            args = sys.argv[2:]
+            if len(args) == 3 and all(a.isdigit() for a in args):
+                dev.set_cnc_presets(*map(int, args))
+            elif args:
+                print("Usage: bosectl cnc-presets [A B C]  (each 0-10, 0=max ANC)",
+                      file=sys.stderr)
+                sys.exit(1)
+            print(" ".join(map(str, dev.cnc_presets())))
+        elif cmd == "remember":
+            val = _parse_bool_arg(sys.argv[2:], "remember")
+            if val is not None:
+                dev.set_cnc_persist(val)
+            print("on" if dev.cnc_persist() else "off")
         elif cmd == "autopause":
             val = _parse_bool_arg(sys.argv[2:], "autopause")
             if val is not None:

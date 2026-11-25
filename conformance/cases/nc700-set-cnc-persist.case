@@ -1,0 +1,7 @@
+# spec: SETGET [1.14] [01] turns "Remember my last setting" on, without authentication.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: SETGET [1.14] 01 returned STATUS 01, and 00 restored it.
+device nc700
+call set_cnc_persist on
+send 01 0e 02 01 01
+recv 01 0e 03 01 01
+result ok

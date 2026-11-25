@@ -90,6 +90,15 @@ public:
     bool multipoint()                     { return parse_multipoint(get(require(config_.multipoint, "multipoint"))); }
     bool auto_pause()                     { return parse_bool(get(require(config_.auto_pause, "auto_pause"))); }
     bool auto_answer()                    { return parse_bool(get(require(config_.auto_answer, "auto_answer"))); }
+    bool cnc_persist()                    { return parse_bool(get(require(config_.cnc_persist, "cnc_persist"))); }
+
+    // The three CNC steps the headphones' button cycles through
+    // (NC 700 [1.15]: [selected index, step, step, step]).
+    std::array<uint8_t, 3> cnc_presets() {
+        auto p = get(require(config_.cnc_presets, "cnc_presets"));
+        if (p.size() < 4) throw device_error("Invalid or empty response");
+        return {p[1], p[2], p[3]};
+    }
     std::pair<bool, std::string> prompts(){ return parse_voice_prompts(get(require(config_.voice_prompts, "voice_prompts"))); }
     AudioSource source()                 { return parse_source(get(require(config_.source, "source"))); }
     std::string anr()                    { return parse_anr(get(require(config_.anr, "anr"))); }
@@ -131,6 +140,8 @@ public:
         if (name == "sidetone") return config_.sidetone.has_value();
         if (name == "auto_pause") return config_.auto_pause.has_value();
         if (name == "auto_answer") return config_.auto_answer.has_value();
+        if (name == "cnc_presets") return config_.cnc_presets.has_value();
+        if (name == "cnc_persist") return config_.cnc_persist.has_value();
         if (name == "anr") return config_.anr.has_value();
         if (name == "routing") return config_.routing.has_value();
         if (name == "source") return config_.source.has_value();
@@ -195,6 +206,11 @@ public:
 
     void set_cnc(uint8_t level) {
         if (level > 10) throw std::runtime_error("CNC level must be 0-10");
+        if (anc_in_cnc()) {
+            // ANC stays as it was; see cnc_write_with_anc_on.
+            cnc_write_with_anc_on(level, cnc_step_and_flag().second, [] {});
+            return;
+        }
         if (config_.cnc_direct_setget) {
             setget(require(config_.cnc, "cnc"), {level, 1});
             return;
@@ -212,6 +228,19 @@ public:
     }
 
     void set_anc(bool enabled) {
+        if (anc_in_cnc()) {
+            auto cnc = require(config_.cnc, "cnc");
+            auto [step, was_on] = cnc_step_and_flag();
+            if (!enabled) {
+                setget(cnc, {step, 0});
+                return;
+            }
+            // Switching ANC on ignores the step and recalls the selected
+            // preset, so the step is written again once ANC is on.
+            if (!was_on) setget(cnc, {step, 1});
+            setget(cnc, {step, 1});
+            return;
+        }
         update_audio_settings(255, 255, 255, enabled ? 1 : 0);
     }
 
@@ -226,6 +255,10 @@ public:
             std::array<uint8_t, 5> out = {0, 0, 0, 1, 1};
             for (size_t i = 0; i < 5 && i < p.size(); i++) out[i] = p[i];
             return out;
+        }
+        if (anc_in_cnc()) {
+            auto [step, enabled] = cnc_step_and_flag();
+            return {step, 0, 0, 0, static_cast<uint8_t>(enabled ? 1 : 0)};
         }
         auto mc = current_mode_config();
         return {mc.cnc_level, 0, mc.spatial,
@@ -255,6 +288,31 @@ public:
 
     void set_auto_pause(bool on) {
         setget(require(config_.auto_pause, "auto_pause"), {static_cast<uint8_t>(on ? 1 : 0)});
+    }
+
+    // Set the three CNC steps the button cycles through (0-10 each).
+    // Writing [1.15] makes the headphones switch to the selected preset, so
+    // the selected index is the preset equal to the current CNC step (else
+    // the first), and [1.5] is then written back to keep CNC as it was.
+    // The NC 700 refuses a [1.15] write while ANC is off (ERROR InvalidData),
+    // so the write runs with ANC on (see cnc_write_with_anc_on).
+    void set_cnc_presets(uint8_t first, uint8_t second, uint8_t third) {
+        const std::array<uint8_t, 3> steps = {first, second, third};
+        for (auto s : steps)
+            if (s > 10) throw std::invalid_argument("CNC preset must be 0-10");
+        auto presets = require(config_.cnc_presets, "cnc_presets");
+        check_writable(presets);
+        auto [step, enabled] = cnc_step_and_flag();
+        uint8_t selected = 0;
+        for (uint8_t i = 0; i < 3; i++)
+            if (steps[i] == step) { selected = i; break; }
+        cnc_write_with_anc_on(step, enabled, [&] {
+            setget(presets, {selected, first, second, third});
+        });
+    }
+
+    void set_cnc_persist(bool on) {
+        setget(require(config_.cnc_persist, "cnc_persist"), {static_cast<uint8_t>(on ? 1 : 0)});
     }
 
     void set_auto_answer(bool on) {
@@ -351,6 +409,39 @@ private:
     std::unique_ptr<Transport> transport_;
     DeviceConfig config_;
 
+    // Whether ANC on/off is bit 0 of CNC [1.5]'s flags byte
+    // ([steps, step, flags]), as on the NC 700 (config anc_in_cnc).
+    bool anc_in_cnc() const { return config_.anc_in_cnc; }
+
+    // Current CNC step and ANC enabled (flags bit 0) from CNC [1.5].
+    std::pair<uint8_t, bool> cnc_step_and_flag() {
+        auto p = get(require(config_.cnc, "cnc"));
+        if (p.size() < 3) throw device_error("Invalid or empty response");
+        return {p[1], (p[2] & 0x01) != 0};
+    }
+
+    // Run write with ANC on, then leave CNC at step and ANC as enabled.
+    // A [1.5] write that switches ANC on or off ignores its step: switching
+    // on recalls the selected preset, switching off keeps the step. So with
+    // ANC off, ANC is switched on first, the step is written while ANC is on,
+    // and ANC is switched off again, also when write throws.
+    template <typename F>
+    void cnc_write_with_anc_on(uint8_t step, bool enabled, F write) {
+        auto cnc = require(config_.cnc, "cnc");
+        auto restore = [&] {
+            setget(cnc, {step, 1});
+            if (!enabled) setget(cnc, {step, 0});
+        };
+        try {
+            if (!enabled) setget(cnc, {step, 1});
+            write();
+        } catch (...) {
+            try { restore(); } catch (...) {}
+            throw;
+        }
+        restore();
+    }
+
     static Addr require(const std::optional<Addr>& opt, const char* name) {
         if (!opt) throw unsupported_error(std::string(name) + " not supported on this device");
         return *opt;
@@ -397,7 +488,8 @@ private:
         return check_reply(transport_->send_recv(pkt), addr).payload;
     }
 
-    BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
+    // Refuse a write to an address the config marks read-only.
+    void check_writable(Addr addr) const {
         for (const auto& ro : config_.read_only) {
             if (ro == addr) {
                 throw unsupported_error(
@@ -406,6 +498,10 @@ private:
                     "] but bosectl does not write it yet: no write has been checked on this device");
             }
         }
+    }
+
+    BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
+        check_writable(addr);
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
         return check_reply(transport_->send_recv(pkt), addr);
     }

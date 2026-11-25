@@ -1,0 +1,11 @@
+# spec: the 700 writes EQ with SETGET [1.7] [value, band], one band at a time, without authentication, and answers each write with the full [1.7] state.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: SETGET [1.7] 01 02 on f60a0a00f60a0001f60a0002 returned f60a0a00f60a0001f60a0102. The replies below follow that [1.7] layout, starting from the captured state.
+device nc700
+call set_eq 10 0 1
+send 01 07 02 02 0a 00
+recv 01 07 03 0c f6 0a 0a 00 f6 0a 00 01 f6 0a 00 02
+send 01 07 02 02 00 01
+recv 01 07 03 0c f6 0a 0a 00 f6 0a 00 01 f6 0a 00 02
+send 01 07 02 02 01 02
+recv 01 07 03 0c f6 0a 0a 00 f6 0a 00 01 f6 0a 01 02
+result ok

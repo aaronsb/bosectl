@@ -71,7 +71,6 @@ TEST(nc700_refuses_unchecked_writes_before_sending) {
     BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
     std::vector<std::function<void()>> writes = {
         [&] { dev.set_name("Desk"); },
-        [&] { dev.set_eq(1, 0, 0); },
         [&] { dev.set_multipoint(true); },
         [&] { dev.set_sidetone("low"); },
     };
@@ -85,6 +84,127 @@ TEST(nc700_refuses_unchecked_writes_before_sending) {
         ASSERT_TRUE(refused);
     }
     ASSERT_TRUE(raw->sent.empty());
+}
+
+using Packets = std::vector<std::vector<uint8_t>>;
+
+static std::vector<uint8_t> get_pkt(uint8_t f, uint8_t n) { return bmap_packet(f, n, Operator::Get); }
+static std::vector<uint8_t> setget_pkt(uint8_t f, uint8_t n, std::vector<uint8_t> p) {
+    return bmap_packet(f, n, Operator::SetGet, p);
+}
+
+TEST(nc700_set_cnc_with_anc_on_is_one_write) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x05, 0x01});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_cnc(5);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {5, 1})}));
+}
+
+TEST(nc700_set_cnc_with_anc_off_keeps_anc_off) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x02, 0x00});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_cnc(4);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {4, 1}),
+                                  setget_pkt(1, 5, {4, 1}), setget_pkt(1, 5, {4, 0})}));
+}
+
+TEST(nc700_anc_state_masks_flags_bit_0) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x05, 0x02});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    ASSERT_EQ((int)dev.audio_settings()[4], 0);
+    ASSERT_EQ((int)dev.audio_settings()[0], 5);
+}
+
+TEST(nc700_set_anc_writes_current_step_and_flag) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x03, 0x01});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_anc(false);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {3, 0})}));
+}
+
+// On hardware, [4, 1] with ANC off answered 0b 03 01: switching on recalled
+// preset 0 (step 3) instead of step 4.
+TEST(nc700_set_anc_on_from_off_keeps_the_step) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x04, 0x00});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_anc(true);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {4, 1}),
+                                  setget_pkt(1, 5, {4, 1})}));
+}
+
+TEST(nc700_set_anc_on_when_on_is_one_write) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x04, 0x01});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_anc(true);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {4, 1})}));
+}
+
+TEST(set_cnc_presets_refuses_read_only_before_sending) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x02, 0x00});
+    auto config = nc700();
+    config.read_only.push_back({1, 15});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), config);
+    bool refused = false;
+    try { dev.set_cnc_presets(0, 5, 10); } catch (const unsupported_error&) { refused = true; }
+    ASSERT_TRUE(refused);
+    ASSERT_TRUE(raw->sent.empty());
+}
+
+TEST(nc700_set_cnc_presets_with_anc_on_selects_current_step) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x05, 0x01});
+    raw->add(1, 15, 0x03, {1, 0, 5, 10});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_cnc_presets(0, 5, 10);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 15, {1, 0, 5, 10}),
+                                  setget_pkt(1, 5, {5, 1})}));
+}
+
+TEST(nc700_set_cnc_presets_restores_anc_off_when_the_write_fails) {
+    auto raw = new MockTransport();  // no [1.15] response: ERROR FuncNotSupp
+    raw->add(1, 5, 0x03, {0x0b, 0x02, 0x00});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    bool threw = false;
+    try { dev.set_cnc_presets(0, 5, 10); } catch (const device_error&) { threw = true; }
+    ASSERT_TRUE(threw);
+    ASSERT_TRUE(raw->sent.size() >= 2);
+    ASSERT_EQ(raw->sent[raw->sent.size() - 2], setget_pkt(1, 5, {2, 1}));
+    ASSERT_EQ(raw->sent.back(), setget_pkt(1, 5, {2, 0}));
+}
+
+TEST(nc700_set_cnc_presets_refuses_out_of_range_before_sending) {
+    auto raw = new MockTransport();
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    bool refused = false;
+    try { dev.set_cnc_presets(0, 5, 11); } catch (const std::invalid_argument&) { refused = true; }
+    ASSERT_TRUE(refused);
+    ASSERT_TRUE(raw->sent.empty());
+}
+
+TEST(nc700_cnc_presets_and_persist) {
+    auto raw = new MockTransport();
+    raw->add(1, 15, 0x03, {0, 3, 4, 9});
+    raw->add(1, 14, 0x03, {0});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    auto p = dev.cnc_presets();
+    ASSERT_EQ((int)p[0], 3); ASSERT_EQ((int)p[1], 4); ASSERT_EQ((int)p[2], 9);
+    ASSERT_FALSE(dev.cnc_persist());
+    dev.set_cnc_persist(true);
+    ASSERT_EQ(raw->sent.back(), setget_pkt(1, 14, {1}));
+}
+
+TEST(anc_in_cnc_only_on_nc700) {
+    for (const char* name : {"qc_ultra2", "qc_ultra2_earbuds", "qc35", "qc_prince",
+                             "qc_earbuds", "qc45", "ultra_open"})
+        ASSERT_FALSE(get_device(name)->anc_in_cnc);
+    ASSERT_TRUE(nc700().anc_in_cnc);
 }
 
 TEST(battery_empty_response) {

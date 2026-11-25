@@ -1,0 +1,9 @@
+# spec: the 700's ANC on/off is the enabled byte of CNC [1.5] ([steps, step, enabled]); set_anc off reads the current step and writes [step, 0], keeping the step.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: GET [1.5] = 0b0001, SETGET [1.5] 00 00 returned 0b0000, and the Bose app then showed noise cancelling off.
+device nc700
+call set_anc off
+send 01 05 01 00
+recv 01 05 03 03 0b 00 01
+send 01 05 02 02 00 00
+recv 01 05 03 03 0b 00 00
+result ok

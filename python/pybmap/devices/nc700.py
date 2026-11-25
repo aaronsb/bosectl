@@ -14,12 +14,20 @@ bitmap of function blocks (0x00050237 = blocks 0, 1, 2, 4, 5, 9, 16, 18).
 Capabilities confirmed on hardware:
   - Battery, firmware, product name: GET works
   - CNC [1.5]: GET + SETGET works without auth (11 steps; step 0 = most
-    cancelling, as on other models). SETGET replies only with notifications on
-  - CNC presets [1.15]: GET returns [selected index, step, step, step]
-    (the levels the headphones' button cycles through, 0/5/10 by default)
-  - EQ [1.7]: GET works (3-band, -10 to +10)
-  - Buttons [1.9]: GET works (Shortcut, press and hold; Battery level, Alexa
-    wake word, Spotify Tap and WindMode supported). SETGET not tried
+    cancelling, as on other models). SETGET replies only with notifications on.
+    The third byte is ANC on/off: SETGET [step, 0] turns ANC off (the Bose app
+    shows noise cancelling off), [step, 1] turns it back on
+  - CNC presets [1.15]: GET + SETGET works: [selected index, step, step, step]
+    (the levels the headphones' button cycles through, 0/5/10 by default; the
+    Bose app's noise cancelling favorites). SETGET must carry all 4 bytes
+    (3 bytes: ERROR Length) and switches CNC to the selected preset
+  - CNC persistence [1.14]: GET + SETGET works (the Bose app's "Remember my
+    last setting", 1 = on)
+  - EQ [1.7]: GET + SETGET works (3-band, -10 to +10). SETGET [value, band]
+    is answered with the new [1.7] state
+  - Buttons [1.9]: GET + SETGET works (Shortcut, press and hold; Battery
+    level, Alexa wake word, Spotify Tap and WindMode supported). SETGET
+    [80 05 07] switched the Bose app's Shortcut to the wake word toggle
   - Multipoint [1.10], sidetone [1.11]: GET works
   - No AudioModes block [31] (ERROR FblockNotSupp) and no ANR [1.6] (ERROR FuncNotSupp)
 """
@@ -33,6 +41,12 @@ INIT_PACKET = None
 
 # Show only the settings this device has in `status`, instead of "off" for the rest.
 STATUS_SUPPORTED_ONLY = True
+
+# ANC can be switched on and off ...
+SUPPORTS_ANC_TOGGLE = True
+# ... through bit 0 of CNC [1.5]'s flags byte: [steps, step, flags]. SETGET
+# [step, 0] turns ANC off; the Bose app then shows noise cancelling as off.
+ANC_IN_CNC = True
 
 # SETGET [9.2] payload sent on connect; see the module docstring.
 NOTIFICATIONS = bytes([0x01, 0x00, 0x05, 0x02, 0x37])
@@ -70,7 +84,7 @@ FEATURES = {
         "addr": (0, 5),
         "parser": parsers.parse_firmware,
     },
-    # Product name, EQ, multipoint and sidetone read correctly, but no write to
+    # Product name, multipoint and sidetone read correctly, but no write to
     # them has been checked on a 700, so they are read-only. Once a write has
     # been checked, drop its "read_only" line and restore its builder.
     "product_name": {
@@ -84,15 +98,26 @@ FEATURES = {
         "parser": parsers.parse_cnc,
         "builder": parsers.build_cnc,
     },
+    # The three CNC steps the button cycles through ("noise cancelling
+    # favorites" in the Bose app): [selected index, step, step, step].
+    "cnc_presets": {
+        "addr": (1, 15),
+    },
+    # "Remember my last setting" in the Bose app: 1 = on, 0 = off.
+    "cnc_persist": {
+        "addr": (1, 14),
+        "parser": parsers.parse_bool,
+        "builder": parsers.build_toggle,
+    },
     "eq": {
         "addr": (1, 7),
         "parser": parsers.parse_eq,
-        "read_only": True,
-        # "builder": parsers.build_eq_band,
+        "builder": parsers.build_eq_band,
     },
     "buttons": {
         "addr": (1, 9),
         "parser": parse_buttons,
+        "builder": parsers.build_buttons,
     },
     "multipoint": {
         "addr": (1, 10),

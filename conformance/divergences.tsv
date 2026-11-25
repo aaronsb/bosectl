@@ -11,7 +11,6 @@ case	qc-ultra2-sidetone-unknown	cpp	#56	7: ok off	C++ reads an unknown sidetone 
 case	qc-ultra2-battery-empty-reply	rust	#56	7: err device-error 0	Rust reports an unusable reply as Device { code: 0 }, which reads as BMAP error 0
 case	qc-ultra2-battery-empty-reply	cpp	#56	7: err device-error 0	C++ reports an unusable reply as device_error code 0, which reads as BMAP error 0
 case	qc-ultra2-battery-timeout	cpp	#56	7: err other No response: timeout from the conformance runner	C++ has no timeout error type; its transport throws std::runtime_error
-describe	nc700	python	#56	-anc-toggle 0; +anc-toggle 1	Python leaves SUPPORTS_ANC_TOGGLE unset (read as true); Rust and C++ say false
 describe	qc35	python	#56	-anc-toggle 0; +anc-toggle 1	Python leaves SUPPORTS_ANC_TOGGLE unset (read as true); Rust and C++ say false
 describe	qc45	python	#56	-anc-toggle 0; +anc-toggle 1; +feature default_mode 31.4	SUPPORTS_ANC_TOGGLE unset in Python; Python also lists default_mode [31.4], which Rust and C++ lack
 describe	qc_earbuds	python	#56	-anc-toggle 0; +anc-toggle 1; +feature default_mode 31.4	SUPPORTS_ANC_TOGGLE unset in Python; Python also lists default_mode [31.4], which Rust and C++ lack

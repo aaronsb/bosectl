@@ -1,0 +1,15 @@
+# spec: ANC on/off is bit 0 of the [1.5] flags byte, so flags 02 (bit 1 set) reads as ANC off and set_cnc_presets switches ANC on for the [1.15] write.
+# source: NOTES.md, NC 700 section ([1.5] flags: bit 0 = enabled; bit 1 clear = the user may switch CNC on/off). Synthetic: flags 02 has not been seen on hardware; the replies follow the [1.5] and [1.15] layouts.
+device nc700
+call set_cnc_presets 0 5 10
+send 01 05 01 00
+recv 01 05 03 03 0b 00 02
+send 01 05 02 02 00 01
+recv 01 05 03 03 0b 00 03
+send 01 0f 02 04 00 00 05 0a
+recv 01 0f 03 04 00 00 05 0a
+send 01 05 02 02 00 01
+recv 01 05 03 03 0b 00 03
+send 01 05 02 02 00 00
+recv 01 05 03 03 0b 00 02
+result ok

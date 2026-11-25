@@ -1,0 +1,5 @@
+# spec: a CNC preset outside 0-10 is refused before anything is sent.
+# source: the [1.15] steps share the CNC [1.5] scale of 11 steps (0-10), per the NC 700 hardware report.
+device nc700
+call set_cnc_presets 0 5 11
+result err invalid-arg

@@ -37,9 +37,10 @@ ADAPTER_NAMES = ("python", "rust", "cpp")
 # rest of the line as one argument, which may be empty.
 CALL_ARGS = {
     "battery": 0, "firmware": 0, "name": 0, "cnc": 0, "eq": 0, "multipoint": 0,
-    "sidetone": 0, "auto_pause": 0, "auto_answer": 0,
+    "sidetone": 0, "auto_pause": 0, "auto_answer": 0, "cnc_presets": 0, "cnc_persist": 0,
     "set_cnc": 1, "set_eq": 3, "set_multipoint": 1, "set_sidetone": 1,
     "set_auto_pause": 1, "set_auto_answer": 1, "set_anc": 1,
+    "set_cnc_presets": 3, "set_cnc_persist": 1,
 }
 
 ANSWER_FORMS = [
@@ -59,6 +60,7 @@ DESCRIBE_FORMS = [
     re.compile(r"^read-only \d+\.\d+$"),
     re.compile(r"^status-supported-only [01]$"),
     re.compile(r"^anc-toggle [01]$"),
+    re.compile(r"^anc-in-cnc [01]$"),
     re.compile(r"^editable-slots (-|\d+( \d+)*)$"),
     re.compile(r"^preset [a-z_0-9]+ \d+$"),
 ]

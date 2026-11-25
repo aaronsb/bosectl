@@ -32,6 +32,8 @@ pub fn qc_ultra2() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: Some(Addr(1, 24)),
         auto_answer: Some(Addr(1, 27)),
+        cnc_presets: None,
+        cnc_persist: None,
         anr: None,
         pairing: Some(Addr(4, 8)),
         routing: Some(Addr(4, 12)),
@@ -53,6 +55,7 @@ pub fn qc_ultra2() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_40),
         supports_anc_toggle: true,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -100,6 +103,8 @@ pub fn qc_prince() -> DeviceConfig {
         sidetone: None,
         auto_pause: None,
         auto_answer: None,
+        cnc_presets: None,
+        cnc_persist: None,
         anr: None,
         pairing: Some(Addr(4, 8)),
         routing: None,
@@ -119,6 +124,7 @@ pub fn qc_prince() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_39),
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -152,6 +158,8 @@ pub fn qc35() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: None, // [1.24] not supported
         auto_answer: None,
+        cnc_presets: None,
+        cnc_persist: None,
         anr: Some(Addr(1, 6)),  // OFF=0, HIGH=1, WIND=2, LOW=3
         pairing: Some(Addr(4, 8)),
         routing: None,
@@ -172,6 +180,7 @@ pub fn qc35() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -205,6 +214,8 @@ pub fn qc_earbuds() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: None,
         auto_answer: None,
+        cnc_presets: None,
+        cnc_persist: None,
         anr: None,
         pairing: Some(Addr(4, 8)),
         routing: Some(Addr(4, 12)),
@@ -224,6 +235,7 @@ pub fn qc_earbuds() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: true,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -258,6 +270,8 @@ pub fn qc45() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: None,
         auto_answer: None,
+        cnc_presets: None,
+        cnc_persist: None,
         anr: None,
         pairing: Some(Addr(4, 8)),
         routing: None,
@@ -277,6 +291,7 @@ pub fn qc45() -> DeviceConfig {
         build_mode_config: Some(build_mode_config_39),
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -310,6 +325,8 @@ pub fn ultra_open() -> DeviceConfig {
         sidetone: None,
         auto_pause: None,
         auto_answer: None,
+        cnc_presets: None,
+        cnc_persist: None,
         anr: None,
         pairing: Some(Addr(4, 8)),
         routing: None,
@@ -326,6 +343,7 @@ pub fn ultra_open() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: false,
+        anc_in_cnc: false,
         read_only: &[],
     }
 }
@@ -359,6 +377,8 @@ pub fn nc700() -> DeviceConfig {
         sidetone: Some(Addr(1, 11)),
         auto_pause: None,
         auto_answer: None,
+        cnc_presets: Some(Addr(1, 15)),
+        cnc_persist: Some(Addr(1, 14)),
         anr: None,
         pairing: None,
         routing: None,
@@ -373,13 +393,16 @@ pub fn nc700() -> DeviceConfig {
         editable_slots: &[],
         parse_mode_config: None,
         build_mode_config: None,
-        supports_anc_toggle: false,
         cnc_direct_setget: true,
-        // Product name, EQ, multipoint and sidetone read correctly, but no
+        anc_in_cnc: true,
+        // ANC on/off is the enabled byte of [1.5]: SETGET [step, 0] turns it
+        // off and the Bose app then shows noise cancelling off.
+        supports_anc_toggle: true,
+        // Product name, multipoint and sidetone read correctly, but no
         // write to them has been checked on a 700. Once one has, drop it from
-        // this list; with all four checked:
+        // this list; with all three checked:
         // read_only: &[],
-        read_only: &[Addr(1, 2), Addr(1, 7), Addr(1, 10), Addr(1, 11)],
+        read_only: &[Addr(1, 2), Addr(1, 10), Addr(1, 11)],
     }
 }
 

@@ -56,6 +56,8 @@ Each call names the library method of the same name. ARGs are separated by singl
 | `sidetone` | | `off`, `low`, `medium`, `high`, or `unknown(N)` |
 | `auto_pause` | | `on` or `off` |
 | `auto_answer` | | `on` or `off` |
+| `cnc_presets` | | the three CNC preset steps in order, separated by spaces, such as `0 5 10` |
+| `cnc_persist` | | `on` or `off` |
 | `set_cnc` | `LEVEL` | none |
 | `set_eq` | `BASS MID TREBLE` | none |
 | `set_name` | `TEXT` | none |
@@ -64,6 +66,8 @@ Each call names the library method of the same name. ARGs are separated by singl
 | `set_auto_pause` | `on` or `off` | none |
 | `set_auto_answer` | `on` or `off` | none |
 | `set_anc` | `on` or `off` | none |
+| `set_cnc_presets` | `A B C` | none |
+| `set_cnc_persist` | `on` or `off` | none |
 
 ## Errors
 
@@ -91,5 +95,6 @@ A call that fails answers `err CLASS`, where CLASS says what happened. The adapt
 | `read-only F.N` | One line for each address whose writes the library refuses. |
 | `status-supported-only 0` or `1` | Whether `status` shows only the settings the device has. |
 | `anc-toggle 0` or `1` | The config's ANC-toggle flag, as the library reads it (Python's `SUPPORTS_ANC_TOGGLE`, which counts as 1 when a device module leaves it out). |
+| `anc-in-cnc 0` or `1` | Whether ANC on/off is bit 0 of CNC [1.5]'s flags byte (Python's `ANC_IN_CNC`, 0 when left out). |
 | `editable-slots N N ...` or `editable-slots -` | The profile slots a user may edit, in the config's order. |
 | `preset NAME N` | One line for each preset mode and its index. |

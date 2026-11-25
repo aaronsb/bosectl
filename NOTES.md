@@ -62,10 +62,31 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
 - **CNC [1.5]:** GET returns `[steps, step, flags]`, e.g. `0b 00 01` = 11
   steps, step 0. As on other models, step 0 is the most cancelling (the Bose
   app shows `|step − (steps − 1)|` as its 0-10 "noise cancelling" level).
-  Flags: bit 0 = enabled; bit 1 clear = the user may switch CNC on/off.
+  Flags: bit 0 = ANC on (device configs set `ANC_IN_CNC` / `anc_in_cnc`);
+  bit 1 clear = the user may switch CNC on/off.
   SETGET `[step, 0x01]` works **without authentication** on the 700.
 - **CNC presets [1.15]:** GET returns `[selected index, step, step, step]`,
-  the levels the headphones' button cycles through (`00 00 05 0a` by default).
+  the levels the headphones' button cycles through (`00 00 05 0a` by default),
+  shown in the Bose app as noise cancelling favorites (app level = 10 − step;
+  the app hides them while noise cancelling is off). SETGET needs all four
+  bytes (three bytes: ERROR `01` Length) and switches CNC to the selected
+  preset: `01 00 05 0a` moved [1.5] from step 0 to step 5. The app's own
+  change of favorites to 7/6/1 read back as `00 03 04 09`. bosectl's
+  `cnc-presets` selects the preset equal to the current step and writes [1.5]
+  back afterwards, so CNC stays as it was. While ANC is off the 700 refuses a
+  [1.15] write with ERROR `06` InvalidData, so `cnc-presets` switches ANC on
+  for the write, writes the step back and then switches ANC off again.
+- **A [1.5] write that switches ANC on or off ignores its step.** Switching
+  on recalls the selected preset: `[00 01]` on `0b 00 00` with presets
+  `00 03 04 09` returned `0b 03 01`. Switching off keeps the step: `[00 00]`
+  on `0b 05 01` returned `0b 05 00`. The step can only be set while ANC is on.
+  bosectl's `cnc N` therefore keeps ANC as it was: with ANC off it writes
+  `[N 01]`, `[N 01]`, `[N 00]` (on, the step, off again). `anc on` from ANC
+  off writes `[step 01]` twice, so CNC comes back at the step it had: with
+  `0b 04 00`, one write returned `0b 03 01` and a second `0b 04 01`.
+- **CNC persistence [1.14]:** the Bose app's "Remember my last setting".
+  Switching it off in the app changed [1.14] from `01` to `00`; SETGET `01`
+  and `00` work and are answered with the new value (`bosectl remember`).
 - **SETGET replies need notifications.** The 700 applies a SETGET but sends
   no reply until notifications are enabled with SETGET [9.2]
   (NotificationByFblock). Payload: `[mask, 4-byte big-endian block bitmap]`.
@@ -77,14 +98,25 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
 - **Buttons [1.9]:** `80 05 03 00 01 20 88 00 00 00 80` = Shortcut, press and
   hold, BatteryLevel. The supported-actions bitmap (`00 01 20 88`) is
   big-endian, as the Bose app reads it: BatteryLevel, ToggleWakeWord,
-  WindMode, SpotifyGo, which includes the current action.
+  WindMode, SpotifyGo, which includes the current action. SETGET
+  `[80 05 07]` (ToggleWakeWord) returned `80 05 07 …` and the Bose app's
+  Shortcut section then showed the wake word toggle selected; switching it
+  back to battery level in the app read back as `80 05 03 …`.
 - **Also answering GET:** battery [2.2], firmware [0.5], product name [1.2]
   (`00` + "NC 700"), EQ [1.7] (3-band), buttons [1.9], multipoint [1.10],
   sidetone [1.11], standby timer [1.4] (`b4` = 180 min), CNC persistence
   [1.14], auto play/pause [1.20], audio source [5.1].
-- **Writes checked:** only CNC [1.5]. bosectl treats product name [1.2], EQ
-  [1.7], multipoint [1.10] and sidetone [1.11] as read-only on the 700 and
-  refuses to write them until a write to each has been checked on hardware.
+- **ANC on/off:** bit 0 of the CNC [1.5] flags byte.
+  SETGET `[step, 00]` on `0b 00 01` returned `0b 00 00` and the Bose app then
+  showed noise cancelling off; `[step, 01]` turns it back on. bosectl's
+  `anc on|off` writes it with the current step.
+- **Writes checked:** CNC [1.5], including its ANC on/off byte, CNC presets
+  [1.15], CNC persistence [1.14], EQ [1.7] and buttons [1.9]. An EQ SETGET `[value, band]` is
+  answered with the full [1.7] state: treble +1 (`01 02`) on
+  `f60a0a00 f60a0001 f60a0002` returned `f60a0a00 f60a0001 f60a0102`, and
+  `00 02` restored it. bosectl treats product name [1.2], multipoint [1.10] and
+  sidetone [1.11] as read-only on the 700 and refuses to write them until a
+  write to each has been checked on hardware.
 
 ## BMAP Protocol
 - Version: 1.1.0

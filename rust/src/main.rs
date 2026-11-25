@@ -115,6 +115,33 @@ fn main() {
             }
             dev.multipoint().map(|m| println!("{}", if m { "on" } else { "off" }))
         }
+        "cnc-presets" => {
+            if args.len() == 5 {
+                let steps: Vec<u8> = match args[2..5].iter().map(|a| a.parse()).collect() {
+                    Ok(v) => v,
+                    Err(_) => return err_exit(&BmapError::InvalidArg("CNC presets: three numbers 0-10".into())),
+                };
+                if let Err(e) = dev.set_cnc_presets(steps[0], steps[1], steps[2]) {
+                    return err_exit(&e);
+                }
+            } else if args.len() > 2 {
+                return err_exit(&BmapError::InvalidArg("Usage: cnc-presets [A B C]  (each 0-10, 0=max ANC)".into()));
+            }
+            dev.cnc_presets().map(|p| println!("{} {} {}", p[0], p[1], p[2]))
+        }
+        "remember" => {
+            if args.len() > 2 {
+                let on = match args[2].as_str() {
+                    "on" | "1" | "true" | "yes" => true,
+                    "off" | "0" | "false" | "no" => false,
+                    _ => return err_exit(&BmapError::InvalidArg("Usage: remember [on|off]".into())),
+                };
+                if let Err(e) = dev.set_cnc_persist(on) {
+                    return err_exit(&e);
+                }
+            }
+            dev.cnc_persist().map(|r| println!("{}", if r { "on" } else { "off" }))
+        }
         "autopause" => {
             if args.len() > 2 {
                 let on = matches!(args[2].as_str(), "on" | "1" | "true" | "yes");
@@ -134,7 +161,11 @@ fn main() {
         }
         "anc" => {
             if args.len() > 2 {
-                let on = matches!(args[2].as_str(), "on" | "1" | "true" | "yes");
+                let on = match args[2].as_str() {
+                    "on" | "1" | "true" | "yes" => true,
+                    "off" | "0" | "false" | "no" => false,
+                    _ => return err_exit(&BmapError::InvalidArg("Usage: anc [on|off]".into())),
+                };
                 if let Err(e) = dev.set_anc(on) {
                     return err_exit(&e);
                 }
@@ -148,6 +179,9 @@ fn main() {
             }
         }
         "wind" => {
+            if dev.config().anc_in_cnc {
+                return err_exit(&BmapError::Unsupported("Wind Block not supported on this device".into()));
+            }
             if args.len() > 2 {
                 let on = matches!(args[2].as_str(), "on" | "1" | "true" | "yes");
                 if let Err(e) = dev.set_wind(on) {
@@ -347,6 +381,8 @@ fn usage() {
     println!("  name [TEXT]         Show/set device name");
     println!("  sidetone [MODE]     Show/set sidetone (off/low/medium/high)");
     println!("  multipoint [on|off] Toggle multipoint");
+    println!("  cnc-presets [A B C] CNC levels the button cycles through (0-10)");
+    println!("  remember [on|off]   Remember the last CNC level");
     println!("  autopause [on|off]  Toggle auto play/pause");
     println!("  prompts             Show voice prompt status");
     println!("  buttons             Show button mapping");

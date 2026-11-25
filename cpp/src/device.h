@@ -127,6 +127,10 @@ struct DeviceConfig {
     std::optional<Addr> sidetone;
     std::optional<Addr> auto_pause;
     std::optional<Addr> auto_answer;
+    /// CNC presets the button cycles through: [selected, step, step, step] (NC 700 [1.15]).
+    std::optional<Addr> cnc_presets;
+    /// Remember the last CNC level, bool (NC 700 [1.14]).
+    std::optional<Addr> cnc_persist;
     /// ANR mode address (QC35: off/high/wind/low at [1.6]).
     std::optional<Addr> anr;
     std::optional<Addr> pairing;
@@ -146,6 +150,8 @@ struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     bool cnc_direct_setget = false;
+    /// ANC on/off is bit 0 of CNC [1.5]'s flags byte: [steps, step, flags] (NC 700).
+    bool anc_in_cnc = false;
     /// Addresses the device can read but bosectl refuses to write, because
     /// no write to them has been checked on the hardware.
     std::vector<Addr> read_only;

@@ -21,6 +21,8 @@ static void usage() {
               << "  name [TEXT]         Show/set device name\n"
               << "  sidetone [MODE]     Show/set sidetone (off/low/medium/high)\n"
               << "  multipoint [on|off] Toggle multipoint\n"
+              << "  cnc-presets [A B C] CNC levels the button cycles through (0-10)\n"
+              << "  remember [on|off]   Remember the last CNC level\n"
               << "  autopause [on|off]  Toggle auto play/pause\n"
               << "  prompts             Show voice prompt status\n"
               << "  buttons             Show button mapping\n"
@@ -132,7 +134,9 @@ int main(int argc, char** argv) {
         } else if (cmd == "anc") {
             if (argc > 2) {
                 std::string v = argv[2];
-                dev.set_anc(v == "on" || v == "1" || v == "true");
+                if (is_on(v)) dev.set_anc(true);
+                else if (v == "off" || v == "0" || v == "false" || v == "no") dev.set_anc(false);
+                else throw std::invalid_argument("Usage: anc [on|off]");
             }
             if (!dev.config().audio_settings && !dev.config().supports_anc_toggle) {
                 std::cout << "unsupported\n";
@@ -141,6 +145,8 @@ int main(int argc, char** argv) {
                 std::cout << (s[4] ? "on" : "off") << "\n";
             }
         } else if (cmd == "wind") {
+            if (dev.config().anc_in_cnc)
+                throw bmap::unsupported_error("Wind Block not supported on this device");
             if (argc > 2) {
                 std::string v = argv[2];
                 dev.set_wind(v == "on" || v == "1" || v == "true");
@@ -177,6 +183,32 @@ int main(int argc, char** argv) {
         } else if (cmd == "multipoint") {
             if (argc > 2) dev.set_multipoint(is_on(argv[2]));
             std::cout << (dev.multipoint() ? "on" : "off") << "\n";
+        } else if (cmd == "cnc-presets") {
+            if (argc == 5) {
+                uint8_t steps[3];
+                for (int i = 0; i < 3; i++) {
+                    std::string a = argv[2 + i];
+                    if (a.empty() || a.size() > 9 ||  // 9 digits cannot overflow stoi
+                        a.find_first_not_of("0123456789") != std::string::npos)
+                        throw std::invalid_argument("CNC preset must be 0-10");
+                    int v = std::stoi(a);
+                    if (v > 10) throw std::invalid_argument("CNC preset must be 0-10");
+                    steps[i] = static_cast<uint8_t>(v);
+                }
+                dev.set_cnc_presets(steps[0], steps[1], steps[2]);
+            } else if (argc > 2) {
+                throw std::invalid_argument("Usage: cnc-presets [A B C]  (each 0-10, 0=max ANC)");
+            }
+            auto p = dev.cnc_presets();
+            std::cout << int(p[0]) << " " << int(p[1]) << " " << int(p[2]) << "\n";
+        } else if (cmd == "remember") {
+            if (argc > 2) {
+                std::string v = argv[2];
+                if (v == "on" || v == "1" || v == "true" || v == "yes") dev.set_cnc_persist(true);
+                else if (v == "off" || v == "0" || v == "false" || v == "no") dev.set_cnc_persist(false);
+                else throw std::invalid_argument("Usage: remember [on|off]");
+            }
+            std::cout << (dev.cnc_persist() ? "on" : "off") << "\n";
         } else if (cmd == "autopause") {
             if (argc > 2) dev.set_auto_pause(is_on(argv[2]));
             std::cout << (dev.auto_pause() ? "on" : "off") << "\n";

@@ -1,0 +1,13 @@
+# spec: with ANC off, set_cnc switches ANC on, writes the step while ANC is on and switches ANC off again, because a [1.5] write that switches ANC on or off ignores its step; CNC ends at the new step with ANC still off.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: SETGET [1.5] 0001 on 0b0000 returned 0b0301 (the selected preset, not step 0), 0000 on 0b0501 returned 0b0500, and the sequence 0201, 0201, 0200 from ANC off ended at 0b0200. Replies follow those layouts.
+device nc700
+call set_cnc 4
+send 01 05 01 00
+recv 01 05 03 03 0b 02 00
+send 01 05 02 02 04 01
+recv 01 05 03 03 0b 03 01
+send 01 05 02 02 04 01
+recv 01 05 03 03 0b 04 01
+send 01 05 02 02 04 00
+recv 01 05 03 03 0b 04 00
+result ok

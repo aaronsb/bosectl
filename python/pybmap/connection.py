@@ -318,6 +318,11 @@ class BmapConnection:
         if self.has_feature("audio_settings"):
             return self._get("audio_settings")
 
+        if self._anc_in_cnc():
+            step, enabled = self._cnc_step_and_flag()
+            return AudioSettings(cnc_level=step, auto_cnc=0, spatial=0,
+                                 wind_block=0, anc_toggle=enabled)
+
         config = self._current_mode_config()
         return AudioSettings(
             cnc_level=config.cnc_level,
@@ -326,6 +331,21 @@ class BmapConnection:
             wind_block=config.wind_block,
             anc_toggle=config.anc_toggle,
         )
+
+    def cnc_presets(self):
+        """The three CNC steps the headphones' button cycles through.
+
+        NC 700 [1.15]: [selected index, step, step, step]. Steps use the CNC
+        scale (0 = most cancelling).
+        """
+        payload = self._get_payload("cnc_presets")
+        if len(payload) < 4:
+            raise BmapDeviceError("Invalid or empty response")
+        return list(payload[1:4])
+
+    def cnc_persist(self):
+        """Whether the headphones remember the last CNC level (NC 700 [1.14])."""
+        return self._get("cnc_persist")
 
     def prompts(self):
         """Voice prompts (enabled, language_name) tuple."""
@@ -415,10 +435,16 @@ class BmapConnection:
         anc_toggle=on AND wind_block=off — wind block masks CNC changes.
 
         Uses direct [1.5] SETGET on devices without AudioSettingsConfig
-        (QC Earbuds), or [31.10] AudioSettingsConfig on newer devices.
+        (QC Earbuds), or [31.10] AudioSettingsConfig on newer devices. On a
+        device whose ANC on/off is the [1.5] enabled bit (NC 700), ANC stays
+        as it was.
         """
         if not 0 <= level <= 10:
             raise ValueError("CNC level must be 0-10, got %d" % level)
+        if self._anc_in_cnc():
+            _, enabled = self._cnc_step_and_flag()
+            self._cnc_write_with_anc_on(level, enabled)
+            return
         # QC Earbuds (and similar): use direct [1.5] CNC SETGET when available
         feat = self._feature("cnc")
         if feat.get("builder") and not self.has_feature("audio_settings"):
@@ -428,7 +454,59 @@ class BmapConnection:
 
     def set_anc(self, enabled):
         """Toggle Active Noise Cancellation on/off (bool)."""
+        if self._anc_in_cnc():
+            step, was_on = self._cnc_step_and_flag()
+            if not enabled:
+                self._setget("cnc", bytes([step, 0]))
+                return
+            # Switching ANC on ignores the step and recalls the selected
+            # preset, so the step is written again once ANC is on.
+            if not was_on:
+                self._setget("cnc", bytes([step, 1]))
+            self._setget("cnc", bytes([step, 1]))
+            return
         self._update_audio_settings(anc_toggle=bool(enabled))
+
+    def _anc_in_cnc(self):
+        """Whether ANC on/off is bit 0 of CNC [1.5]'s flags byte (ANC_IN_CNC).
+
+        [1.5] is then [steps, step, flags] (NC 700).
+        """
+        return bool(getattr(self._device, "ANC_IN_CNC", False))
+
+    def _cnc_step_and_flag(self):
+        """Current CNC step and ANC enabled (flags bit 0) from CNC [1.5]."""
+        payload = self._get_payload("cnc")
+        if len(payload) < 3:
+            raise BmapDeviceError("Invalid or empty response")
+        return payload[1], bool(payload[2] & 0x01)
+
+    def _cnc_write_with_anc_on(self, step, enabled, write=None):
+        """Run write (if any) with ANC on, then leave CNC at step, ANC as enabled.
+
+        A [1.5] write that switches ANC on or off ignores its step: switching
+        on recalls the selected preset, switching off keeps the step. So with
+        ANC off, ANC is switched on first, the step is written while ANC is on,
+        and ANC is switched off again, also when write fails. Then the error
+        raised is write's, not one from restoring CNC.
+        """
+        def restore():
+            self._setget("cnc", bytes([step, 1]))
+            if not enabled:
+                self._setget("cnc", bytes([step, 0]))
+
+        try:
+            if not enabled:
+                self._setget("cnc", bytes([step, 1]))
+            if write is not None:
+                write()
+        except BaseException:  # also Ctrl-C: ANC must not stay switched on
+            try:
+                restore()
+            except Exception:
+                pass
+            raise
+        restore()
 
     def set_wind(self, enabled):
         """Toggle Wind Block on/off (bool)."""
@@ -452,6 +530,30 @@ class BmapConnection:
                 raise ValueError("EQ value must be -10 to +10")
             payload = builder(val, band_id) if builder else bytes([val & 0xFF, band_id])
             self._setget("eq", payload)
+
+    def set_cnc_presets(self, first, second, third):
+        """Set the three CNC steps the button cycles through (0-10 each).
+
+        Writing [1.15] makes the headphones switch to the selected preset, so
+        the selected index is the preset equal to the current CNC step (else
+        the first), and [1.5] is then written back to keep CNC as it was.
+        The NC 700 refuses a [1.15] write while ANC is off (ERROR InvalidData),
+        so the write runs with ANC on (see _cnc_write_with_anc_on).
+        """
+        steps = [first, second, third]
+        for step in steps:
+            if not 0 <= step <= 10:
+                raise ValueError("CNC preset must be 0-10, got %d" % step)
+        self._writable_feature("cnc_presets")
+        step, enabled = self._cnc_step_and_flag()
+        selected = steps.index(step) if step in steps else 0
+        self._cnc_write_with_anc_on(step, enabled, lambda: self._setget(
+            "cnc_presets", bytes([selected] + steps)))
+
+    def set_cnc_persist(self, enabled):
+        """Set whether the headphones remember the last CNC level (bool)."""
+        builder = self._writable_feature("cnc_persist")["builder"]
+        self._setget("cnc_persist", builder(enabled))
 
     def set_spatial(self, mode):
         """Set spatial audio mode ("off", "room", or "head")."""

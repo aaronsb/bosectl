@@ -130,6 +130,10 @@ pub struct DeviceConfig {
     pub sidetone: Option<Addr>,
     pub auto_pause: Option<Addr>,
     pub auto_answer: Option<Addr>,
+    /// CNC presets the button cycles through: [selected, step, step, step] (NC 700 [1.15]).
+    pub cnc_presets: Option<Addr>,
+    /// Remember the last CNC level, bool (NC 700 [1.14]).
+    pub cnc_persist: Option<Addr>,
     /// ANR mode address (QC35: off/high/wind/low at [1.6]).
     pub anr: Option<Addr>,
     pub pairing: Option<Addr>,
@@ -153,6 +157,8 @@ pub struct DeviceConfig {
     /// CNC is written with SETGET [1.5] payload [level, 1] (QC Earbuds);
     /// AudioSettings [31.10] and ModeConfig [31.6] writes are unavailable.
     pub cnc_direct_setget: bool,
+    /// ANC on/off is bit 0 of CNC [1.5]'s flags byte: [steps, step, flags] (NC 700).
+    pub anc_in_cnc: bool,
     /// Addresses the device can read but bosectl refuses to write, because
     /// no write to them has been checked on the hardware.
     pub read_only: &'static [Addr],

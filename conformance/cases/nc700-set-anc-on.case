@@ -1,0 +1,11 @@
+# spec: set_anc on from ANC off writes the current step with the enabled byte set twice, because a [1.5] write that switches ANC on ignores its step and recalls the selected preset; the second write sets the step while ANC is on, so CNC ends at the step it had.
+# source: hardware report on firmware 1.8.2-11524+e0f7590 with presets 3 4 9 and preset 0 selected: GET [1.5] returned 0b0400, SETGET 0401 returned 0b0301 (the selected preset, not step 4), and a second SETGET 0401 returned 0b0401. Each SETGET was also followed by a STATUS [1.15] 00030409, which the adapters skip.
+device nc700
+call set_anc on
+send 01 05 01 00
+recv 01 05 03 03 0b 04 00
+send 01 05 02 02 04 01
+recv 01 05 03 03 0b 03 01
+send 01 05 02 02 04 01
+recv 01 05 03 03 0b 04 01
+result ok

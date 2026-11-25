@@ -12,7 +12,7 @@ from pybmap.catalog import CATALOG
 from pybmap.connection import BmapConnection
 from pybmap.errors import BmapError
 from pybmap.constants import OP_STATUS
-from pybmap.devices import nc700, parsers, DEVICES, PRODUCT_IDS
+from pybmap.devices import nc700, parsers, qc35, qc_earbuds, ultra_open, DEVICES, PRODUCT_IDS
 from pybmap.protocol import bmap_packet
 from tests.test_channel_probe import patch_transport, sleeps  # noqa: F401 (fixtures)
 from tests.test_connection import MockTransport
@@ -73,6 +73,13 @@ class TestNC700Payloads:
         assert btn.action_name == "BatteryLevel"
         assert btn.supported_actions == ["BatteryLevel", "ToggleWakeWord", "WindMode", "SpotifyGo"]
 
+    def test_buttons_remap_writes_button_event_action(self):
+        transport = MockTransport()
+        transport.add_response(1, 9, OP_STATUS, bytes.fromhex("8005070001208800000080"))
+        btn = BmapConnection(transport, nc700).set_buttons(0x80, 5, "ToggleWakeWord")
+        assert transport.sent == [bmap_packet(1, 9, 2, bytes([0x80, 5, 7]))]
+        assert btn.action_name == "ToggleWakeWord"
+
     def test_status_shows_supported_settings_only(self):
         assert nc700.STATUS_SUPPORTED_ONLY is True
 
@@ -85,19 +92,166 @@ class TestNC700Writes:
         transport = MockTransport()
         transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
         BmapConnection(transport, nc700).set_cnc(5)
-        assert transport.sent == [bmap_packet(1, 5, 2, bytes([5, 1]))]
+        assert transport.sent == [bmap_packet(1, 5, 1), bmap_packet(1, 5, 2, bytes([5, 1]))]
+
+    def test_set_cnc_with_anc_off_keeps_anc_off(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        BmapConnection(transport, nc700).set_cnc(4)
+        assert transport.sent == [
+            bmap_packet(1, 5, 1),
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # on: recalls the preset
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # the step, while on
+            bmap_packet(1, 5, 2, bytes([4, 0])),  # off again
+        ]
+
+    def test_anc_state_is_the_cnc_enabled_byte(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0300"))
+        settings = BmapConnection(transport, nc700).audio_settings()
+        assert (settings.cnc_level, settings.anc_toggle) == (3, False)
+
+    def test_anc_state_masks_flags_bit_0(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0502"))
+        assert BmapConnection(transport, nc700).audio_settings().anc_toggle is False
+
+    @pytest.mark.parametrize("enabled, flag", [(True, 1), (False, 0)])
+    def test_set_anc_writes_current_step_and_flag(self, enabled, flag):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0301"))
+        BmapConnection(transport, nc700).set_anc(enabled)
+        assert transport.sent == [bmap_packet(1, 5, 1), bmap_packet(1, 5, 2, bytes([3, flag]))]
+
+    def test_set_anc_on_from_off_keeps_the_step(self):
+        # On hardware, [4, 1] with ANC off answered 0b 03 01: switching on
+        # recalled preset 0 (step 3) instead of step 4.
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0400"))
+        BmapConnection(transport, nc700).set_anc(True)
+        assert transport.sent == [
+            bmap_packet(1, 5, 1),
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # on: recalls the preset
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # the step, while on
+        ]
+
+    def test_set_anc_off_from_off_writes_once(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0400"))
+        BmapConnection(transport, nc700).set_anc(False)
+        assert transport.sent == [bmap_packet(1, 5, 1), bmap_packet(1, 5, 2, bytes([4, 0]))]
+
+    def test_set_cnc_presets_with_anc_on_selects_current_step(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
+        transport.add_response(1, 15, OP_STATUS, bytes.fromhex("0100050a"))
+        BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent == [
+            bmap_packet(1, 5, 1),
+            bmap_packet(1, 15, 2, bytes([1, 0, 5, 10])),
+            bmap_packet(1, 5, 2, bytes([5, 1])),
+        ]
+
+    def test_set_cnc_presets_restores_anc_off_when_the_write_fails(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        # no [1.15] response: the mock answers ERROR FuncNotSupp
+        with pytest.raises(BmapError):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent[-2:] == [
+            bmap_packet(1, 5, 2, bytes([2, 1])),
+            bmap_packet(1, 5, 2, bytes([2, 0])),
+        ]
+
+    def test_set_cnc_presets_reports_the_write_error_when_restoring_fails(self):
+        class FailingSetGet(MockTransport):
+            def send_recv(self, packet, drain=False):
+                if packet[:3] == bytes([1, 5, 2]):  # every [1.5] SETGET fails
+                    self.sent.append(packet)
+                    return bytes([1, 5, 4, 1, 6])  # ERROR InvalidData
+                return super().send_recv(packet, drain)
+
+        transport = FailingSetGet()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
+        # no [1.15] response: the mock answers ERROR FuncNotSupp (4)
+        with pytest.raises(BmapError) as raised:
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert raised.value.error_code == 4
+        assert transport.sent[-1] == bmap_packet(1, 5, 2, bytes([5, 1]))
+
+    def test_set_cnc_presets_restores_anc_off_on_ctrl_c(self):
+        class Interrupted(MockTransport):
+            def send_recv(self, packet, drain=False):
+                if packet[:2] == bytes([1, 15]):
+                    raise KeyboardInterrupt
+                return super().send_recv(packet, drain)
+
+        transport = Interrupted()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        with pytest.raises(KeyboardInterrupt):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent[-2:] == [
+            bmap_packet(1, 5, 2, bytes([2, 1])),
+            bmap_packet(1, 5, 2, bytes([2, 0])),
+        ]
+
+    def test_set_cnc_presets_refuses_out_of_range_before_sending(self):
+        transport = MockTransport()
+        with pytest.raises(ValueError):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 11)
+        assert transport.sent == []
+
+    def test_cnc_presets_and_persist_read(self):
+        transport = MockTransport()
+        transport.add_response(1, 15, OP_STATUS, bytes.fromhex("00030409"))
+        transport.add_response(1, 14, OP_STATUS, bytes.fromhex("00"))
+        dev = BmapConnection(transport, nc700)
+        assert dev.cnc_presets() == [3, 4, 9]
+        assert dev.cnc_persist() is False
+
+    def test_set_cnc_persist(self):
+        transport = MockTransport()
+        transport.add_response(1, 14, OP_STATUS, bytes.fromhex("01"))
+        BmapConnection(transport, nc700).set_cnc_persist(True)
+        assert transport.sent == [bmap_packet(1, 14, 2, bytes([1]))]
 
     @pytest.mark.parametrize("write", [
         lambda dev: dev.set_name("Desk"),
-        lambda dev: dev.set_eq(1, 0, 0),
         lambda dev: dev.set_multipoint(True),
         lambda dev: dev.set_sidetone("low"),
-    ], ids=["name", "eq", "multipoint", "sidetone"])
+    ], ids=["name", "multipoint", "sidetone"])
     def test_unchecked_writes_are_refused_before_sending(self, write):
         transport = MockTransport()
         with pytest.raises(BmapError, match="does not write it yet"):
             write(BmapConnection(transport, nc700))
         assert transport.sent == []
+
+    def test_set_cnc_presets_refuses_read_only_before_sending(self, monkeypatch):
+        features = dict(nc700.FEATURES)
+        features["cnc_presets"] = dict(features["cnc_presets"], read_only=True)
+        monkeypatch.setattr(nc700, "FEATURES", features)
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0200"))
+        with pytest.raises(BmapError, match="does not write it yet"):
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert transport.sent == []
+
+
+class TestAncInCncStaysOnTheNC700:
+    """Devices without ANC_IN_CNC keep their ModeConfig path for ANC."""
+
+    @pytest.mark.parametrize("device", [ultra_open, qc35, qc_earbuds],
+                             ids=["ultra_open", "qc35", "qc_earbuds"])
+    @pytest.mark.parametrize("call", [
+        lambda dev: dev.set_anc(True),
+        lambda dev: dev.audio_settings(),
+    ], ids=["set_anc", "audio_settings"])
+    def test_other_devices_do_not_read_cnc_for_anc(self, device, call):
+        transport = MockTransport()
+        with pytest.raises(BmapError) as raised:
+            call(BmapConnection(transport, device))
+        assert "'cnc'" not in str(raised.value)
+        assert bmap_packet(1, 5, 1) not in transport.sent
 
 
 class TestNotificationsOnConnect:
