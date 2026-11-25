@@ -25,8 +25,9 @@ Capabilities confirmed on hardware:
     last setting", 1 = on)
   - EQ [1.7]: GET + SETGET works (3-band, -10 to +10). SETGET [value, band]
     is answered with the new [1.7] state
-  - Buttons [1.9]: GET works (Shortcut, press and hold; Battery level, Alexa
-    wake word, Spotify Tap and WindMode supported). SETGET not tried
+  - Buttons [1.9]: GET + SETGET works (Shortcut, press and hold; Battery
+    level, Alexa wake word, Spotify Tap and WindMode supported). SETGET
+    [80 05 07] switched the Bose app's Shortcut to the wake word toggle
   - Multipoint [1.10], sidetone [1.11]: GET works
   - No AudioModes block [31] (ERROR FblockNotSupp) and no ANR [1.6] (ERROR FuncNotSupp)
 """
@@ -115,6 +116,7 @@ FEATURES = {
     "buttons": {
         "addr": (1, 9),
         "parser": parse_buttons,
+        "builder": parsers.build_buttons,
     },
     "multipoint": {
         "addr": (1, 10),

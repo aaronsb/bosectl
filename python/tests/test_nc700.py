@@ -73,6 +73,13 @@ class TestNC700Payloads:
         assert btn.action_name == "BatteryLevel"
         assert btn.supported_actions == ["BatteryLevel", "ToggleWakeWord", "WindMode", "SpotifyGo"]
 
+    def test_buttons_remap_writes_button_event_action(self):
+        transport = MockTransport()
+        transport.add_response(1, 9, OP_STATUS, bytes.fromhex("8005070001208800000080"))
+        btn = BmapConnection(transport, nc700).set_buttons(0x80, 5, "ToggleWakeWord")
+        assert transport.sent == [bmap_packet(1, 9, 2, bytes([0x80, 5, 7]))]
+        assert btn.action_name == "ToggleWakeWord"
+
     def test_status_shows_supported_settings_only(self):
         assert nc700.STATUS_SUPPORTED_ONLY is True
 

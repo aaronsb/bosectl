@@ -93,7 +93,10 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
 - **Buttons [1.9]:** `80 05 03 00 01 20 88 00 00 00 80` = Shortcut, press and
   hold, BatteryLevel. The supported-actions bitmap (`00 01 20 88`) is
   big-endian, as the Bose app reads it: BatteryLevel, ToggleWakeWord,
-  WindMode, SpotifyGo, which includes the current action.
+  WindMode, SpotifyGo, which includes the current action. SETGET
+  `[80 05 07]` (ToggleWakeWord) returned `80 05 07 …` and the Bose app's
+  Shortcut section then showed the wake word toggle selected; switching it
+  back to battery level in the app read back as `80 05 03 …`.
 - **Also answering GET:** battery [2.2], firmware [0.5], product name [1.2]
   (`00` + "NC 700"), EQ [1.7] (3-band), buttons [1.9], multipoint [1.10],
   sidetone [1.11], standby timer [1.4] (`b4` = 180 min), CNC persistence
@@ -103,7 +106,7 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
   showed noise cancelling off; `[step, 01]` turns it back on. bosectl's
   `anc on|off` writes it with the current step.
 - **Writes checked:** CNC [1.5], including its ANC on/off byte, CNC presets
-  [1.15], CNC persistence [1.14] and EQ [1.7]. An EQ SETGET `[value, band]` is
+  [1.15], CNC persistence [1.14], EQ [1.7] and buttons [1.9]. An EQ SETGET `[value, band]` is
   answered with the full [1.7] state: treble +1 (`01 02`) on
   `f60a0a00 f60a0001 f60a0002` returned `f60a0a00 f60a0001 f60a0102`, and
   `00 02` restored it. bosectl treats product name [1.2], multipoint [1.10] and
