@@ -1,0 +1,9 @@
+# spec: set_anc on writes the enabled byte of CNC [1.5] back to 1 and keeps the current step.
+# source: hardware report on firmware 1.8.2-11524+e0f7590: SETGET [1.5] 00 01 on 0b0000 returned 0b0001. Synthetic: step 3, to show the step is kept, following the same [steps, step, enabled] layout.
+device nc700
+call set_anc on
+send 01 05 01 00
+recv 01 05 03 03 0b 03 00
+send 01 05 02 02 03 01
+recv 01 05 03 03 0b 03 01
+result ok

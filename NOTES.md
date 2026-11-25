@@ -82,12 +82,17 @@ Product ID `0x4024`, variant `0x01`, firmware 1.8.2-11524+e0f7590.
   (`00` + "NC 700"), EQ [1.7] (3-band), buttons [1.9], multipoint [1.10],
   sidetone [1.11], standby timer [1.4] (`b4` = 180 min), CNC persistence
   [1.14], auto play/pause [1.20], audio source [5.1].
-- **Writes checked:** CNC [1.5] and EQ [1.7]. An EQ SETGET `[value, band]` is
-  answered with the full [1.7] state: treble +1 (`01 02`) on
-  `f60a0a00 f60a0001 f60a0002` returned `f60a0a00 f60a0001 f60a0102`, and
-  `00 02` restored it. bosectl treats product name [1.2], multipoint [1.10] and
-  sidetone [1.11] as read-only on the 700 and refuses to write them until a
-  write to each has been checked on hardware.
+- **ANC on/off:** the third byte of CNC [1.5] (`[steps, step, enabled]`).
+  SETGET `[step, 00]` on `0b 00 01` returned `0b 00 00` and the Bose app then
+  showed noise cancelling off; `[step, 01]` turns it back on. bosectl's
+  `anc on|off` writes it with the current step.
+- **Writes checked:** CNC [1.5], including its ANC on/off byte, and EQ [1.7].
+  An EQ SETGET `[value, band]` is answered with the full [1.7] state: treble
+  +1 (`01 02`) on `f60a0a00 f60a0001 f60a0002` returned
+  `f60a0a00 f60a0001 f60a0102`, and `00 02` restored it. bosectl treats
+  product name [1.2], multipoint [1.10] and sidetone [1.11] as read-only on
+  the 700 and refuses to write them until a write to each has been checked on
+  hardware.
 
 ## BMAP Protocol
 - Version: 1.1.0

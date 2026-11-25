@@ -212,6 +212,12 @@ public:
     }
 
     void set_anc(bool enabled) {
+        if (anc_in_cnc()) {
+            auto [step, flag] = cnc_step_and_flag();
+            (void)flag;
+            setget(require(config_.cnc, "cnc"), {step, static_cast<uint8_t>(enabled ? 1 : 0)});
+            return;
+        }
         update_audio_settings(255, 255, 255, enabled ? 1 : 0);
     }
 
@@ -226,6 +232,10 @@ public:
             std::array<uint8_t, 5> out = {0, 0, 0, 1, 1};
             for (size_t i = 0; i < 5 && i < p.size(); i++) out[i] = p[i];
             return out;
+        }
+        if (anc_in_cnc()) {
+            auto [step, flag] = cnc_step_and_flag();
+            return {step, 0, 0, 0, flag};
         }
         auto mc = current_mode_config();
         return {mc.cnc_level, 0, mc.spatial,
@@ -350,6 +360,20 @@ public:
 private:
     std::unique_ptr<Transport> transport_;
     DeviceConfig config_;
+
+    // Whether ANC on/off is the enabled byte of direct CNC [1.5]
+    // ([steps, step, enabled]), as on the NC 700.
+    bool anc_in_cnc() const {
+        return config_.cnc_direct_setget && !config_.audio_settings &&
+               config_.supports_anc_toggle;
+    }
+
+    // Current CNC step and ANC enabled byte from direct CNC [1.5].
+    std::pair<uint8_t, uint8_t> cnc_step_and_flag() {
+        auto p = get(require(config_.cnc, "cnc"));
+        if (p.size() < 3) throw device_error("Invalid or empty response");
+        return {p[1], p[2]};
+    }
 
     static Addr require(const std::optional<Addr>& opt, const char* name) {
         if (!opt) throw unsupported_error(std::string(name) + " not supported on this device");

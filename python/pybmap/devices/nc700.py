@@ -14,7 +14,9 @@ bitmap of function blocks (0x00050237 = blocks 0, 1, 2, 4, 5, 9, 16, 18).
 Capabilities confirmed on hardware:
   - Battery, firmware, product name: GET works
   - CNC [1.5]: GET + SETGET works without auth (11 steps; step 0 = most
-    cancelling, as on other models). SETGET replies only with notifications on
+    cancelling, as on other models). SETGET replies only with notifications on.
+    The third byte is ANC on/off: SETGET [step, 0] turns ANC off (the Bose app
+    shows noise cancelling off), [step, 1] turns it back on
   - CNC presets [1.15]: GET returns [selected index, step, step, step]
     (the levels the headphones' button cycles through, 0/5/10 by default)
   - EQ [1.7]: GET + SETGET works (3-band, -10 to +10). SETGET [value, band]
@@ -34,6 +36,11 @@ INIT_PACKET = None
 
 # Show only the settings this device has in `status`, instead of "off" for the rest.
 STATUS_SUPPORTED_ONLY = True
+
+# ANC on/off is the enabled byte of CNC [1.5]: [steps, step, enabled]. SETGET
+# [step, 0] turns ANC off and keeps the step; the Bose app then shows noise
+# cancelling as off.
+SUPPORTS_ANC_TOGGLE = True
 
 # SETGET [9.2] payload sent on connect; see the module docstring.
 NOTIFICATIONS = bytes([0x01, 0x00, 0x05, 0x02, 0x37])

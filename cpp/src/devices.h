@@ -217,8 +217,10 @@ inline DeviceConfig nc700() {
     c.buttons = Addr{1, 9};
     c.multipoint = Addr{1, 10};
     c.sidetone = Addr{1, 11};
-    c.supports_anc_toggle = false;
     c.cnc_direct_setget = true;
+    // ANC on/off is the enabled byte of [1.5]: SETGET [step, 0] turns it off
+    // and the Bose app then shows noise cancelling off.
+    c.supports_anc_toggle = true;
     // Product name, multipoint and sidetone read correctly, but no write
     // to them has been checked on a 700. Once one has, drop it from this
     // list; with all three checked, delete the line.

@@ -87,6 +87,12 @@ class TestNC700Writes:
         BmapConnection(transport, nc700).set_cnc(5)
         assert transport.sent == [bmap_packet(1, 5, 2, bytes([5, 1]))]
 
+    def test_anc_state_is_the_cnc_enabled_byte(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0300"))
+        settings = BmapConnection(transport, nc700).audio_settings()
+        assert (settings.cnc_level, settings.anc_toggle) == (3, False)
+
     @pytest.mark.parametrize("write", [
         lambda dev: dev.set_name("Desk"),
         lambda dev: dev.set_multipoint(True),

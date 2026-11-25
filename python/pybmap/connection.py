@@ -318,6 +318,11 @@ class BmapConnection:
         if self.has_feature("audio_settings"):
             return self._get("audio_settings")
 
+        if self._anc_in_cnc():
+            step, enabled = self._cnc_step_and_flag()
+            return AudioSettings(cnc_level=step, auto_cnc=0, spatial=0,
+                                 wind_block=0, anc_toggle=enabled)
+
         config = self._current_mode_config()
         return AudioSettings(
             cnc_level=config.cnc_level,
@@ -428,7 +433,28 @@ class BmapConnection:
 
     def set_anc(self, enabled):
         """Toggle Active Noise Cancellation on/off (bool)."""
+        if self._anc_in_cnc():
+            step, _ = self._cnc_step_and_flag()
+            self._setget("cnc", bytes([step, 1 if enabled else 0]))
+            return
         self._update_audio_settings(anc_toggle=bool(enabled))
+
+    def _anc_in_cnc(self):
+        """Whether ANC on/off is the enabled byte of direct CNC [1.5].
+
+        True for devices without AudioSettings [31.10] whose config sets
+        SUPPORTS_ANC_TOGGLE explicitly (NC 700): [1.5] is [steps, step, enabled].
+        """
+        return (self._feature("cnc").get("builder") is not None
+                and not self.has_feature("audio_settings")
+                and getattr(self._device, "SUPPORTS_ANC_TOGGLE", None) is True)
+
+    def _cnc_step_and_flag(self):
+        """Current CNC step and ANC enabled flag from direct CNC [1.5]."""
+        payload = self._get_payload("cnc")
+        if len(payload) < 3:
+            raise BmapDeviceError("Invalid or empty response")
+        return payload[1], bool(payload[2])
 
     def set_wind(self, enabled):
         """Toggle Wind Block on/off (bool)."""

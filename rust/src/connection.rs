@@ -452,7 +452,30 @@ impl<T: Transport> BmapConnection<T> {
 
     /// Toggle Active Noise Cancellation on/off.
     pub fn set_anc(&self, enabled: bool) -> BmapResult<()> {
+        if self.anc_in_cnc() {
+            let addr = self.addr(self.config.cnc)?;
+            let (step, _) = self.cnc_step_and_flag()?;
+            self.setget(addr, &[step, if enabled { 1 } else { 0 }])?;
+            return Ok(());
+        }
         self.update_audio_settings(None, None, None, Some(enabled))
+    }
+
+    /// Whether ANC on/off is the enabled byte of direct CNC [1.5]
+    /// ([steps, step, enabled]), as on the NC 700.
+    fn anc_in_cnc(&self) -> bool {
+        self.config.cnc_direct_setget
+            && self.config.audio_settings.is_none()
+            && self.config.supports_anc_toggle
+    }
+
+    /// Current CNC step and ANC enabled byte from direct CNC [1.5].
+    fn cnc_step_and_flag(&self) -> BmapResult<(u8, u8)> {
+        let p = self.get(self.addr(self.config.cnc)?)?;
+        if p.len() < 3 {
+            return Err(BmapError::Device { message: "Invalid or empty response".into(), code: 0 });
+        }
+        Ok((p[1], p[2]))
     }
 
     /// Toggle Wind Block on/off.
@@ -471,6 +494,9 @@ impl<T: Transport> BmapConnection<T> {
                 p.get(3).copied().unwrap_or(1),
                 p.get(4).copied().unwrap_or(1),
             ))
+        } else if self.anc_in_cnc() {
+            let (step, enabled) = self.cnc_step_and_flag()?;
+            Ok((step, 0, 0, 0, enabled))
         } else {
             let mc = self.current_mode_config()?;
             Ok((

@@ -373,8 +373,10 @@ pub fn nc700() -> DeviceConfig {
         editable_slots: &[],
         parse_mode_config: None,
         build_mode_config: None,
-        supports_anc_toggle: false,
         cnc_direct_setget: true,
+        // ANC on/off is the enabled byte of [1.5]: SETGET [step, 0] turns it
+        // off and the Bose app then shows noise cancelling off.
+        supports_anc_toggle: true,
         // Product name, multipoint and sidetone read correctly, but no
         // write to them has been checked on a 700. Once one has, drop it from
         // this list; with all three checked:
