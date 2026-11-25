@@ -375,11 +375,11 @@ pub fn nc700() -> DeviceConfig {
         build_mode_config: None,
         supports_anc_toggle: false,
         cnc_direct_setget: true,
-        // Product name, EQ, multipoint and sidetone read correctly, but no
+        // Product name, multipoint and sidetone read correctly, but no
         // write to them has been checked on a 700. Once one has, drop it from
-        // this list; with all four checked:
+        // this list; with all three checked:
         // read_only: &[],
-        read_only: &[Addr(1, 2), Addr(1, 7), Addr(1, 10), Addr(1, 11)],
+        read_only: &[Addr(1, 2), Addr(1, 10), Addr(1, 11)],
     }
 }
 

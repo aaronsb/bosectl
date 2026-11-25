@@ -71,7 +71,6 @@ TEST(nc700_refuses_unchecked_writes_before_sending) {
     BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
     std::vector<std::function<void()>> writes = {
         [&] { dev.set_name("Desk"); },
-        [&] { dev.set_eq(1, 0, 0); },
         [&] { dev.set_multipoint(true); },
         [&] { dev.set_sidetone("low"); },
     };

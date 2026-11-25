@@ -797,7 +797,6 @@ mod tests {
         let dev = BmapConnection::new(MockTransport::new(), devices::nc700());
         let results = [
             dev.set_name("Desk"),
-            dev.set_eq(1, 0, 0),
             dev.set_multipoint(true),
             dev.set_sidetone("low"),
         ];

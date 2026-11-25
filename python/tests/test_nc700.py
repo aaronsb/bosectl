@@ -89,10 +89,9 @@ class TestNC700Writes:
 
     @pytest.mark.parametrize("write", [
         lambda dev: dev.set_name("Desk"),
-        lambda dev: dev.set_eq(1, 0, 0),
         lambda dev: dev.set_multipoint(True),
         lambda dev: dev.set_sidetone("low"),
-    ], ids=["name", "eq", "multipoint", "sidetone"])
+    ], ids=["name", "multipoint", "sidetone"])
     def test_unchecked_writes_are_refused_before_sending(self, write):
         transport = MockTransport()
         with pytest.raises(BmapError, match="does not write it yet"):

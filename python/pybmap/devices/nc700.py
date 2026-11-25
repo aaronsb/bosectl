@@ -17,7 +17,8 @@ Capabilities confirmed on hardware:
     cancelling, as on other models). SETGET replies only with notifications on
   - CNC presets [1.15]: GET returns [selected index, step, step, step]
     (the levels the headphones' button cycles through, 0/5/10 by default)
-  - EQ [1.7]: GET works (3-band, -10 to +10)
+  - EQ [1.7]: GET + SETGET works (3-band, -10 to +10). SETGET [value, band]
+    is answered with the new [1.7] state
   - Buttons [1.9]: GET works (Shortcut, press and hold; Battery level, Alexa
     wake word, Spotify Tap and WindMode supported). SETGET not tried
   - Multipoint [1.10], sidetone [1.11]: GET works
@@ -70,7 +71,7 @@ FEATURES = {
         "addr": (0, 5),
         "parser": parsers.parse_firmware,
     },
-    # Product name, EQ, multipoint and sidetone read correctly, but no write to
+    # Product name, multipoint and sidetone read correctly, but no write to
     # them has been checked on a 700, so they are read-only. Once a write has
     # been checked, drop its "read_only" line and restore its builder.
     "product_name": {
@@ -87,8 +88,7 @@ FEATURES = {
     "eq": {
         "addr": (1, 7),
         "parser": parsers.parse_eq,
-        "read_only": True,
-        # "builder": parsers.build_eq_band,
+        "builder": parsers.build_eq_band,
     },
     "buttons": {
         "addr": (1, 9),
