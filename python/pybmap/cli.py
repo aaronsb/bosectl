@@ -8,7 +8,7 @@ import pybmap
 from pybmap.constants import SPATIAL_NAMES, SIDETONE_NAMES, VOICE_LANGUAGES
 from pybmap.errors import (
     BmapError, BmapConnectionError, BmapInvalidArgError, BmapBusyError,
-    BmapAuthError, BmapDeviceError, BmapTimeoutError,
+    BmapAuthError, BmapDeviceError, BmapTimeoutError, BmapUnsupportedError,
 )
 from pybmap.protocol import fmt_response
 
@@ -420,6 +420,8 @@ def main():
                 print("on" if settings.anc_toggle else "off")
         elif cmd == "wind":
             val = _parse_bool_arg(sys.argv[2:], "wind")
+            if dev._anc_in_cnc():
+                raise BmapUnsupportedError("Wind Block not supported on this device")
             if val is not None:
                 dev.set_wind(val)
             settings = dev.audio_settings()

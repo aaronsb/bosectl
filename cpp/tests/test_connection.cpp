@@ -126,6 +126,37 @@ TEST(nc700_set_anc_writes_current_step_and_flag) {
     ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {3, 0})}));
 }
 
+// On hardware, [4, 1] with ANC off answered 0b 03 01: switching on recalled
+// preset 0 (step 3) instead of step 4.
+TEST(nc700_set_anc_on_from_off_keeps_the_step) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x04, 0x00});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_anc(true);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {4, 1}),
+                                  setget_pkt(1, 5, {4, 1})}));
+}
+
+TEST(nc700_set_anc_on_when_on_is_one_write) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x04, 0x01});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
+    dev.set_anc(true);
+    ASSERT_EQ(raw->sent, (Packets{get_pkt(1, 5), setget_pkt(1, 5, {4, 1})}));
+}
+
+TEST(set_cnc_presets_refuses_read_only_before_sending) {
+    auto raw = new MockTransport();
+    raw->add(1, 5, 0x03, {0x0b, 0x02, 0x00});
+    auto config = nc700();
+    config.read_only.push_back({1, 15});
+    BmapConnection dev(std::unique_ptr<Transport>(raw), config);
+    bool refused = false;
+    try { dev.set_cnc_presets(0, 5, 10); } catch (const unsupported_error&) { refused = true; }
+    ASSERT_TRUE(refused);
+    ASSERT_TRUE(raw->sent.empty());
+}
+
 TEST(nc700_set_cnc_presets_with_anc_on_selects_current_step) {
     auto raw = new MockTransport();
     raw->add(1, 5, 0x03, {0x0b, 0x05, 0x01});

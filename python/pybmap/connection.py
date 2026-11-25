@@ -455,8 +455,15 @@ class BmapConnection:
     def set_anc(self, enabled):
         """Toggle Active Noise Cancellation on/off (bool)."""
         if self._anc_in_cnc():
-            step, _ = self._cnc_step_and_flag()
-            self._setget("cnc", bytes([step, 1 if enabled else 0]))
+            step, was_on = self._cnc_step_and_flag()
+            if not enabled:
+                self._setget("cnc", bytes([step, 0]))
+                return
+            # Switching ANC on ignores the step and recalls the selected
+            # preset, so the step is written again once ANC is on.
+            if not was_on:
+                self._setget("cnc", bytes([step, 1]))
+            self._setget("cnc", bytes([step, 1]))
             return
         self._update_audio_settings(anc_toggle=bool(enabled))
 
@@ -480,17 +487,26 @@ class BmapConnection:
         A [1.5] write that switches ANC on or off ignores its step: switching
         on recalls the selected preset, switching off keeps the step. So with
         ANC off, ANC is switched on first, the step is written while ANC is on,
-        and ANC is switched off again, also when write fails.
+        and ANC is switched off again, also when write fails. Then the error
+        raised is write's, not one from restoring CNC.
         """
+        def restore():
+            self._setget("cnc", bytes([step, 1]))
+            if not enabled:
+                self._setget("cnc", bytes([step, 0]))
+
         try:
             if not enabled:
                 self._setget("cnc", bytes([step, 1]))
             if write is not None:
                 write()
-        finally:
-            self._setget("cnc", bytes([step, 1]))
-            if not enabled:
-                self._setget("cnc", bytes([step, 0]))
+        except Exception:
+            try:
+                restore()
+            except Exception:
+                pass
+            raise
+        restore()
 
     def set_wind(self, enabled):
         """Toggle Wind Block on/off (bool)."""

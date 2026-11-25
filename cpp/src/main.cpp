@@ -134,7 +134,9 @@ int main(int argc, char** argv) {
         } else if (cmd == "anc") {
             if (argc > 2) {
                 std::string v = argv[2];
-                dev.set_anc(v == "on" || v == "1" || v == "true");
+                if (is_on(v)) dev.set_anc(true);
+                else if (v == "off" || v == "0" || v == "false" || v == "no") dev.set_anc(false);
+                else throw std::invalid_argument("Usage: anc [on|off]");
             }
             if (!dev.config().audio_settings && !dev.config().supports_anc_toggle) {
                 std::cout << "unsupported\n";
@@ -143,6 +145,8 @@ int main(int argc, char** argv) {
                 std::cout << (s[4] ? "on" : "off") << "\n";
             }
         } else if (cmd == "wind") {
+            if (dev.config().anc_in_cnc)
+                throw bmap::unsupported_error("Wind Block not supported on this device");
             if (argc > 2) {
                 std::string v = argv[2];
                 dev.set_wind(v == "on" || v == "1" || v == "true");
@@ -183,8 +187,12 @@ int main(int argc, char** argv) {
             if (argc == 5) {
                 uint8_t steps[3];
                 for (int i = 0; i < 3; i++) {
-                    int v = std::stoi(argv[2 + i]);
-                    if (v < 0 || v > 10) throw std::invalid_argument("CNC preset must be 0-10");
+                    std::string a = argv[2 + i];
+                    if (a.empty() || a.size() > 2 ||
+                        a.find_first_not_of("0123456789") != std::string::npos)
+                        throw std::invalid_argument("CNC preset must be 0-10");
+                    int v = std::stoi(a);
+                    if (v > 10) throw std::invalid_argument("CNC preset must be 0-10");
                     steps[i] = static_cast<uint8_t>(v);
                 }
                 dev.set_cnc_presets(steps[0], steps[1], steps[2]);

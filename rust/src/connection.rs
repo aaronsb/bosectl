@@ -92,13 +92,19 @@ impl<T: Transport> BmapConnection<T> {
         Ok(self.check_reply(&data, addr)?.payload)
     }
 
-    fn setget(&self, addr: Addr, payload: &[u8]) -> BmapResult<BmapResponse> {
+    /// Refuse a write to an address the config marks read-only.
+    fn check_writable(&self, addr: Addr) -> BmapResult<()> {
         if self.config.read_only.contains(&addr) {
             return Err(BmapError::Unsupported(format!(
                 "{} can read [{}.{}] but bosectl does not write it yet: \
                  no write has been checked on this device",
                 self.config.info.name, addr.0, addr.1)));
         }
+        Ok(())
+    }
+
+    fn setget(&self, addr: Addr, payload: &[u8]) -> BmapResult<BmapResponse> {
+        self.check_writable(addr)?;
         let pkt = bmap_packet(addr.0, addr.1, Operator::SetGet, payload);
         let data = self.transport.send_recv(&pkt)?;
         self.check_reply(&data, addr)
@@ -475,6 +481,7 @@ impl<T: Transport> BmapConnection<T> {
             return Err(BmapError::InvalidArg("CNC preset must be 0-10".into()));
         }
         let presets = self.addr(self.config.cnc_presets)?;
+        self.check_writable(presets)?;
         let (step, enabled) = self.cnc_step_and_flag()?;
         let selected = steps.iter().position(|&s| s == step).unwrap_or(0) as u8;
         self.cnc_write_with_anc_on(step, enabled, || {
@@ -504,8 +511,17 @@ impl<T: Transport> BmapConnection<T> {
     pub fn set_anc(&self, enabled: bool) -> BmapResult<()> {
         if self.anc_in_cnc() {
             let addr = self.addr(self.config.cnc)?;
-            let (step, _) = self.cnc_step_and_flag()?;
-            self.setget(addr, &[step, if enabled { 1 } else { 0 }])?;
+            let (step, was_on) = self.cnc_step_and_flag()?;
+            if !enabled {
+                self.setget(addr, &[step, 0])?;
+                return Ok(());
+            }
+            // Switching ANC on ignores the step and recalls the selected
+            // preset, so the step is written again once ANC is on.
+            if !was_on {
+                self.setget(addr, &[step, 1])?;
+            }
+            self.setget(addr, &[step, 1])?;
             return Ok(());
         }
         self.update_audio_settings(None, None, None, Some(enabled))
@@ -936,6 +952,37 @@ mod tests {
         let dev = nc700_with(&[(1, 5, &[0x0b, 0x03, 0x01])]);
         dev.set_anc(false).unwrap();
         assert_eq!(*dev.transport.sent.borrow(), vec![get_pkt(1, 5), setget_pkt(1, 5, &[3, 0])]);
+    }
+
+    #[test]
+    fn test_nc700_set_anc_on_from_off_keeps_the_step() {
+        // On hardware, [4, 1] with ANC off answered 0b 03 01: switching on
+        // recalled preset 0 (step 3) instead of step 4.
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x04, 0x00])]);
+        dev.set_anc(true).unwrap();
+        assert_eq!(*dev.transport.sent.borrow(), vec![
+            get_pkt(1, 5),
+            setget_pkt(1, 5, &[4, 1]),
+            setget_pkt(1, 5, &[4, 1]),
+        ]);
+    }
+
+    #[test]
+    fn test_nc700_set_anc_on_when_on_is_one_write() {
+        let dev = nc700_with(&[(1, 5, &[0x0b, 0x04, 0x01])]);
+        dev.set_anc(true).unwrap();
+        assert_eq!(*dev.transport.sent.borrow(), vec![get_pkt(1, 5), setget_pkt(1, 5, &[4, 1])]);
+    }
+
+    #[test]
+    fn test_set_cnc_presets_refuses_read_only_before_sending() {
+        let mut config = devices::nc700();
+        config.read_only = &[Addr(1, 15)];
+        let mut t = MockTransport::new();
+        t.add(1, 5, 0x03, &[0x0b, 0x02, 0x00]);
+        let dev = BmapConnection::new(t, config);
+        assert!(matches!(dev.set_cnc_presets(0, 5, 10), Err(BmapError::Unsupported(_))));
+        assert!(dev.transport.sent.borrow().is_empty());
     }
 
     #[test]

@@ -229,8 +229,16 @@ public:
 
     void set_anc(bool enabled) {
         if (anc_in_cnc()) {
-            uint8_t step = cnc_step_and_flag().first;
-            setget(require(config_.cnc, "cnc"), {step, static_cast<uint8_t>(enabled ? 1 : 0)});
+            auto cnc = require(config_.cnc, "cnc");
+            auto [step, was_on] = cnc_step_and_flag();
+            if (!enabled) {
+                setget(cnc, {step, 0});
+                return;
+            }
+            // Switching ANC on ignores the step and recalls the selected
+            // preset, so the step is written again once ANC is on.
+            if (!was_on) setget(cnc, {step, 1});
+            setget(cnc, {step, 1});
             return;
         }
         update_audio_settings(255, 255, 255, enabled ? 1 : 0);
@@ -293,6 +301,7 @@ public:
         for (auto s : steps)
             if (s > 10) throw std::invalid_argument("CNC preset must be 0-10");
         auto presets = require(config_.cnc_presets, "cnc_presets");
+        check_writable(presets);
         auto [step, enabled] = cnc_step_and_flag();
         uint8_t selected = 0;
         for (uint8_t i = 0; i < 3; i++)
@@ -479,7 +488,8 @@ private:
         return check_reply(transport_->send_recv(pkt), addr).payload;
     }
 
-    BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
+    // Refuse a write to an address the config marks read-only.
+    void check_writable(Addr addr) const {
         for (const auto& ro : config_.read_only) {
             if (ro == addr) {
                 throw unsupported_error(
@@ -488,6 +498,10 @@ private:
                     "] but bosectl does not write it yet: no write has been checked on this device");
             }
         }
+    }
+
+    BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
+        check_writable(addr);
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
         return check_reply(transport_->send_recv(pkt), addr);
     }

@@ -123,6 +123,24 @@ class TestNC700Writes:
         BmapConnection(transport, nc700).set_anc(enabled)
         assert transport.sent == [bmap_packet(1, 5, 1), bmap_packet(1, 5, 2, bytes([3, flag]))]
 
+    def test_set_anc_on_from_off_keeps_the_step(self):
+        # On hardware, [4, 1] with ANC off answered 0b 03 01: switching on
+        # recalled preset 0 (step 3) instead of step 4.
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0400"))
+        BmapConnection(transport, nc700).set_anc(True)
+        assert transport.sent == [
+            bmap_packet(1, 5, 1),
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # on: recalls the preset
+            bmap_packet(1, 5, 2, bytes([4, 1])),  # the step, while on
+        ]
+
+    def test_set_anc_off_from_off_writes_once(self):
+        transport = MockTransport()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0400"))
+        BmapConnection(transport, nc700).set_anc(False)
+        assert transport.sent == [bmap_packet(1, 5, 1), bmap_packet(1, 5, 2, bytes([4, 0]))]
+
     def test_set_cnc_presets_with_anc_on_selects_current_step(self):
         transport = MockTransport()
         transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
@@ -144,6 +162,22 @@ class TestNC700Writes:
             bmap_packet(1, 5, 2, bytes([2, 1])),
             bmap_packet(1, 5, 2, bytes([2, 0])),
         ]
+
+    def test_set_cnc_presets_reports_the_write_error_when_restoring_fails(self):
+        class FailingSetGet(MockTransport):
+            def send_recv(self, packet, drain=False):
+                if packet[:3] == bytes([1, 5, 2]):  # every [1.5] SETGET fails
+                    self.sent.append(packet)
+                    return bytes([1, 5, 4, 1, 6])  # ERROR InvalidData
+                return super().send_recv(packet, drain)
+
+        transport = FailingSetGet()
+        transport.add_response(1, 5, OP_STATUS, bytes.fromhex("0b0501"))
+        # no [1.15] response: the mock answers ERROR FuncNotSupp (4)
+        with pytest.raises(BmapError) as raised:
+            BmapConnection(transport, nc700).set_cnc_presets(0, 5, 10)
+        assert raised.value.error_code == 4
+        assert transport.sent[-1] == bmap_packet(1, 5, 2, bytes([5, 1]))
 
     def test_set_cnc_presets_refuses_out_of_range_before_sending(self):
         transport = MockTransport()

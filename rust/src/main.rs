@@ -161,7 +161,11 @@ fn main() {
         }
         "anc" => {
             if args.len() > 2 {
-                let on = matches!(args[2].as_str(), "on" | "1" | "true" | "yes");
+                let on = match args[2].as_str() {
+                    "on" | "1" | "true" | "yes" => true,
+                    "off" | "0" | "false" | "no" => false,
+                    _ => return err_exit(&BmapError::InvalidArg("Usage: anc [on|off]".into())),
+                };
                 if let Err(e) = dev.set_anc(on) {
                     return err_exit(&e);
                 }
@@ -175,6 +179,9 @@ fn main() {
             }
         }
         "wind" => {
+            if dev.config().anc_in_cnc {
+                return err_exit(&BmapError::Unsupported("Wind Block not supported on this device".into()));
+            }
             if args.len() > 2 {
                 let on = matches!(args[2].as_str(), "on" | "1" | "true" | "yes");
                 if let Err(e) = dev.set_wind(on) {
