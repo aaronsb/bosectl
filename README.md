@@ -12,19 +12,11 @@
 
 ![bosectl CLI](docs/media/screenshot.png)
 
-Libraries in Python, Rust, and C++ implementing the Bose BMAP protocol
-over Bluetooth RFCOMM. Full control over noise cancellation, EQ, spatial
-audio, button mapping, profiles, and device settings through a direct
-connection to the headphones.
+Python, Rust, and C++ libraries implementing Bose BMAP over Bluetooth RFCOMM for noise cancellation, EQ, spatial audio, button mapping, and profiles.
 
-**Want a desktop app?** [bosectl-qt](https://github.com/aaronsb/bosectl-qt)
-is a Qt6 system tray app built on the C++ library, and a working reference
-for embedding it: noise cancellation, modes, EQ, and battery reporting to
-the desktop through BlueZ. On Arch it's in the AUR as `bosectl-qt`.
+**Desktop app:** [bosectl-qt](https://github.com/aaronsb/bosectl-qt) is a Qt6 system tray app built on the C++ library (in the AUR as `bosectl-qt`).
 
-> **This is not an exploit.** We use the BMAP protocol's standard SETGET
-> operator, which the headphones accept without authentication. No keys
-> are extracted, no encryption is broken, no traffic is replayed.
+> **This is not an exploit.** BMAP's standard SETGET and START operators work without authentication; no keys are extracted or encryption broken.
 
 ## Supported Devices
 
@@ -41,9 +33,7 @@ the desktop through BlueZ. On Arch it's in the AUR as `bosectl-qt`.
 
 ### Device Roadmap
 
-The library includes a [device catalog](docs/architecture.md#device-catalog)
-of all known BMAP-capable Bose products. These are recognized by Bluetooth
-product ID but don't have tested configurations yet — contributions welcome:
+The [device catalog](docs/architecture.md#device-catalog) lists all known BMAP-capable Bose products by Bluetooth product ID. See [Adding a New Device](docs/architecture.md#adding-a-new-device):
 
 | Device                          | Codename  | Category   | PID      |
 | ------------------------------- | --------- | ---------- | -------- |
@@ -52,10 +42,6 @@ product ID but don't have tested configurations yet — contributions welcome:
 | QuietComfort Ultra Earbuds      | scotty    | Earbuds    | `0x4072` |
 | SoundLink Flex                  | phelps    | Speaker    | `0xBC59` |
 | SoundLink Flex 2                | mathers   | Speaker    | `0xBC61` |
-
-Adding a new device is usually a configuration entry; devices with different
-payload layouts may need a parser/builder pair.
-See [Adding a New Device](docs/architecture.md#adding-a-new-device).
 
 ## Quick Start
 
@@ -94,7 +80,6 @@ dev->set_cnc(8);                   // CNC level 0-10 (0=max ANC)
 ### CLI Usage
 
 ```bash
-# Auto-detects paired Bose device
 bosectl status              # Show model, battery, mode, settings
 bosectl cnc 7               # Noise cancellation level (0=max ANC)
 bosectl anr high            # Noise cancellation mode (QC35)
@@ -103,76 +88,56 @@ bosectl buttons set ANC     # Remap programmable button
 bosectl quiet               # Switch to Quiet mode
 ```
 
-When `BMAP_MAC` (or Python CLI alias `BOSE_MAC`) is set, also set
-`BMAP_DEVICE` to the matching config key. Device type is auto-detected only
-when the MAC address is auto-detected.
+When `BMAP_MAC` (or `BOSE_MAC`) is set, also set `BMAP_DEVICE` to the matching config key.
 
 ### Device Catalog API
 
 ```python
 import pybmap
 
-# Look up any known Bose device by product ID
 dev = pybmap.lookup_device(0x4082)
-print(dev.name)       # "QuietComfort Ultra Headphones (2nd Gen)"
-print(dev.codename)   # "wolverine"
-
-# USB/Bluetooth identification
-pybmap.usb_ids(0x4082)    # (0x05A7, 0x4082)
-pybmap.modalias(0x4082)   # "bluetooth:v05A7p4082d0000"
-
-# Check support status
-pybmap.is_supported(0x4082)  # True — has tested config
-pybmap.is_supported(0x4075)  # True — QuietComfort Headphones (prince)
-pybmap.is_supported(0x4039)  # True — QuietComfort 45 (duran)
-pybmap.supported_devices()   # [wolfcastle, baywolf, duran, prince, wolverine, lando, edith, serena]
-pybmap.known_devices()       # full catalog
+print(dev.name, dev.codename)       # "QuietComfort Ultra Headphones (2nd Gen)" "wolverine"
+pybmap.usb_ids(0x4082)              # (0x05A7, 0x4082)
+pybmap.modalias(0x4082)             # "bluetooth:v05A7p4082d0000"
+pybmap.is_supported(0x4082)         # True
+pybmap.supported_devices()          # [wolfcastle, baywolf, duran, prince, wolverine, lando, edith, serena]
+pybmap.known_devices()              # full catalog
 ```
 
 ## Installation
 
 ### Prerequisites
 
-#### Linux
+- **Linux:** BlueZ stack and headphones paired via `bluetoothctl`
+- **macOS:** macOS 10.15+ and headphones paired via System Settings
 
-- **Linux** with BlueZ (standard Bluetooth stack)
-- **Bluetooth** adapter (built-in or USB)
-- **Bose headphones** paired via `bluetoothctl`
+### With Homebrew (macOS)
 
-#### macOS
+Installs both the Python CLI (`bosectl`) and the Rust crate binary (`bmapctl`), shell completions, and a `brew services` definition directly from this repository:
 
-- **macOS** 10.15+
-- **Bluetooth** enabled in System Settings
-- **Bose headphones** paired/connected via System Settings
+```bash
+brew tap aaronsb/bosectl https://github.com/aaronsb/bosectl.git
+brew install aaronsb/bosectl/bosectl
+brew services start bosectl   # optional periodic status polling service
+```
 
-### Installation (Python CLI)
-
-Run the installer for your platform. It checks prerequisites (PyObjC on macOS, a Bluetooth-capable Python on Linux) and symlinks `bosectl` into `/usr/local/bin`:
+### With Installer Script or pipx
 
 ```bash
 git clone https://github.com/aaronsb/bosectl.git
 cd bosectl
-./linux_install.sh    # or ./macOS_install.sh
-```
-
-### With pipx (Linux, macOS)
-
-Installs `bosectl` into its own environment and puts it on your `PATH`. On macOS this also pulls in PyObjC.
-
-```bash
-git clone https://github.com/aaronsb/bosectl.git
-pipx install ./bosectl/python
+./linux_install.sh            # or ./macOS_install.sh
+# Or isolate in a virtualenv via pipx:
+pipx install ./python
 ```
 
 ### From Release Binaries (Linux)
 
 ```bash
-# Download from GitHub releases
 curl -LO https://github.com/aaronsb/bosectl/releases/latest/download/bmapctl-rust-linux-x86_64
 curl -LO https://github.com/aaronsb/bosectl/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS
-chmod +x bmapctl-rust-linux-x86_64
-sudo cp bmapctl-rust-linux-x86_64 /usr/local/bin/bmapctl
+install -m 755 bmapctl-rust-linux-x86_64 /usr/local/bin/bmapctl
 ```
 
 ### From crates.io (Rust, Linux)
@@ -184,26 +149,16 @@ cargo add bose-bmap       # use as a library; the import is still `use bmap::`
 
 ### From Source
 
-The C++ build and `make test` need the BlueZ development headers, plus CMake and a Rust toolchain:
-
-| Distribution | Package |
-|---|---|
-| Debian / Ubuntu | `libbluetooth-dev` |
-| Fedora | `bluez-libs-devel` |
-| Arch | `bluez-libs` |
+The C++ build and `make test` need BlueZ headers (`libbluetooth-dev` on Debian/Ubuntu, `bluez-libs-devel` on Fedora, `bluez-libs` on Arch), CMake, and Rust:
 
 ```bash
 git clone https://github.com/aaronsb/bosectl.git
 cd bosectl
-make test          # Run all tests (Python + Rust + C++; automatically installs macOS test deps and handles missing toolchains)
+make test          # Run all tests (Python + Rust + C++)
 make artifacts     # Build release binaries + SHA256SUMS
 ```
 
-See `make help` for all targets.
-
-### Pairing
-
-If your headphones aren't already paired:
+### Pairing (Linux)
 
 ```bash
 bluetoothctl
@@ -214,12 +169,9 @@ bluetoothctl
 > exit
 ```
 
-`bosectl` auto-detects paired Bose devices by their BMAP service UUID —
-no MAC address configuration needed, even with renamed headphones.
+`bosectl` auto-detects paired Bose devices by their BMAP service UUID.
 
 ## Architecture
-
-Three libraries sharing the same layered design:
 
 ```
 Application → BmapConnection → Device Config → Transport → Protocol → Bluetooth RFCOMM
@@ -231,40 +183,16 @@ Application → BmapConnection → Device Config → Transport → Protocol → 
 - **BmapConnection** — typed API that dispatches to the right address/parser per device
 - **Catalog** — all known Bose BMAP devices with product IDs, codenames, and USB identifiers
 
-Device differences (RFCOMM channel, init packets, feature availability) are
-expressed as config data. Devices with new payload layouts can point to
-device-specific parsers and builders.
-
-Full documentation: **[docs/architecture.md](docs/architecture.md)**
-
-## How It Works
-
-Bose headphones speak **BMAP** (Bose Messaging and Protocol) over
-Bluetooth RFCOMM. The protocol is organized into function blocks
-(groups of features) and operators (read, write, action).
-
-The key insight: while Bose gates SET (operator 0) behind cloud-mediated
-ECDH authentication, **SETGET** (operator 2) and **START** (operator 5)
-are unauthenticated on the Settings and AudioModes blocks. This gives
-full control over every user-facing setting.
-
-Full protocol reference: **[NOTES.md](NOTES.md)**,
-**[QuietComfort Headphones notes](docs/quietcomfort-headphones-prince.md)**, and
-**[QuietComfort 45 notes](docs/quietcomfort-45-duran.md)**.
-
-### How We Found This
-
-1. Connected over RFCOMM, probed all channels — channel 2 (QC Ultra 2) and 8 (QC35) responded with BMAP
-2. Captured Bluetooth HCI traffic while toggling settings in the Bose app
-3. DNS-hijacked the cloud API and noticed mode switching still worked — the app uses START, not SET
-4. Systematically tested every operator on every function block to map the auth boundary
+Full documentation: **[docs/architecture.md](docs/architecture.md)**, **[NOTES.md](NOTES.md)**, **[QuietComfort Headphones notes](docs/quietcomfort-headphones-prince.md)**, and **[QuietComfort 45 notes](docs/quietcomfort-45-duran.md)**.
 
 ## Project Structure
 
 ```
+├── Formula/bosectl.rb   # Homebrew formula (bosectl + bmapctl + service)
 ├── python/pybmap/       # Python library + bosectl CLI
-├── rust/src/            # Rust library + bmapctl CLI
+├── rust/src/            # Rust library (bose-bmap crate) + bmapctl CLI
 ├── cpp/src/             # C++ library + bmapctl CLI
+├── completion/          # Zsh and Bash tab completions
 ├── docs/                # Architecture guide, device docs
 ├── NOTES.md             # Protocol reverse engineering notes
 ├── Makefile             # Build, test, release across all languages
