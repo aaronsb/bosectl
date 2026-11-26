@@ -145,6 +145,15 @@ pybmap.known_devices()       # full catalog
 - **Bluetooth** enabled in System Settings
 - **Bose headphones** paired/connected via System Settings
 
+### With Homebrew (macOS)
+
+Installs `bosectl`, `bmapctl`, Zsh/Bash completions, and a `brew services` status runner directly from this repository:
+
+```bash
+brew tap aaronsb/bosectl https://github.com/aaronsb/bosectl.git
+brew install aaronsb/bosectl/bosectl
+```
+
 ### Installation (Python CLI)
 
 Run the installer for your platform. It checks prerequisites (PyObjC on macOS, a Bluetooth-capable Python on Linux) and symlinks `bosectl` into `/usr/local/bin`:
