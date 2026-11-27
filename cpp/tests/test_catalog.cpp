@@ -74,7 +74,10 @@ TEST(catalog_is_supported) {
     ASSERT_TRUE(is_supported(0x4068));  // serena
     ASSERT_TRUE(is_supported(0x4020));
     ASSERT_TRUE(is_supported(0x4024));   // goodyear (NC 700)
-    ASSERT_FALSE(is_supported(0x4066));  // lonestarr, no config
+    auto* ultra = lookup_device(0x4066);
+    ASSERT_TRUE(ultra != nullptr);
+    ASSERT_TRUE(ultra->config != nullptr);
+    ASSERT_EQ(std::string(ultra->config), std::string("qc_ultra"));
     ASSERT_FALSE(is_supported(0xFFFF));
 }
 

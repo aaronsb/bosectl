@@ -1,0 +1,5 @@
+# spec: QC Ultra v1 exposes CNC as a read-only setting.
+# source: https://github.com/aaronsb/bosectl/issues/46
+device qc_ultra
+call set_cnc 5
+result err unsupported

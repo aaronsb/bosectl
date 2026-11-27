@@ -273,6 +273,7 @@ public:
 
     void set_prompts(bool enabled) {
         auto addr = require(config_.voice_prompts, "voice_prompts");
+        check_writable(addr);
         auto payload = get(addr);
         uint8_t lang = payload.empty() ? 0 : (payload[0] & 0x1F);
         uint8_t byte0 = ((enabled ? 1 : 0) << 5) | lang;
@@ -397,7 +398,7 @@ private:
         return check_reply(transport_->send_recv(pkt), addr).payload;
     }
 
-    BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
+    void check_writable(Addr addr) const {
         for (const auto& ro : config_.read_only) {
             if (ro == addr) {
                 throw unsupported_error(
@@ -406,6 +407,10 @@ private:
                     "] but bosectl does not write it yet: no write has been checked on this device");
             }
         }
+    }
+
+    BmapResponse setget(Addr addr, const std::vector<uint8_t>& payload) {
+        check_writable(addr);
         auto pkt = bmap_packet(addr.fblock, addr.func, Operator::SetGet, payload);
         return check_reply(transport_->send_recv(pkt), addr);
     }
@@ -464,6 +469,7 @@ private:
             setget(*config_.audio_settings, p);
             return;
         }
+        require(config_.mode_config, "mode_config");
         update_current_mode_config(cnc, spatial, wind, anc);
     }
 

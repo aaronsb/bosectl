@@ -531,14 +531,14 @@ class BmapConnection:
 
     def set_prompts(self, enabled):
         """Toggle voice prompts. Preserves current language setting."""
-        current_enabled, lang_name = self.prompts()
+        feat = self._writable_feature("voice_prompts")
+        _, lang_name = self.prompts()
         # Recover language ID from name
         lang_id = 0
         for lid, lname in VOICE_LANGUAGES.items():
             if lname == lang_name:
                 lang_id = lid
                 break
-        feat = self._feature("voice_prompts")
         builder = feat.get("builder")
         self._setget("voice_prompts", builder(enabled, lang_id))
 

@@ -5,6 +5,7 @@ from pybmap.catalog import (
     lookup_device, known_devices, supported_devices,
     is_supported, usb_ids, modalias,
 )
+from pybmap.devices import detect_device_type
 
 
 class TestLookup:
@@ -48,11 +49,12 @@ class TestLookup:
         assert dev.name == "QuietComfort Earbuds"
         assert dev.config == "qc_earbuds"
 
-    def test_unsupported_known(self):
+    def test_qc_ultra(self):
         dev = lookup_device(0x4066)
         assert dev is not None
         assert dev.codename == "lonestarr"
-        assert dev.config is None
+        assert dev.config == "qc_ultra"
+        assert detect_device_type(0x4066) == "qc_ultra"
 
     def test_unknown(self):
         assert lookup_device(0xFFFF) is None
@@ -60,6 +62,7 @@ class TestLookup:
 
 class TestSupport:
     def test_is_supported(self):
+        assert is_supported(0x4066)  # lonestarr
         assert is_supported(0x4082)  # wolverine
         assert is_supported(0x4062)  # edith
         assert is_supported(0x4083)  # QC Headphones (2nd Gen)
@@ -71,7 +74,6 @@ class TestSupport:
         assert is_supported(0x4024)  # goodyear (NC 700)
 
     def test_not_supported(self):
-        assert not is_supported(0x4066)  # lonestarr (QC Ultra Headphones)
         assert not is_supported(0xFFFF)  # unknown
 
     def test_supported_devices(self):

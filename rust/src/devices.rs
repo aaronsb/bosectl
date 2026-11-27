@@ -6,6 +6,52 @@ use crate::device::{
     parse_mode_config_44, parse_mode_config_prince, parse_mode_config_qc_ultra2,
 };
 
+/// QuietComfort Ultra Headphones (1st Gen) configuration.
+pub fn qc_ultra() -> DeviceConfig {
+    DeviceConfig {
+        info: DeviceInfo {
+            name: "QuietComfort Ultra Headphones",
+            codename: "lonestarr",
+            platform: "Unknown",
+        },
+        rfcomm_channel: 2,
+        init_packet: None,
+        notifications: None,
+        status_supported_only: true,
+        battery: Some(Addr(2, 2)),
+        battery_components: &[],
+        battery_aggregate_id: None,
+        battery_aggregate_sources: &[],
+        firmware: Some(Addr(0, 5)),
+        product_name: Some(Addr(1, 2)),
+        voice_prompts: Some(Addr(1, 3)),
+        cnc: Some(Addr(1, 5)),
+        eq: Some(Addr(1, 7)),
+        buttons: None,
+        multipoint: Some(Addr(1, 10)),
+        sidetone: Some(Addr(1, 11)),
+        auto_pause: None,
+        auto_answer: None,
+        anr: None,
+        pairing: None,
+        routing: None,
+        source: Some(Addr(5, 1)),
+        power: None,
+        get_all_modes: None,
+        current_mode: Some(Addr(31, 3)),
+        mode_config: None,
+        favorites: None,
+        audio_settings: None,
+        preset_modes: &[],
+        editable_slots: &[],
+        parse_mode_config: None,
+        build_mode_config: None,
+        supports_anc_toggle: false,
+        cnc_direct_setget: false,
+        read_only: &[Addr(1, 2), Addr(1, 3), Addr(1, 7), Addr(1, 10), Addr(1, 11)],
+    }
+}
+
 /// Bose QC Ultra 2 configuration.
 pub fn qc_ultra2() -> DeviceConfig {
     DeviceConfig {
@@ -385,6 +431,7 @@ pub fn nc700() -> DeviceConfig {
 
 pub fn get_device(name: &str) -> Option<DeviceConfig> {
     match name {
+        "qc_ultra" => Some(qc_ultra()),
         "qc_ultra2" => Some(qc_ultra2()),
         "qc_ultra2_earbuds" => Some(qc_ultra2_earbuds()),
         "qc35" => Some(qc35()),
@@ -489,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn only_nc700_shows_supported_settings_only() {
+    fn other_devices_show_legacy_status_fields() {
         for name in ["qc_ultra2", "qc_ultra2_earbuds", "qc35", "qc_prince", "qc_earbuds", "qc45", "ultra_open"] {
             assert!(!get_device(name).unwrap().status_supported_only, "{}", name);
         }

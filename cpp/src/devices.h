@@ -5,6 +5,26 @@
 
 namespace bmap {
 
+/// QuietComfort Ultra Headphones (1st Gen) configuration.
+inline DeviceConfig qc_ultra() {
+    DeviceConfig c;
+    c.info = {"QuietComfort Ultra Headphones", "lonestarr", "Unknown"};
+    c.rfcomm_channel = 2;
+    c.status_supported_only = true;
+    c.battery = Addr{2, 2};
+    c.firmware = Addr{0, 5};
+    c.product_name = Addr{1, 2};
+    c.voice_prompts = Addr{1, 3};
+    c.cnc = Addr{1, 5};
+    c.eq = Addr{1, 7};
+    c.multipoint = Addr{1, 10};
+    c.sidetone = Addr{1, 11};
+    c.source = Addr{5, 1};
+    c.current_mode = Addr{31, 3};
+    c.read_only = {{1, 2}, {1, 3}, {1, 7}, {1, 10}, {1, 11}};
+    return c;
+}
+
 inline DeviceConfig qc_ultra2() {
     DeviceConfig c;
     c.info = {"Bose QC Ultra Headphones 2", "wolverine", "OTG-QCC-384"};
@@ -227,6 +247,7 @@ inline DeviceConfig nc700() {
 }
 
 inline std::optional<DeviceConfig> get_device(const std::string& name) {
+    if (name == "qc_ultra") return qc_ultra();
     if (name == "qc_ultra2") return qc_ultra2();
     if (name == "qc_ultra2_earbuds") return qc_ultra2_earbuds();
     if (name == "qc35") return qc35();
