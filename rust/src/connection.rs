@@ -92,13 +92,18 @@ impl<T: Transport> BmapConnection<T> {
         Ok(self.check_reply(&data, addr)?.payload)
     }
 
-    fn setget(&self, addr: Addr, payload: &[u8]) -> BmapResult<BmapResponse> {
+    fn check_writable(&self, addr: Addr) -> BmapResult<()> {
         if self.config.read_only.contains(&addr) {
             return Err(BmapError::Unsupported(format!(
                 "{} can read [{}.{}] but bosectl does not write it yet: \
                  no write has been checked on this device",
                 self.config.info.name, addr.0, addr.1)));
         }
+        Ok(())
+    }
+
+    fn setget(&self, addr: Addr, payload: &[u8]) -> BmapResult<BmapResponse> {
+        self.check_writable(addr)?;
         let pkt = bmap_packet(addr.0, addr.1, Operator::SetGet, payload);
         let data = self.transport.send_recv(&pkt)?;
         self.check_reply(&data, addr)
@@ -497,6 +502,7 @@ impl<T: Transport> BmapConnection<T> {
             self.setget(addr, &payload)?;
             Ok(())
         } else {
+            self.addr(self.config.mode_config)?;
             self.update_current_mode_config(cnc, spatial, wind, anc)
         }
     }
@@ -504,6 +510,7 @@ impl<T: Transport> BmapConnection<T> {
     /// Toggle voice prompts. Preserves current language.
     pub fn set_prompts(&self, enabled: bool) -> BmapResult<()> {
         let addr = self.addr(self.config.voice_prompts)?;
+        self.check_writable(addr)?;
         let payload = self.get(addr)?;
         let lang = payload.first().map_or(0, |b| b & 0x1F);
         let byte0 = ((if enabled { 1u8 } else { 0 }) << 5) | lang;
@@ -790,6 +797,13 @@ mod tests {
     #[test]
     fn test_battery() {
         assert_eq!(mock_qc_ultra2().battery().unwrap(), 80);
+    }
+
+    #[test]
+    fn test_qc_ultra_refuses_prompt_write_before_sending() {
+        let dev = BmapConnection::new(MockTransport::new(), devices::qc_ultra());
+        assert!(matches!(dev.set_prompts(false), Err(BmapError::Unsupported(_))));
+        assert!(dev.transport.sent.borrow().is_empty());
     }
 
     #[test]

@@ -1,0 +1,5 @@
+# spec: Issue #46 and the QC Ultra v1 scope establish EQ reads only.
+# source: https://github.com/aaronsb/bosectl/issues/46
+device qc_ultra
+call set_eq 0 0 0
+result err unsupported

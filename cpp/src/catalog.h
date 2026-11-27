@@ -38,7 +38,7 @@ inline const std::vector<BoseDevice>& catalog() {
         {0x4024, "goodyear",   "Noise Cancelling Headphones 700",         Category::Headphones, "nc700"},
         {0x402B, "beanie",     "Hearphones II",                           Category::Headphones, nullptr},
         {0x4039, "duran",      "QuietComfort 45",                         Category::Headphones, "qc45"},
-        {0x4066, "lonestarr",  "QuietComfort Ultra Headphones",           Category::Headphones, nullptr},
+        {0x4066, "lonestarr",  "QuietComfort Ultra Headphones",           Category::Headphones, "qc_ultra"},
         {0x4075, "prince",     "QuietComfort Headphones",                 Category::Headphones, "qc_prince"},
         {0x4082, "wolverine",  "QuietComfort Ultra Headphones (2nd Gen)", Category::Headphones, "qc_ultra2"},
         // Codename unconfirmed. Firmware 8.x, MAC prefix 68:F2:1F (wolverine family),

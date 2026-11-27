@@ -39,7 +39,7 @@ pub const CATALOG: &[BoseDevice] = &[
     BoseDevice { product_id: 0x4024, codename: "goodyear",   name: "Noise Cancelling Headphones 700",        category: Category::Headphones, config: Some("nc700") },
     BoseDevice { product_id: 0x402B, codename: "beanie",     name: "Hearphones II",                          category: Category::Headphones, config: None },
     BoseDevice { product_id: 0x4039, codename: "duran",      name: "QuietComfort 45",                        category: Category::Headphones, config: Some("qc45") },
-    BoseDevice { product_id: 0x4066, codename: "lonestarr",  name: "QuietComfort Ultra Headphones",          category: Category::Headphones, config: None },
+    BoseDevice { product_id: 0x4066, codename: "lonestarr",  name: "QuietComfort Ultra Headphones",          category: Category::Headphones, config: Some("qc_ultra") },
     BoseDevice { product_id: 0x4075, codename: "prince",     name: "QuietComfort Headphones",                category: Category::Headphones, config: Some("qc_prince") },
     BoseDevice { product_id: 0x4082, codename: "wolverine",  name: "QuietComfort Ultra Headphones (2nd Gen)", category: Category::Headphones, config: Some("qc_ultra2") },
     // Codename unconfirmed. Firmware 8.x, MAC prefix 68:F2:1F (wolverine family),
@@ -168,7 +168,7 @@ mod tests {
         assert!(is_supported(0x4068)); // serena
         assert!(is_supported(0x4020)); // baywolf
         assert!(is_supported(0x400C)); // wolfcastle
-        assert!(!is_supported(0x4066)); // lonestarr, no config
+        assert_eq!(lookup_device(0x4066).unwrap().config, Some("qc_ultra"));
         assert!(!is_supported(0xFFFF));
     }
 

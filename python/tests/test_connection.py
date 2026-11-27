@@ -9,9 +9,9 @@ from pybmap.protocol import bmap_packet
 from pybmap.constants import OP_GET, OP_SETGET, OP_STATUS, OP_RESULT, OP_ERROR
 from pybmap.errors import (
     BmapError, BmapAuthError, BmapDeviceError,
-    BmapDesyncError, BmapConnectionError, BmapInvalidArgError,
+    BmapDesyncError, BmapConnectionError, BmapInvalidArgError, BmapUnsupportedError,
 )
-from pybmap.devices import qc_ultra2, qc_ultra2_earbuds, qc_prince, qc45
+from pybmap.devices import qc_ultra, qc_ultra2, qc_ultra2_earbuds, qc_prince, qc45
 from pybmap.types import ModeConfig
 
 
@@ -45,6 +45,14 @@ class MockTransport:
 
     def close(self):
         self.closed = True
+
+
+def test_qc_ultra_refuses_prompt_write_before_sending():
+    transport = MockTransport()
+    dev = BmapConnection(transport, qc_ultra)
+    with pytest.raises(BmapUnsupportedError):
+        dev.set_prompts(False)
+    assert transport.sent == []
 
 
 @pytest.fixture

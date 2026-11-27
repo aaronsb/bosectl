@@ -66,6 +66,16 @@ TEST(status_leaves_mode_empty_when_mode_read_fails) {
     ASSERT_TRUE(dev.status().mode.empty());
 }
 
+TEST(qc_ultra_refuses_prompt_write_before_sending) {
+    auto raw = new MockTransport();
+    BmapConnection dev(std::unique_ptr<Transport>(raw), qc_ultra());
+    bool refused = false;
+    try { dev.set_prompts(false); }
+    catch (const unsupported_error&) { refused = true; }
+    ASSERT_TRUE(refused);
+    ASSERT_TRUE(raw->sent.empty());
+}
+
 TEST(nc700_refuses_unchecked_writes_before_sending) {
     auto raw = new MockTransport();
     BmapConnection dev(std::unique_ptr<Transport>(raw), nc700());
@@ -805,7 +815,7 @@ TEST(nc700_config) {
     ASSERT_TRUE(c->status_supported_only);
 }
 
-TEST(only_nc700_shows_supported_settings_only) {
+TEST(other_devices_show_legacy_status_fields) {
     for (auto name : {"qc_ultra2", "qc_ultra2_earbuds", "qc35", "qc_prince", "qc_earbuds", "qc45", "ultra_open"}) {
         ASSERT_FALSE(get_device(name)->status_supported_only);
     }
